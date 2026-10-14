@@ -1,0 +1,62 @@
+# Build Aurora for Windows on a real Windows runner and publish a GitHub
+# release with the Qt6 shell artifact attached. Triggered by pushing a tag
+# matching `v*` (e.g. `git tag v0.1.0 && git push --tags`). Tests must pass
+# before the release is published; a failed build produces no release.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Windows release build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DAURORA_BUILD_TESTS=ON -DAURORA_BUILD_APP=ON
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: '4'
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run unit tests
+        run: ./build/bin/aurora_tests.exe
+
+      - name: Package
+        run: |
+          mkdir -p package
+          cp build/bin/aurora_browser.exe package/
+          cp build/bin/aurora_bootstrap.exe package/
+          windeployqt --release --no-translations --no-system-d3d-compiler \
+                     --no-opengl-sw package/aurora_browser.exe
+          mkdir dist
+          powershell -Command "Compress-Archive -Path 'package/*' -DestinationPath 'dist/aurora-windows-x64.zip'"
+        shell: bash
+
+      - name: Create release and upload artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/aurora-windows-x64.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true

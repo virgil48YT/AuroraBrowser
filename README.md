@@ -167,7 +167,8 @@ built or tested here): Windows self-extracting installer packaging
 (`packaging/windows/build_sfx.sh`, `sfx_config.txt`, `rcedit-x64.exe`, the
 `aurora_bootstrap` launcher and the build-ID mechanism described in
 [docs/build-id.md](docs/build-id.md)) and the Qt-only `build-windows-local.bat`
-script.
+script. These are not wired into CI; the release workflow ships the folder
+artifact instead.
 
 **Not yet implemented** (clearly marked in source, no fake UI): cosmetic ad
 filtering (element hiding), background tab suspension.
@@ -265,6 +266,15 @@ python3 scripts/check_contrast.py                                   # theme cont
 `--smoke-test` builds the window, opens every internal page so their widgets are
 really constructed and populated from the profile database, opens and closes a
 tab, then exits 0 — enough to catch chrome regressions with no display.
+
+## Releases
+
+Push a tag matching `v*` (e.g. `git tag v0.1.0 && git push --tags`) and the
+[release workflow](.github/workflows/release.yml) runs the same Qt6 Windows
+build + unit tests, then publishes a GitHub release with
+`aurora-windows-x64.zip` attached (a folder artifact built with `windeployqt`,
+not a single-exe SFX — the packaging scripts under `packaging/windows/` exist
+for the SFX variant but are not wired into CI yet).
 
 See [docs/build.md](docs/build.md), [docs/architecture.md](docs/architecture.md),
 [docs/performance-budgets.md](docs/performance-budgets.md), and
