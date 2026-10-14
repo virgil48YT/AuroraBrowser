@@ -1,17 +1,23 @@
 # Aurora Browser
 
-A Chromium-based desktop browser with a native Qt6 UI.
+A privacy-focused, Chromium-based desktop browser with a fast native Qt6 UI.
+
+Aurora is built around security and privacy by default: a built-in ad and
+tracker blocker with per-site exceptions, and incognito windows that keep
+the session entirely in memory so nothing touches disk. It is a small,
+self-contained app — no telemetry, no background services, no vendor
+accounts.
 
 ## Features
 
+- Ad and tracker blocking with per-site allow lists
+- Incognito windows (Ctrl+Shift+N) that leave no trace on disk
 - Chrome-style layout: tabs, address bar, downloads
 - History, bookmarks, downloads and settings pages
 - Find in page (Ctrl+F), fullscreen (F11)
-- Incognito windows (Ctrl+Shift+N) that leave no trace in the regular profile
-- Ad blocker with per-site exceptions
 - Dark and light theme
-- Session restore — your tabs come back after a restart
-- Works without the CEF engine (the UI and internal pages still work)
+- Session restore — tabs come back after a restart
+- Runs without the Chromium engine; the UI and internal pages still work
 
 ## Keyboard shortcuts
 
@@ -26,27 +32,21 @@ A Chromium-based desktop browser with a native Qt6 UI.
 | Ctrl+F | Find in page |
 | F5 / Ctrl+R | Reload |
 | Alt+Left / Alt+Right | Back / Forward |
-| Alt+Home | Go home |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
 | F11 | Toggle fullscreen |
-| Ctrl+Shift+I / F12 | Developer tools |
-| Ctrl++ / Ctrl+- / Ctrl+0 | Zoom in / out / reset |
-| Esc | Close find bar |
+| F12 | Developer tools |
+| Ctrl+Shift+Del | Clear browsing data |
 
 ## Install
 
-Download the latest `aurora_setup.exe` from the
-[Releases](https://github.com/virgil48YT/AuroraBrowser/releases) page and
-double-click it. It installs to `%LOCALAPPDATA%\Aurora\app` and opens the
-browser.
+Download the latest release from the
+[Releases](https://github.com/virgil48YT/AuroraBrowser/releases) page.
 
 ## Build from source
 
-Needs [CMake](https://cmake.org/) and [Qt6](https://www.qt.io/) (Qt5 also
-works but Qt6 is recommended).
+Requires [CMake](https://cmake.org/) and [Qt6](https://www.qt.io/).
 
 ```bash
-# Quick build, tests only, no CEF
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAURORA_BUILD_TESTS=ON
 cmake --build build
 ./build/bin/aurora_tests
@@ -54,7 +54,7 @@ cmake --build build
 
 ### Full browser with CEF
 
-The real Chromium engine (needed for actual web pages, WebGL, video):
+The Chromium engine is needed for real web pages, WebGL and video:
 
 ```bash
 ./scripts/fetch_cef.sh

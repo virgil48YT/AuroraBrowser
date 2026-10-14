@@ -14,6 +14,8 @@
 #include "include/cef_image.h"
 #include "include/cef_parser.h"
 #include "include/cef_permission_handler.h"
+#include "include/cef_request_context.h"
+#include "include/cef_request_context_handler.h"
 #include "include/cef_request_handler.h"
 #include "include/cef_resource_request_handler.h"
 #include "include/cef_task.h"
