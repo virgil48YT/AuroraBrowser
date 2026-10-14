@@ -280,18 +280,23 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
         // regular profile. History, download metadata, session snapshots,
         // bookmark writes and preference writes are all skipped; extensions
         // are disabled (their service workers/cookies are global, not private-
-        // context-scoped). The internal pages read the profile, so they still
-        // show real history/bookmarks for the user — but no change a private
-        // window makes can reach the disk. Nulled pointers mean every existing
-        // `if (services_.X)` check below already handles this: a private window
-        // is simply a window with a read-only profile.
+        // context-scoped). Unavailable write-capable services are nulled below;
+        // preferences stay attached through a read-only Settings view so the
+        // page can read real values and remain interactive without persisting.
         services_.history = nullptr;
         services_.downloads = nullptr;
         services_.session = nullptr;
         services_.extensions = nullptr;
         services_.adblock = nullptr;
         services_.bookmarks = nullptr;
-        services_.prefs = nullptr;
+    }
+    if (services_.prefs &&
+        (incognito_ || services_.prefs->is_read_only())) {
+        // Never mark the shared Settings read-only: that would also block
+        // normal windows. Each private/sibling view borrows only the database,
+        // so deleting its source window cannot leave a dangling prefs pointer.
+        read_only_prefs_ = services_.prefs->read_only_view();
+        services_.prefs = read_only_prefs_.get();
     }
     setWindowTitle(incognito_ ? QStringLiteral("Aurora (Incognito)")
                                : QStringLiteral("Aurora"));
@@ -825,7 +830,7 @@ void MainWindow::open_new_window() {
 void MainWindow::open_incognito_window() {
     // The source window's profile pointers are shared read-only; the private
     // window's constructor nulls the write-capable ones (history / downloads /
-    // session / extensions / adblock) and keeps prefs+bookmarks for reads.
+    // session / extensions / adblock / bookmarks), and wraps prefs read-only.
     // See core::IncognitoPolicy and the MainWindow ctor.
     auto* w = new MainWindow(services_, /*parent=*/nullptr,
                              /*is_incognito=*/true);
@@ -981,6 +986,7 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     // toolbar surface beneath it.
     auto* chrome = new QWidget(this);
     chrome->setObjectName("ChromeTop");
+    chrome->setProperty("incognito", incognito_);
     auto* cl = new QVBoxLayout(chrome);
     cl->setContentsMargins(0, 0, 0, 0);
     cl->setSpacing(0);
@@ -988,6 +994,7 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     // --- Tab strip row (also the window caption: draggable) -----------------
     auto* tab_row = new QWidget(chrome);
     tab_row->setObjectName("TabStrip");
+    tab_row->setProperty("incognito", incognito_);
     // Kept as a member so content fullscreen can hide the whole strip: the tab
     // bar, the new-tab button and the window controls are siblings inside it,
     // and hiding only the tab bar left a stray "+" floating over the video.
@@ -1012,6 +1019,7 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
 
     tab_bar_ = new TabBar(&tabs_, tab_row);
     tab_bar_->setObjectName("TabBar");
+    tab_bar_->setProperty("incognito", incognito_);
     // Maximum policy so the strip is only as wide as its tabs: the new-tab
     // button then hugs the last tab instead of being pushed to the far edge.
     tab_bar_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
@@ -1024,6 +1032,14 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     new_tab_btn_->setIconPx(16);
     connect(new_tab_btn_, &IconButton::clicked, this, &MainWindow::on_new_tab);
     tl->addWidget(new_tab_btn_);
+    if (incognito_) {
+        auto* badge = new QLabel(QStringLiteral("Incognito"), tab_row);
+        badge->setObjectName("IncognitoBadge");
+        badge->setAccessibleName(QStringLiteral("Incognito window"));
+        badge->setToolTip(QStringLiteral(
+            "Private browsing - history and settings changes are not saved"));
+        tl->addWidget(badge);
+    }
     // The remaining strip is the draggable caption (functional, not dead space);
     // the window controls fill the far-right corner.
     tl->addStretch(1);
@@ -1035,6 +1051,7 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     // central widget, which would push the tab strip below it.
     auto* toolbar = new QWidget(chrome);
     toolbar->setObjectName("ToolbarRow");
+    toolbar->setProperty("incognito", incognito_);
     toolbar_ = toolbar;
     auto* bl = new QHBoxLayout(toolbar);
     bl->setContentsMargins(Spacing::xs + Spacing::xxs, Spacing::xxs,
@@ -1080,6 +1097,7 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     bl->addStretch(1);
 
     omnibox_ = new Omnibox(this);
+    omnibox_->setProperty("incognito", incognito_);
     omnibox_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     bl->addWidget(omnibox_, 4);
 

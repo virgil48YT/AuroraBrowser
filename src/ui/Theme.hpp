@@ -142,4 +142,8 @@ struct Motion {
 Theme light_theme();
 Theme dark_theme();
 
+// Compose the existing dark-theme accent wash over a surface. Kept local to
+// private widgets: publishing it as the global theme would tint normal windows.
+QColor incognito_tint(const QColor& surface);
+
 } // namespace aurora::ui

@@ -84,6 +84,15 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
     column->setContentsMargins(0, 0, 0, 0);
     column->setSpacing(Spacing::lg);
 
+    if (prefs_ && prefs_->is_read_only()) {
+        auto* warning = new QLabel(
+            QStringLiteral("This is an incognito window - changes are not saved"),
+            container);
+        warning->setObjectName("PageWarning");
+        warning->setWordWrap(true);
+        column->addWidget(warning);
+    }
+
     QFormLayout* startup_form = nullptr;
     auto* startup = make_group(QStringLiteral("Startup"), startup_form);
     auto* home_note = new QLabel(
@@ -190,6 +199,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
                            static_cast<QWidget*>(downloads_ask_where_),
                            static_cast<QWidget*>(block_third_party_cookies_),
                            static_cast<QWidget*>(send_dnt_),
+                           static_cast<QWidget*>(adblock_enabled_),
                            static_cast<QWidget*>(reduced_motion_)}) {
             w->setEnabled(false);
         }
@@ -206,7 +216,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
         const auto id = search_engine_->currentData().toString();
         prefs_->set_string(settings::PrefKeys::kSearchEngine, id.toStdString());
         emit search_engine_changed(id);
-        emit status_message(QStringLiteral("Search engine set to %1")
+        report_change(QStringLiteral("Search engine set to %1")
                                 .arg(search_engine_->currentText()));
     });
     connect(theme_, &QComboBox::currentIndexChanged, this, [this](int) {
@@ -218,14 +228,14 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
     connect(restore_session_, &QCheckBox::toggled, this, [this](bool on) {
         if (loading_ || !prefs_) return;
         prefs_->set_bool(settings::PrefKeys::kRestoreSession, on);
-        emit status_message(on ? QStringLiteral("Session will be restored on "
+        report_change(on ? QStringLiteral("Session will be restored on "
                                                "startup")
                                : QStringLiteral("Startup will open a new tab"));
     });
     connect(suspend_minutes_, &QSpinBox::valueChanged, this, [this](int minutes) {
         if (loading_ || !prefs_) return;
         prefs_->set_int(settings::PrefKeys::kTabSuspendAfterMinutes, minutes);
-        emit status_message(minutes
+        report_change(minutes
             ? QStringLiteral("Inactive tabs will suspend after %1 minutes")
                   .arg(minutes)
             : QStringLiteral("Automatic tab suspension turned off"));
@@ -234,7 +244,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
         if (loading_ || !prefs_) return;
         prefs_->set_downloads_path(
             downloads_path_->text().trimmed().toStdString());
-        emit status_message(QStringLiteral("Download location saved"));
+        report_change(QStringLiteral("Download location saved"));
     });
     connect(downloads_browse_, &QPushButton::clicked, this, [this] {
         if (!prefs_) return;
@@ -252,12 +262,12 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
         const QString clean_path = QDir::cleanPath(chosen);
         downloads_path_->setText(QDir::toNativeSeparators(clean_path));
         prefs_->set_downloads_path(clean_path.toStdString());
-        emit status_message(QStringLiteral("Download location saved"));
+        report_change(QStringLiteral("Download location saved"));
     });
     connect(downloads_ask_where_, &QCheckBox::toggled, this, [this](bool on) {
         if (loading_ || !prefs_) return;
         prefs_->set_downloads_ask_where(on);
-        emit status_message(
+        report_change(
             on ? QStringLiteral("Aurora will ask where to save downloads")
                : QStringLiteral("Downloads will be saved automatically"));
     });
@@ -273,7 +283,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
         if (loading_ || !prefs_) return;
         prefs_->set_bool(settings::PrefKeys::kAdblockEnabled, on);
         emit adblock_enabled_changed(on);
-        emit status_message(on
+        report_change(on
                                 ? QStringLiteral("Aurora Shields will block ads "
                                                  "from the next page load")
                                 : QStringLiteral("Aurora Shields turned off"));
@@ -284,6 +294,11 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
     });
 
     refresh();
+}
+
+void SettingsPage::report_change(const QString& message) {
+    emit status_message(prefs_ && prefs_->is_read_only()
+        ? QStringLiteral("Incognito changes are not saved") : message);
 }
 
 void SettingsPage::refresh() {

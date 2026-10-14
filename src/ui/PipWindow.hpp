@@ -30,6 +30,9 @@ public:
     static bool can_open(MainWindow* source, core::TabId tab);
     // Returns null without changing the source when the tab cannot move.
     static PipWindow* open(MainWindow* source, core::TabId tab);
+    // Restore the tab and close the floating surface through closeEvent.
+    // Returns false while an asynchronous source-host close is still pending.
+    bool detach_and_close();
     ~PipWindow() override;
 
 protected:

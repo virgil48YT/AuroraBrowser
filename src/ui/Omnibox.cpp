@@ -387,6 +387,7 @@ void Omnibox::paintEvent(QPaintEvent*) {
     } else if (hovered) {
         bg = interp(c.omnibox_bg, c.surface_hover, 0.45);
     }
+    if (property("incognito").toBool()) bg = incognito_tint(bg);
 
     QColor border = interp(c.omnibox_border, c.omnibox_focus_border,
                            focus_progress_ * 0.8);

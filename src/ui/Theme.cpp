@@ -149,4 +149,15 @@ Theme dark_theme() {
     return t;
 }
 
+QColor incognito_tint(const QColor& surface) {
+    static const QColor wash = dark_theme().colors.accent_soft;
+    const int alpha = wash.alpha();
+    const auto blend = [alpha](int base, int accent) {
+        return (base * (255 - alpha) + accent * alpha) / 255;
+    };
+    return QColor(blend(surface.red(), wash.red()),
+                  blend(surface.green(), wash.green()),
+                  blend(surface.blue(), wash.blue()), surface.alpha());
+}
+
 } // namespace aurora::ui

@@ -82,15 +82,15 @@ PipWindow::PipWindow(MainWindow* source, core::TabId tab, std::size_t index)
         button->setAutoRaise(true);
         button->setCursor(Qt::ArrowCursor);
         button->setIconSize(QSize(16, 16));
-        connect(button, &QToolButton::clicked, this, [this] { close(); });
+        connect(button, &QToolButton::clicked, this, [this] { detach_and_close(); });
     }
     update_style();
     theme_observer_id_ = add_theme_observer([this](const Theme&) { update_style(); });
     source->installEventFilter(this);
     connect(source, &QObject::destroyed, this, [this] {
         // Unexpected deletion (rather than closeEvent): restore into a new
-        // normal window next turn, never dereference the expired source.
-        QTimer::singleShot(0, this, [this] { if (!restored_) close(); });
+        // same-mode window next turn, never dereference the expired source.
+        QTimer::singleShot(0, this, [this] { if (!restored_) detach_and_close(); });
     });
     connect(qApp, &QCoreApplication::aboutToQuit, this, [this] {
         // No new renderer may be created after app.exec() returns. Preserve
@@ -125,7 +125,7 @@ PipWindow::~PipWindow() {
 
 bool PipWindow::take_page() {
     if (!source_) return false;
-    owner_ = new MainWindow(source_->services_);
+    owner_ = new MainWindow(source_->services_, nullptr, source_->is_incognito());
     owner_->inherit_theme_from(source_);
     configure_controller();
     auto transfer = source_->release_tab_for_transfer(tab_);
@@ -173,6 +173,9 @@ void PipWindow::configure_controller() {
     controller->set_fullscreen_callback([this](core::TabId id, bool fullscreen) {
         if (fullscreen) QTimer::singleShot(0, this, [this, id] {
             if (owner_ && owner_->webview_) owner_->webview_->exit_fullscreen(id);
+            // Expanding a page leaves PiP, rather than restoring content while
+            // keeping its floating frame (or an unshown owner) around.
+            detach_and_close();
         });
     });
     controller->set_key_event_callback([this](core::TabId, const webview::EngineKeyEvent& key) {
@@ -180,7 +183,7 @@ void PipWindow::configure_controller() {
         // A hidden MainWindow must never process Ctrl+W/F11 on PiP's behalf.
         // Return-to-tab is deferred out of the native engine key callback.
         if ((key.ctrl && key.key_code == 0x57) || key.key_code == 0x1b) {
-            QTimer::singleShot(0, this, [this] { close(); });
+            QTimer::singleShot(0, this, [this] { detach_and_close(); });
             return true;
         }
         return false;
@@ -193,14 +196,14 @@ bool PipWindow::restore_page(bool shutting_down) {
     // A very quick return can beat the source browser's asynchronous close.
     // Do not reuse its TabId in that controller until its old host is gone.
     if (!shutting_down && source_ && source_->closing_hosts_.count(tab_) != 0) {
-        QTimer::singleShot(50, this, [this] { close(); });
+        QTimer::singleShot(50, this, [this] { detach_and_close(); });
         return false;
     }
     returning_ = true;
     MainWindow* destination = source_.data();
     bool created_destination = false;
     if (!destination && !shutting_down) {
-        destination = new MainWindow(owner_->services_);
+        destination = new MainWindow(owner_->services_, nullptr, owner_->is_incognito());
         destination->setAttribute(Qt::WA_DeleteOnClose);
         destination->inherit_theme_from(owner_);
         created_destination = true;
@@ -236,12 +239,20 @@ bool PipWindow::restore_page(bool shutting_down) {
         owner_->save_session();
     }
     restored_ = true;
+    // Shutdown drains native browser closes and can pump the event loop for
+    // several seconds. Vanish before that drain, not after closeEvent returns:
+    // the restored tab must never coexist with a leftover visible PiP frame.
+    hide();
     owner_->prepare_shutdown();
     if (close_source_after_return_ && source_ && !shutting_down) {
         QTimer::singleShot(0, source_.data(), [source = source_] { if (source) source->close(); });
     }
     returning_ = false;
     return true;
+}
+
+bool PipWindow::detach_and_close() {
+    return close(); // closeEvent owns restoration; WA_DeleteOnClose owns deletion.
 }
 
 void PipWindow::closeEvent(QCloseEvent* event) {
@@ -254,7 +265,7 @@ bool PipWindow::eventFilter(QObject* watched, QEvent* event) {
         // Restore before MainWindow saves its session and shuts down CEF.
         // If the source's old host is still closing, defer that close too.
         close_source_after_return_ = true;
-        if (!close()) {
+        if (!detach_and_close()) {
             event->ignore();
             return true;
         }
@@ -398,7 +409,7 @@ void PipWindow::mouseReleaseEvent(QMouseEvent* event) {
 void PipWindow::keyPressEvent(QKeyEvent* event) {
     if (event->key() == Qt::Key_Escape ||
         (event->key() == Qt::Key_W && event->modifiers().testFlag(Qt::ControlModifier))) {
-        close();
+        detach_and_close();
         event->accept();
         return;
     }

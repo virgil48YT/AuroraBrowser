@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -52,7 +53,13 @@ struct PrefKeys {
 
 class Settings {
 public:
-    explicit Settings(storage::Database& db) : db_(db) {}
+    explicit Settings(storage::Database& db, bool read_only = false)
+        : db_(db), read_only_(read_only) {}
+
+    bool is_read_only() const { return read_only_; }
+    // A window-owned view of the same profile, without changing the normal
+    // window's store. Only the database must outlive the view, not this object.
+    std::unique_ptr<Settings> read_only_view() const;
 
     // Ensure the preferences table exists.
     void ensure_schema();
@@ -76,6 +83,7 @@ public:
 
 private:
     storage::Database& db_;
+    bool read_only_ = false;
     mutable std::mutex cache_mutex_;
     // A read cache so repeated omnibox queries for the search engine pref
     // don't hit SQLite on every keystroke. Writes invalidate the cache.

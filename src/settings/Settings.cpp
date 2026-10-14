@@ -22,6 +22,7 @@ int64_t decode_int(std::string_view v) {
 } // namespace
 
 void Settings::ensure_schema() {
+    if (read_only_) return;
     db_.execute(R"SQL(
         CREATE TABLE IF NOT EXISTS preferences (
             key TEXT PRIMARY KEY,
@@ -30,8 +31,14 @@ void Settings::ensure_schema() {
     )SQL");
 }
 
+std::unique_ptr<Settings> Settings::read_only_view() const {
+    return std::make_unique<Settings>(db_, true);
+}
+
 std::string Settings::raw_get(std::string_view key) const {
-    {
+    // Private views must see changes saved by normal windows, rather than
+    // retaining a separate, stale cache for the lifetime of the private window.
+    if (!read_only_) {
         std::lock_guard<std::mutex> lock(cache_mutex_);
         auto it = cache_.find(std::string(key));
         if (it != cache_.end()) return it->second;
@@ -43,12 +50,17 @@ std::string Settings::raw_get(std::string_view key) const {
             value = s->column_text(0);
         }
     }
-    std::lock_guard<std::mutex> lock(cache_mutex_);
-    cache_[std::string(key)] = value;
+    if (!read_only_) {
+        std::lock_guard<std::mutex> lock(cache_mutex_);
+        cache_[std::string(key)] = value;
+    }
     return value;
 }
 
 void Settings::raw_set(std::string_view key, std::string_view value) {
+    // Covers every typed setter, download accessor and remembered permission.
+    // Do not even populate the cache: a suppressed write is a true no-op.
+    if (read_only_) return;
     if (auto s = db_.prepare(
             "INSERT INTO preferences(key, value) VALUES (?1, ?2) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value;")) {

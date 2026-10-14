@@ -46,6 +46,85 @@ TEST_CASE("overwriting an existing key updates in place") {
     CHECK(s.get_string(PrefKeys::kTheme, "") == "dark");
 }
 
+TEST_CASE("read-only settings read the profile but every setter is a no-op") {
+    auto db = open_settings();
+    Settings normal(db);
+    normal.ensure_schema();
+    CHECK_FALSE(normal.is_read_only());
+    normal.set_bool(PrefKeys::kRestoreSession, true);
+    normal.set_int(PrefKeys::kTabSuspendAfterMinutes, 30);
+    normal.set_string(PrefKeys::kSearchEngine, "google");
+    normal.set_downloads_path("/saved/downloads");
+    normal.set_downloads_ask_where(true);
+
+    Settings private_prefs(db, true);
+    REQUIRE(private_prefs.is_read_only());
+    CHECK(private_prefs.get_bool(PrefKeys::kRestoreSession, false));
+    CHECK(private_prefs.get_int(PrefKeys::kTabSuspendAfterMinutes, 0) == 30);
+    CHECK(private_prefs.get_string(PrefKeys::kSearchEngine, "") == "google");
+    const int changes = sqlite3_total_changes(db.handle());
+    private_prefs.ensure_schema();
+    private_prefs.set_bool(PrefKeys::kRestoreSession, false);
+    private_prefs.set_int(PrefKeys::kTabSuspendAfterMinutes, 1);
+    private_prefs.set_string(PrefKeys::kSearchEngine, "bing");
+    private_prefs.set_downloads_path("/private/downloads");
+    private_prefs.set_downloads_ask_where(false);
+    private_prefs.set_string("private.only", "must not persist");
+
+    CHECK(sqlite3_total_changes(db.handle()) == changes);
+    CHECK(private_prefs.get_bool(PrefKeys::kRestoreSession, false));
+    CHECK(private_prefs.get_int(PrefKeys::kTabSuspendAfterMinutes, 0) == 30);
+    CHECK(private_prefs.get_string(PrefKeys::kSearchEngine, "") == "google");
+    CHECK(private_prefs.downloads_path() == "/saved/downloads");
+    CHECK(private_prefs.downloads_ask_where());
+    CHECK(private_prefs.get_string("private.only", "absent") == "absent");
+    // A fresh, uncached reader also proves no writes reached SQLite.
+    Settings persisted(db);
+    CHECK(persisted.get_string(PrefKeys::kSearchEngine, "") == "google");
+    CHECK(persisted.downloads_path() == "/saved/downloads");
+    CHECK(persisted.get_string("private.only", "absent") == "absent");
+}
+
+TEST_CASE("private views do not freeze normal writes or cache stale preferences") {
+    auto db = open_settings();
+    Settings normal(db);
+    normal.ensure_schema();
+    normal.set_string(PrefKeys::kTheme, "light");
+    auto first = normal.read_only_view();
+    auto sibling = first->read_only_view();
+    CHECK_FALSE(normal.is_read_only());
+    CHECK(first->is_read_only());
+    CHECK(sibling->is_read_only());
+    CHECK(first->get_string(PrefKeys::kTheme, "") == "light");
+    CHECK(sibling->get_string(PrefKeys::kTheme, "") == "light");
+    first->set_string(PrefKeys::kTheme, "system");
+    normal.set_string(PrefKeys::kTheme, "dark");
+    CHECK(first->get_string(PrefKeys::kTheme, "") == "dark");
+    CHECK(sibling->get_string(PrefKeys::kTheme, "") == "dark");
+    // A sibling borrows the database, never the source view's lifetime.
+    first.reset();
+    CHECK(sibling->get_string(PrefKeys::kTheme, "") == "dark");
+    sibling->set_string(PrefKeys::kTheme, "light");
+    CHECK(normal.get_string(PrefKeys::kTheme, "") == "dark");
+}
+
+TEST_CASE("private settings suppress remembered permissions as well") {
+    auto db = open_settings();
+    Settings normal(db);
+    normal.ensure_schema();
+    auto private_prefs = normal.read_only_view();
+    aurora::permissions::PermissionStore store(*private_prefs);
+    using aurora::permissions::PermissionDecision;
+    using aurora::permissions::PermissionKind;
+    const std::string origin = "https://private.example/";
+    const int changes = sqlite3_total_changes(db.handle());
+    store.remember(origin, PermissionKind::AudioCapture, PermissionDecision::Allow);
+    store.forget(origin);
+    CHECK(sqlite3_total_changes(db.handle()) == changes);
+    CHECK(store.decision(origin, PermissionKind::AudioCapture) ==
+          PermissionDecision::Ask);
+}
+
 // --- Site permissions (permissions::PermissionStore on top of Settings) ---
 
 TEST_CASE("an unknown origin asks; remembered decisions stick per origin/kind") {

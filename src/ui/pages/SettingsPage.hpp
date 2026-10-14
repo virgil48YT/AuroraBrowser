@@ -37,6 +37,8 @@ signals:
     void adblock_enabled_changed(bool enabled);
 
 private:
+    void report_change(const QString& message);
+
     // Guard so programmatic control updates in refresh() do not write back.
     bool loading_ = false;
 

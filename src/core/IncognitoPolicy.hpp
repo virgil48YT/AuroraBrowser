@@ -8,6 +8,9 @@
 // and bookmarks are shared read-only for the first implementation (so the
 // user keeps their homepage, search engine and bookmarks), and any *writes*
 // to them from a private window are rejected.
+// Preferences stay attached through a window-owned read-only Settings view:
+// the Settings layer suppresses setters, rather than nulling the prefs
+// pointer and disabling the settings page (or changing the normal store).
 #pragma once
 
 #include <string_view>
@@ -43,7 +46,7 @@ struct IncognitoPolicy {
     constexpr bool may_write_bookmarks() const { return !is_incognito; }
 
     // Preferences are read from the normal profile but never written from a
-    // private window.
+    // private window. Enforced by Settings' read-only view, not a null pointer.
     constexpr bool may_write_preferences() const { return !is_incognito; }
 };
 

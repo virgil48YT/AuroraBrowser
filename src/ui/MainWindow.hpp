@@ -102,8 +102,8 @@ public:
     // session snapshots are skipped (see core::IncognitoPolicy), preferences
     // and bookmarks are read-only, extensions are disabled, and the window's
     // tabs share a private in-memory CEF request context that is discarded
-    // when the window closes. The title suffix "(Incognito)" and a purple
-    // indicator make the mode visible.
+    // when the window closes. The title suffix "(Incognito)", accent-tinted
+    // chrome and an Incognito badge make the mode visible.
     explicit MainWindow(const ServiceBundle& services = ServiceBundle{},
                         QWidget* parent = nullptr, bool is_incognito = false);
     ~MainWindow() override;
@@ -477,6 +477,8 @@ private:
 
     core::TabManager tabs_;
     ServiceBundle services_;
+    // Own only the private view, never the shared profile Settings or database.
+    std::unique_ptr<settings::Settings> read_only_prefs_;
     // Private (incognito) window flag. Drives core::IncognitoPolicy decisions
     // throughout this class; see the constructor for how it changes the bundle.
     bool incognito_ = false;

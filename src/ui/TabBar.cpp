@@ -209,7 +209,8 @@ public:
                         QPointF(r.right() + kFlair, bottom));
             path.closeSubpath();
             painter->setPen(Qt::NoPen);
-            painter->setBrush(c.surface);
+            painter->setBrush(bar->property("incognito").toBool()
+                                 ? incognito_tint(c.surface) : c.surface);
             painter->drawPath(path);
         } else if (h > 0.02) {
             // Hover lift: a subtly raised rounded plate, fully inside the tab.

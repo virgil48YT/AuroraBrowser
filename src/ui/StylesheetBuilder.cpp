@@ -95,6 +95,30 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "}")
             .arg(hex(c.toolbar_bg));
 
+    // Per-window selectors keep the accent wash out of normal windows, even
+    // though custom-painted widgets share the current global theme.
+    s += QString("QWidget#ChromeTop[incognito=\"true\"],"
+                 "QWidget#ToolbarRow[incognito=\"true\"] { background: %1; }"
+                 "QWidget#TabStrip[incognito=\"true\"] { background: %2; }")
+            .arg(hex(incognito_tint(c.surface)),
+                 hex(incognito_tint(c.tab_strip_bg)));
+    s += QString("QLabel#IncognitoBadge {"
+                 "  background: %1;"
+                 "  color: %2;"
+                 "  border: %3px solid %4;"
+                 "  border-radius: %5px;"
+                 "  font-size: %6px;"
+                 "  font-weight: 600;"
+                 "  padding: %7px %8px;"
+                 "}")
+            .arg(hex(incognito_tint(c.surface)), hex(c.accent))
+            .arg(Metrics::hairline)
+            .arg(rgba_of(dark_theme().colors.accent_soft))
+            .arg(Radius::sm)
+            .arg(t.small_font_px)
+            .arg(Spacing::xs)
+            .arg(Spacing::sm);
+
     // The bookmarks bar is the last band of the same plate: same fill as the
     // toolbar so the chrome stays one surface, separated from content only by
     // ChromeTop's own bottom hairline.
