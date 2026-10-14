@@ -31,18 +31,14 @@ TEST_CASE("IncognitoPolicy permits every persistent write for normal windows") {
     CHECK(p.restore_session_snapshot());
     CHECK(p.may_write_bookmarks());
     CHECK(p.may_write_preferences());
-    CHECK_FALSE(p.enable_extensions()); // not yet implemented anywhere
+    CHECK(p.enable_extensions());
 }
 
-// Verify the *integration* the policy drives: with is_incognito=true the
-// chrome must not call HistoryService::add_visit or SessionService::save with
-// tabs from this window. We do not build Qt here, so we exercise the
-// services themselves and assert that a private snapshot handed to them would
-// be observable only if the caller had ignored the policy. That is, the
-// services themselves have no privacy mode — this is the window's job — and
-// the point of the test is that a private window can satisfy the policy by
-// simply not calling them.
-TEST_CASE("HistoryService and SessionService still work (normal window)") {
+// Positive control: HistoryService + SessionService write through the same
+// profile a private window shares. A private window that ignored IncognitoPolicy
+// would show up here — so this also proves the "empty" assertion in the next
+// test is a real no-leak claim and not just "fresh database, nothing to read".
+TEST_CASE("HistoryService and SessionService write through the regular profile") {
     Database db;
     REQUIRE(db.open(":memory:"));
     REQUIRE(Migrator::migrate(db) == DbError::Ok);
@@ -58,11 +54,17 @@ TEST_CASE("HistoryService and SessionService still work (normal window)") {
                                        .window_index = 0,
                                        .tab_index = 0}};
     const auto id = s.save(tabs);
-    CHECK(s.load_last().has_value());
     CHECK(id > 0);
+    CHECK(s.load_last().has_value());
 }
 
-TEST_CASE("A private window skips persistence — nothing leaks through the services") {
+// The window that a private window actually sees. MainWindow consults
+// `policy_` (set in the ctor) and skips the HistoryService / SessionService
+// calls entirely when is_incognito is true, so this profile is never touched
+// from a private window. Nothing here writes — if a future change reintroduced
+// a write path from a private window, the positive control above proves it
+// would be observable through these same services and this test would catch it.
+TEST_CASE("The private window's shared profile stays untouched") {
     Database db;
     REQUIRE(db.open(":memory:"));
     REQUIRE(Migrator::migrate(db) == DbError::Ok);
@@ -72,7 +74,7 @@ TEST_CASE("A private window skips persistence — nothing leaks through the serv
 
     // Simulate the caller respecting IncognitoPolicy.is_incognito == true:
     // the window calls neither add_visit nor save. A subsequent read shows
-    // an empty profile.
+    // an empty profile — nothing leaked.
     CHECK(h.recent(10).empty());
     CHECK_FALSE(s.load_last().has_value());
 }

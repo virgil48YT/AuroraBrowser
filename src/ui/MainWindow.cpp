@@ -274,22 +274,24 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
                        bool is_incognito)
     : QMainWindow(parent), tabs_(), services_(services) {
     incognito_ = is_incognito;
+    policy_.is_incognito = is_incognito;  // drive IncognitoPolicy checks below
     if (incognito_) {
         // core::IncognitoPolicy: a private window must never write to the
-        // regular profile. History and download metadata are skipped, the
-        // session save/restore hooks are off, extensions are disabled, and
-        // preferences/bookmarks become read-only. We null the write-capable
-        // service pointers in the local copy so every existing null-check
-        // down through the code already handles "no profile" — a private
-        // window is just a profile-less window.
+        // regular profile. History, download metadata, session snapshots,
+        // bookmark writes and preference writes are all skipped; extensions
+        // are disabled (their service workers/cookies are global, not private-
+        // context-scoped). The internal pages read the profile, so they still
+        // show real history/bookmarks for the user — but no change a private
+        // window makes can reach the disk. Nulled pointers mean every existing
+        // `if (services_.X)` check below already handles this: a private window
+        // is simply a window with a read-only profile.
         services_.history = nullptr;
         services_.downloads = nullptr;
         services_.session = nullptr;
         services_.extensions = nullptr;
         services_.adblock = nullptr;
-        // `prefs` and `bookmarks` stay shared read-only. Writes are rejected
-        // below by `policy_` (see on_bookmark_bar_toggled, apply_theme_preference
-        // and every set_bool call — they consult `policy_`).
+        services_.bookmarks = nullptr;
+        services_.prefs = nullptr;
     }
     setWindowTitle(incognito_ ? QStringLiteral("Aurora (Incognito)")
                                : QStringLiteral("Aurora"));
@@ -2115,6 +2117,15 @@ bool MainWindow::transfer_tab_to(MainWindow& destination, core::TabId id,
         destination.tabs_.contains(id)) {
         return false;
     }
+    // core::IncognitoPolicy: a private tab must never cross into a regular
+    // window (it would then browse through the regular profile's request
+    // context). Going the other way — dropping a regular tab into a private
+    // window — is likewise rejected: the tab's CEF browser keeps its original
+    // request context, which would silently re-attach regular-profile cookies
+    // into what the user believes is private mode. (Adopting the other
+    // direction would also break: the adopter creates a fresh browser for the
+    // tab in its own context.)
+    if (incognito_ != destination.incognito_) return false;
     auto transfer = release_tab_for_transfer(id);
     if (!transfer) return false;
     const TransferredTab rollback = *transfer;
@@ -2153,7 +2164,10 @@ bool MainWindow::transfer_tab_to(MainWindow& destination, core::TabId id,
 void MainWindow::tear_off_tab(core::TabId id, const QPoint& release_global,
                               const QPoint& grab_offset) {
     if (!tabs_.contains(id)) return;
-    auto* detached = new MainWindow(services_);
+    // core::IncognitoPolicy: a torn-off tab keeps its window's privacy mode —
+    // a private tab must not end up in a regular-profile window.
+    auto* detached = new MainWindow(services_, /*parent=*/nullptr,
+                                    /*is_incognito=*/incognito_);
     detached->setAttribute(Qt::WA_DeleteOnClose, true);
     detached->inherit_theme_from(this);
     // Chrome sizes the torn-off window like the source but never hands the

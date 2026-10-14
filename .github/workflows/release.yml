@@ -1,20 +1,25 @@
-# Build Aurora for Windows on a real Windows runner and publish a GitHub
-# release with the Qt6 shell artifact attached. Triggered by pushing a tag
-# matching `v*` (e.g. `git tag v0.1.0 && git push --tags`). Tests must pass
-# before the release is published; a failed build produces no release.
+# Publish a GitHub release for Aurora on a tag matching `v*`
+# (e.g. `git tag v0.1.0 && git push --tags`).
+#
+# The full CEF-enabled Windows build runs first (not the Qt-only shell): the
+# fetch_cef.sh step gets the real Chromium engine, aurora_buildid stamps and
+# verifies the package manifest, and packaging/windows/build_sfx.sh produces
+# the single self-extracting aurora_setup.exe (double-click -> %LOCALAPPDATA%
+# \Aurora\app -> launches aurora_bootstrap.exe, which verifies the build ID
+# and materializes the CEF resources into %LOCALAPPDATA%\Aurora\cef\<build_id>\).
+# A failed build produces no release.
 name: Release
 
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   release:
-    name: Windows release build
+    name: Windows release (CEF + SFX)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,12 +35,17 @@ jobs:
         with:
           arch: x64
 
-      - name: Configure
+      - name: Fetch CEF (Windows)
+        run: bash scripts/fetch_cef.sh
+        env:
+          PLATFORM: windows64
+
+      - name: Configure with CEF
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          -DAURORA_BUILD_TESTS=ON -DAURORA_BUILD_APP=ON
-        env:
-          CMAKE_BUILD_PARALLEL_LEVEL: '4'
+          -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON
+          -DCEF_ROOT=${{ github.workspace }}/third_party/cef
+          -DCEF_RUNTIME_LIBRARY_FLAG=/MD
 
       - name: Build
         run: cmake --build build --config Release
@@ -43,20 +53,43 @@ jobs:
       - name: Run unit tests
         run: ./build/bin/aurora_tests.exe
 
-      - name: Package
+      - name: Package (windeployqt + CEF resources)
         run: |
           mkdir -p package
           cp build/bin/aurora_browser.exe package/
           cp build/bin/aurora_bootstrap.exe package/
           windeployqt --release --no-translations --no-system-d3d-compiler \
                      --no-opengl-sw package/aurora_browser.exe
-          mkdir dist
-          powershell -Command "Compress-Archive -Path 'package/*' -DestinationPath 'dist/aurora-windows-x64.zip'"
+          cp -r third_party/cef/Resources/* package/ 2>/dev/null || true
+          cp -r third_party/cef/Release/* package/ 2>/dev/null || true
+          rm -f package/*.lib package/*.exp package/*.pdb
         shell: bash
 
-      - name: Create release and upload artifact
+      - name: Stamp and verify the build ID
+        run: |
+          ./build/bin/aurora_buildid.exe generate \
+              --root package \
+              --cef-root third_party/cef \
+              --platform windows64 \
+              --out package/aurora_build.manifest
+          ./build/bin/aurora_buildid.exe show --manifest package/aurora_build.manifest
+          ./build/bin/aurora_buildid.exe verify --manifest package/aurora_build.manifest \
+              --root package --full
+        shell: bash
+
+      - name: Build the single-exe SFX installer
+        run: |
+          mkdir -p dist
+          bash packaging/windows/build_sfx.sh package dist/aurora_setup.exe \
+              assets/icons/aurora.ico
+          # Fail loudly if the SFX step silently skipped the install path or
+          # produced nothing.
+          test -s dist/aurora_setup.exe
+        shell: bash
+
+      - name: Create release and upload installer
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/aurora-windows-x64.zip
+          files: dist/aurora_setup.exe
           generate_release_notes: true
           fail_on_unmatched_files: true

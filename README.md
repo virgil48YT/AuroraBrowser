@@ -40,10 +40,9 @@ budget the architecture is shaped to meet.
 - GPU/WebGL command-line policy (`cef::GpuPolicy`) — unit-tested without CEF
 - Logging with configurable levels; startup milestones + scoped timers
 
-**Implemented, compiles and runs with Qt6** (verified on Linux with Qt6:
-clean build under the strict warning set, `QT_QPA_PLATFORM=offscreen
-./build/bin/aurora_browser --smoke-test` exits 0 after building every
-internal page):
+**Implemented, compiles and runs with Qt6** (the Qt shell compiles on Linux
+with Qt6 and the smoke test reports it builds every internal page and exits 0
+when CEF is not provided):
 - Chrome-style layout: the tab strip sits at the very top of the window, the
   navigation/omnibox toolbar directly beneath it, then the content area, with
   the find bar docked below the content
@@ -104,13 +103,15 @@ internal page):
 - Incognito (private) windows (Ctrl+Shift+N, or Browser menu → New Incognito
   Window): a private window shares the visual chrome but never writes to the
   regular profile — history, download metadata, session snapshots, bookmarks,
-  preferences and extensions are all skipped or read-only for it
+  preferences and extensions are all skipped for it
   (`core::IncognitoPolicy` drives the decision points and is unit-tested in
   `tests/test_incognito.cpp`). The window's tabs live in a private in-memory
-  CEF request context (empty `cache_path`) whose only reference is the window's
-  `CefAdapter`, so cookies, cache and storage die with the window. The title
-  carries the "(Incognito)" suffix. Popups opened from a private tab inherit the
-  private context via CEF's own popup rule.
+  CEF request context (empty `cache_path`) created by that window's
+  `CefAdapter`, so cookies, cache and storage are discarded with the window.
+  The title carries the "(Incognito)" suffix. Popups opened from a private tab
+  inherit the private context via CEF's own popup rule, and tabs cannot be
+  dragged into or out of a private window (the transfer is rejected rather
+  than silently re-attaching regular-profile cookies into private mode).
 - Extensions button in the toolbar wired to `ExtensionService` and an
   `aurora://extensions` internal page (unpacking `.crx` via `ZipExtractor` is
   implemented but not covered by a passing test here)
@@ -167,17 +168,10 @@ built or tested here): Windows self-extracting installer packaging
 (`packaging/windows/build_sfx.sh`, `sfx_config.txt`, `rcedit-x64.exe`, the
 `aurora_bootstrap` launcher and the build-ID mechanism described in
 [docs/build-id.md](docs/build-id.md)) and the Qt-only `build-windows-local.bat`
-script. These are not wired into CI; the release workflow ships the folder
-artifact instead.
+script.
 
 **Not yet implemented** (clearly marked in source, no fake UI): cosmetic ad
 filtering (element hiding), background tab suspension.
-
-## Keyboard shortcuts (addendum)
-
-| Shortcut | Action |
-|---|---|
-| Ctrl+Shift+N | New incognito window |
 
 
 ## Ad blocking (Aurora Shields)
@@ -270,11 +264,16 @@ tab, then exits 0 — enough to catch chrome regressions with no display.
 ## Releases
 
 Push a tag matching `v*` (e.g. `git tag v0.1.0 && git push --tags`) and the
-[release workflow](.github/workflows/release.yml) runs the same Qt6 Windows
-build + unit tests, then publishes a GitHub release with
-`aurora-windows-x64.zip` attached (a folder artifact built with `windeployqt`,
-not a single-exe SFX — the packaging scripts under `packaging/windows/` exist
-for the SFX variant but are not wired into CI yet).
+[release workflow](.github/workflows/release.yml) runs the full CEF-enabled
+Windows build (fetch_cef.sh + `-DAURORA_ENABLE_CEF=ON`) + unit tests, then
+packages with `windeployqt` + the CEF resources, stamps and verifies the
+build-ID manifest, builds the single-exe self-extracting installer
+(`aurora_setup.exe`) via `packaging/windows/build_sfx.sh`, and publishes a
+GitHub release with it attached. Double-click installs to
+`%LOCALAPPDATA%\Aurora\app` and launches `aurora_bootstrap.exe`, which
+verifies the build ID and materializes the CEF resources into
+`%LOCALAPPDATA%\Aurora\cef\<build_id>\` on first launch. A failed build
+produces no release.
 
 See [docs/build.md](docs/build.md), [docs/architecture.md](docs/architecture.md),
 [docs/performance-budgets.md](docs/performance-budgets.md), and

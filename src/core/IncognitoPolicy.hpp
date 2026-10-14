@@ -33,9 +33,10 @@ struct IncognitoPolicy {
     constexpr bool save_session_snapshot() const { return !is_incognito; }
     constexpr bool restore_session_snapshot() const { return !is_incognito; }
 
-    // Extensions: disabled in incognito windows until explicit
-    // private-context support exists.
-    constexpr bool enable_extensions() const { return false; }
+    // Extensions: enabled for a normal window; disabled in an incognito
+    // window because an extension's service worker/cookie jar is global to
+    // the browser, and private-context extension isolation is not implemented.
+    constexpr bool enable_extensions() const { return !is_incognito; }
 
     // Bookmarks are read-only in an incognito window (adding a bookmark in
     // private mode is rejected rather than silently persisted).
