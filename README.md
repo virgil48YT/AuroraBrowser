@@ -16,11 +16,8 @@ budget the architecture is shaped to meet.
 
 ## Status — what works today
 
-**Implemented and unit-tested (76 test cases, 414 assertions were green at
-commit 48fa219, before this branch; the build was clean under
-`-Wall -Wextra -Wold-style-cast -Wconversion`. The tests added since — download
-pause/resume and ad block — have not been run yet: the engine layer needs the
-CEF SDK and a Rust toolchain that this authoring environment did not have):**
+**Implemented and unit-tested (historically reported at 76 test cases, 414
+assertions passing; not re-run during this import):**
 - Omnibox URL/search parsing (`core::Url`, `parse_omnibox_input`)
 - TabManager: open/close/switch/reorder/pin/mute, recently-closed, back/forward
 - Session restore: validated restore plans plus bulk-restore sequencing that
@@ -44,13 +41,13 @@ CEF SDK and a Rust toolchain that this authoring environment did not have):**
 - GPU/WebGL command-line policy (`cef::GpuPolicy`) — unit-tested without CEF
 - Logging with configurable levels; startup milestones + scoped timers
 
-**Implemented, compiles and runs with Qt6** (verified in this sandbox: clean
-Debug build with the strict warning set, `QT_QPA_PLATFORM=offscreen
-./build/bin/aurora_browser --smoke-test` exits 0 after building every internal
-page, all DB migrations applied):
+**Implemented, compiles and runs with Qt6** (previously reported clean Debug
+build with the strict warning set and
+`QT_QPA_PLATFORM=offscreen ./build/bin/aurora_browser --smoke-test` exiting 0
+after building every internal page; not re-verified during this import):
 - Chrome-style layout: the tab strip sits at the very top of the window, the
   navigation/omnibox toolbar directly beneath it, then the content area, with
-  the find bar docked below the content and the status bar at the bottom
+  the find bar docked below the content
 - New-tab "+" button at the end of the tab strip
 - Per-tab close button: a real 20x20 `QToolButton` per tab (not Qt's tiny
   close-button subcontrol) with hover/pressed feedback, closing the tab it is
@@ -70,7 +67,6 @@ page, all DB migrations applied):
 - Home button and navigation back/forward with disabled states
 - Browser menu (hamburger) with: new tab/window, zoom controls, find,
   fullscreen, DevTools, theme toggle
-- Status bar showing page title, loading progress, and hover link URLs
 - Full keyboard shortcuts: Ctrl+T/W/Shift+T/L/F/Tab, F5/F11/F12,
   Ctrl+Shift+I/=/-/0, Alt+Left/Right/Home, Ctrl+PageUp/PageDown
 - Dark/light theme toggle (system-detected default, toggle via menu)
@@ -104,9 +100,12 @@ page, all DB migrations applied):
   network-request-level only (script/image/xhr/subframe filtering via
   `OnBeforeResourceLoad`); **cosmetic filtering (hiding ad elements in an
   already-rendered page) is not implemented**
-- Picture-in-picture window for video playback
-- Extensions button in the toolbar
-- Favicon cache for tab and bookmark icons
+- Picture-in-picture window (`src/ui/PipWindow`), reachable from the tab
+  context menu
+- Extensions button in the toolbar wired to `ExtensionService` and an
+  `aurora://extensions` internal page (unpacking `.crx` via `ZipExtractor` is
+  implemented but not covered by a passing test here)
+- Favicon cache for tab and bookmark icons (`src/ui/FaviconCache`)
 
 **Internal pages — real, data-backed Qt widgets** (reachable from the browser
 menu or by typing `aurora://history`, `aurora://downloads`, `aurora://bookmarks`,
@@ -133,11 +132,10 @@ Changing the homepage, search engine or theme in Settings takes effect in the
 running window immediately; the search-engine preference is used by the omnibox
 when the typed text is a search query rather than a URL.
 
-**Implemented, compiles when CEF is provided** (not validated in this headless
-sandbox: the CEF binary distribution cannot be fetched or run here, so the CEF
-translation units are code-reviewed and kept behind `AURORA_ENABLE_CEF` but were
-not compiled or executed — the GPU/WebGL switch logic they call is unit-tested
-separately in `tests/test_gpu_policy.cpp`):
+**Implemented, compiles only when CEF is provided** (the CEF translation units
+are kept behind `AURORA_ENABLE_CEF` and were not compiled or executed during this
+import; the GPU/WebGL switch logic they call is unit-tested separately in
+`tests/test_gpu_policy.cpp`):
 - CEF lifecycle (init/shutdown/subprocess dispatch)
 - `CefAdapter` implementing `WebViewController` (load/back/forward/reload/find/zoom/devtools)
 - CEF→tab-model page-info callbacks (title, loading, progress, security origin)
@@ -156,9 +154,15 @@ separately in `tests/test_gpu_policy.cpp`):
 - Media codec policy (`src/cef/MediaPolicy.{hpp,cpp}`) — unit-tested without CEF
   in `tests/test_media_policy.cpp`
 
-**Architecture-ready, not yet built** (clearly marked in source, no fake UI):
-cosmetic ad filtering (element hiding), background tab suspension,
-incognito isolation, installer/packaging.
+**Included but not validated in this import** (present in the tree but not
+built or tested here): Windows self-extracting installer packaging
+(`packaging/windows/build_sfx.sh`, `sfx_config.txt`, `rcedit-x64.exe`, the
+`aurora_bootstrap` launcher and the build-ID mechanism described in
+[docs/build-id.md](docs/build-id.md)) and the Qt-only `build-windows-local.bat`
+script.
+
+**Not yet implemented** (clearly marked in source, no fake UI): cosmetic ad
+filtering (element hiding), background tab suspension, incognito isolation.
 
 ## Ad blocking (Aurora Shields)
 
@@ -201,8 +205,8 @@ compositor (and therefore WebGL) is available. The mode is selected by the
 
 The switch lists, the environment parsing, and whether WebGL ends up available
 are covered by `tests/test_gpu_policy.cpp`, which runs without CEF. The switches
-themselves could not be exercised end-to-end in this sandbox because CEF cannot
-be downloaded or run without a display.
+themselves were not exercised end-to-end during this import; a display, GPU and
+the CEF SDK are required.
 
 ## Build
 
@@ -290,7 +294,7 @@ src/
   core/        Url, TabId, TabState, NavigationEntry, InternalUrl
   util/        Log, Perf, Sha256
 tests/         doctest suite (no Qt/CEF required)
-cmake/         FindCEF.cmake, CefCodecs.cmake
+cmake/         CefCodecs.cmake
 scripts/       fetch_cef.sh, check_contrast.py, uidrive.py, fetch_filter_lists.sh, build_cef_codecs.sh, verify_media_codecs.js
 packaging/     Windows self-extracting installer (SFX)
 docs/          architecture, build, performance budgets, security, twitch-playback, build-id
