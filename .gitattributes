@@ -1,0 +1,17 @@
+# Normalize line endings: CRLF on checkout for Windows, LF on commit.
+* text=auto
+
+# CMake and C++ sources must stay LF in the repo so hashes are stable.
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.h   text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+
+# Shell scripts stay LF.
+*.sh text eol=lf
+
+# Binary assets are never diffed.
+*.png binary
+*.ico binary
+*.zip binary

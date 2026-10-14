@@ -1,0 +1,17 @@
+/build/
+/build-test/
+/vbuild2/
+/verify/
+/third_party/cef/
+/third_party/cef-codec/
+/.cef-codec-build/
+*.o
+*.obj
+.cache/
+compile_commands.json
+*.log
+/build-app/
+/build_qt/
+/build_b1/
+/build_diag/
+build*/

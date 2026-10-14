@@ -1,0 +1,6 @@
+// Windows resource script (auto-configured by CMake with the absolute icon
+// path so the RC compiler always resolves it regardless of working dir).
+// Embeds the Aurora app icon as the executable's main icon (taskbar, window
+// title, Explorer file icon).
+#include <windows.h>
+IDI_ICON1 ICON "@AURORA_ICON_PATH@"

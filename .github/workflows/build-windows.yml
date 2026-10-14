@@ -1,0 +1,147 @@
+# Build Aurora for Windows on a real Windows runner and upload a runnable
+# artifact. The Qt6 chrome compiles and runs on every push; the 38 core unit
+# tests gate the build. A best-effort CEF-enabled build runs in parallel and
+# uploads a second artifact only if it succeeds.
+name: Windows build
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------- qt-shell
+  # Guaranteed to build: the Qt6 browser shell without CEF. Produces a runnable
+  # aurora_browser.exe that shows the chrome (web content shows a placeholder
+  # until CEF is wired, which is honest — see README).
+  qt-shell:
+    name: Qt6 shell (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DAURORA_BUILD_TESTS=ON -DAURORA_BUILD_APP=ON
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: '4'
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run unit tests
+        run: ./build/bin/aurora_tests.exe
+
+      - name: Deploy with windeployqt
+        run: |
+          mkdir -p package
+          cp build/bin/aurora_browser.exe package/
+          # The bootstrap launcher starts the browser out of the flat directory.
+          # No single-exe SFX packaging is done — the folder itself is the
+          # artifact, keeping the build simpler and the download smaller.
+          cp build/bin/aurora_bootstrap.exe package/
+          windeployqt --release --no-translations --no-system-d3d-compiler \
+                     --no-opengl-sw package/aurora_browser.exe
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-browser-windows-qt
+          path: package/
+          if-no-files-found: error
+          retention-days: 30
+
+  # ------------------------------------------------------------------- cef
+  # Best effort: builds the full browser with CEF enabled so real web content
+  # loads. The CEF integration code is written against the Windows CEF API
+  # but is not yet validated, so this job is allowed to fail without blocking
+  # the guaranteed Qt-shell artifact above.
+  cef-build:
+    name: Full browser + CEF (Windows)
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Fetch CEF (Windows)
+        run: bash scripts/fetch_cef.sh
+        env:
+          PLATFORM: windows64
+
+      - name: Configure with CEF
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON
+          -DCEF_ROOT=${{ github.workspace }}/third_party/cef
+          -DCEF_RUNTIME_LIBRARY_FLAG=/MD
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run unit tests
+        run: ./build/bin/aurora_tests.exe
+
+      - name: Deploy with windeployqt + CEF resources
+        run: |
+          mkdir -p package
+          cp build/bin/aurora_browser.exe package/
+          cp build/bin/aurora_bootstrap.exe package/
+          windeployqt --release --no-translations --no-system-d3d-compiler \
+                     --no-opengl-sw package/aurora_browser.exe
+          cp -r third_party/cef/Resources/* package/ 2>/dev/null || true
+          cp -r third_party/cef/Release/* package/ 2>/dev/null || true
+          # Drop build-only files so the artifact only carries runtime bits.
+          rm -f package/*.lib package/*.exp package/*.pdb
+        shell: bash
+
+      - name: Stamp the build ID into the package
+        # Hashes the CEF runtime that was just copied in and writes
+        # package/aurora_build.manifest. The bootstrap launcher recomputes this
+        # ID at runtime and extracts the resources into
+        # %LOCALAPPDATA%\Aurora\cef\<build_id>\, so a CEF update can never mix
+        # its .pak files with the previous engine's. See docs/build-id.md.
+        run: |
+          ./build/bin/aurora_buildid.exe generate \
+              --root package \
+              --cef-root third_party/cef \
+              --platform windows64 \
+              --out package/aurora_build.manifest
+          # Fail the job if the manifest does not verify against the package we
+          # are about to ship: a mismatch here becomes a browser that refuses to
+          # start on the user's machine.
+          ./build/bin/aurora_buildid.exe show --manifest package/aurora_build.manifest
+          ./build/bin/aurora_buildid.exe verify --manifest package/aurora_build.manifest \
+              --root package --full
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-browser-windows-cef
+          path: package/
+          if-no-files-found: error
+          retention-days: 30

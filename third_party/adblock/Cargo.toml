@@ -1,0 +1,27 @@
+[package]
+name = "aurora-adblock-ffi"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "C-ABI wrapper around brave/adblock-rust for the Aurora browser"
+
+[lib]
+name = "aurora_adblock"
+crate-type = ["staticlib"]
+
+[dependencies]
+# Pinned to the 0.8 line: its public API (Engine::from_rules,
+# Request::new -> Result, check_network_request) is what the FFI below is
+# written against. Bump deliberately and re-check the signatures.
+adblock = "0.8"
+# Serialize the engine's complete cosmetic resource object rather than
+# coupling the C ABI to the layout of Rust collections or action enums.
+serde_json = "1"
+# adblock 0.8 serializes with rmp-serde 0.15, which still calls the
+# read_data_* helpers that rmp 0.8.15 (released later) removed. A direct
+# pin forces the whole tree onto the last compatible rmp until rmp-serde
+# catches up. Drop this override once adblock moves to rmp-serde 1.x.
+rmp = "=0.8.14"
+
+[profile.release]
+opt-level = 2
