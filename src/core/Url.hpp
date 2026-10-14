@@ -87,7 +87,16 @@ std::string search_engine_home(std::string_view engine_id);
 // routed to a search engine (URL-encoded); everything else is the display URL.
 // The overload taking an engine template is what the omnibox uses so the
 // user's configured engine is honored; the default keeps DuckDuckGo.
-std::string resolve_navigation(const Url& url);
-std::string resolve_navigation(const Url& url, std::string_view engine_template);
+// A scheme-only upgrade, with no network probe or insecure retry. The host,
+// explicit port, credentials, path, query and fragment are left untouched.
+std::string upgrade_http_url(std::string_view url, bool https_only = true);
+std::string resolve_navigation(const Url& url, bool https_only = true);
+std::string resolve_navigation(const Url& url, std::string_view engine_template,
+                               bool https_only = true);
+// Keep string-literal engine templates from selecting the bool overload.
+inline std::string resolve_navigation(const Url& url, const char* engine_template,
+                                      bool https_only = true) {
+    return resolve_navigation(url, std::string_view(engine_template), https_only);
+}
 
 } // namespace aurora::core

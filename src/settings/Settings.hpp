@@ -23,6 +23,12 @@ struct PrefDefaults {
     static constexpr std::string_view kTheme = "system";  // system|light|dark
     static constexpr bool kRestoreSession = true;
     static constexpr bool kDownloadsAskWhere = false;
+    static constexpr bool kHttpsOnly = true;
+    static constexpr bool kClearOnExitCookies = false;
+    static constexpr bool kClearOnExitHistory = false;
+    static constexpr bool kClearOnExitDownloads = false;
+    static constexpr bool kCertAudit = true;
+    static constexpr bool kRefererTrim = true;
     static constexpr int kTabSuspendAfterMinutes = 30;  // 0 = disabled
     static constexpr int kTabSuspendMinMinutes = 0;
     static constexpr int kTabSuspendMaxMinutes = 24 * 60;
@@ -48,6 +54,12 @@ struct PrefKeys {
     // Global kill switch for Aurora Shields (network ad blocking). Per-site
     // exceptions live in their own table, not here. Default ON.
     static constexpr std::string_view kAdblockEnabled = "privacy.adblock";
+    static constexpr std::string_view kHttpsOnly = "privacy.https_only";
+    static constexpr std::string_view kClearOnExitCookies = "privacy.clear_on_exit.cookies";
+    static constexpr std::string_view kClearOnExitHistory = "privacy.clear_on_exit.history";
+    static constexpr std::string_view kClearOnExitDownloads = "privacy.clear_on_exit.downloads";
+    static constexpr std::string_view kCertAudit = "privacy.cert_audit";
+    static constexpr std::string_view kRefererTrim = "privacy.referer_trim";
     static constexpr std::string_view kReducedMotion = "accessibility.reduced_motion";
 };
 

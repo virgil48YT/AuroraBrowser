@@ -190,6 +190,7 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "downloads/DownloadService.hpp"
 #include "extensions/ExtensionService.hpp"
 #include "history/HistoryService.hpp"
+#include "privacy/BrowsingData.hpp"
 #include "session/SessionRestore.hpp"
 #include "session/SessionService.hpp"
 #include "settings/Settings.hpp"
@@ -390,7 +391,7 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
     webview_->set_downloads_dir(downloads_dir.toStdString());
     webview_->set_download_callback(
         [this](const webview::DownloadEvent& ev) {
-            if (!services_.downloads) return;
+            if (privacy_exit_started_ || !services_.downloads) return;
             const auto state_to_ds = [](int s) {
                 switch (s) {
                     case 1: return downloads::DownloadState::Complete;
@@ -544,6 +545,7 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
         });
     webview_->set_page_info_callback(
         [this](core::TabId id, const webview::PageInfo& info) {
+            if (privacy_exit_started_) return;
             const auto* state = tabs_.find(id);
             const auto host = hosts_.find(id);
             // A closing browser can still emit load/title callbacks. They
@@ -2240,7 +2242,7 @@ void MainWindow::navigate_active_tab(const core::Url& url) {
     auto active = tabs_.active();
     if (!active.valid()) {
         // Nothing to navigate: open a tab at the requested address instead.
-        tabs_.open(url.raw());
+        open_url_in_new_tab(url);
         return;
     }
 
@@ -2251,11 +2253,12 @@ void MainWindow::navigate_active_tab(const core::Url& url) {
     }
 
     // A bare query goes to the user's configured search engine.
-    const core::Url target =
-        url.is_search_query()
-            ? core::Url(core::resolve_navigation(
-                  url, core::search_engine_template(search_engine_)))
-            : url;
+    const bool https_only = services_.prefs
+        ? services_.prefs->get_bool(settings::PrefKeys::kHttpsOnly,
+                                    settings::PrefDefaults::kHttpsOnly)
+        : settings::PrefDefaults::kHttpsOnly;
+    const core::Url target(core::resolve_navigation(
+        url, core::search_engine_template(search_engine_), https_only));
 
     // Leaving an internal page: the tab shows web content again.
     tab_pages_.erase(active);
@@ -2460,11 +2463,12 @@ void MainWindow::open_url_in_new_tab(const core::Url& url) {
         tabs_.open(raw);
         return;
     }
-    const core::Url target =
-        url.is_search_query()
-            ? core::Url(core::resolve_navigation(
-                  url, core::search_engine_template(search_engine_)))
-            : url;
+    const bool https_only = services_.prefs
+        ? services_.prefs->get_bool(settings::PrefKeys::kHttpsOnly,
+                                    settings::PrefDefaults::kHttpsOnly)
+        : settings::PrefDefaults::kHttpsOnly;
+    const core::Url target(core::resolve_navigation(
+        url, core::search_engine_template(search_engine_), https_only));
     tabs_.open(target.raw());
 }
 
@@ -2719,19 +2723,41 @@ void MainWindow::on_clear_browsing_data() {
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (answer != QMessageBox::Yes) return;
 
-    int history_rows = 0;
-    int download_rows = 0;
-    if (services_.history) history_rows = services_.history->clear();
-    if (services_.downloads) download_rows = services_.downloads->clear();
+    clear_browsing_data(true, true, false);
+}
+
+void MainWindow::clear_browsing_data(bool history, bool downloads, bool cookies) {
+    if (!policy_.may_clear_profile_data()) return;
+    const auto rows = privacy::clear_browsing_data(
+        policy_, services_.history, services_.downloads, history, downloads);
+#if defined(AURORA_HAS_CEF)
+    if (cookies && !cef::clear_profile_cookies()) {
+        AURORA_LOG(util::LogLevel::Warn, "privacy")
+            << "cookie deletion/flush failed or timed out before shutdown";
+    }
+#else
+    (void)cookies;
+#endif
     flash_status(QString("Cleared %1 history entries and %2 downloads")
-                     .arg(history_rows)
-                     .arg(download_rows));
+                     .arg(rows.history)
+                     .arg(rows.downloads));
 
     // Any open internal page must not keep showing deleted rows.
     for (auto& [page, widget] : pages_) {
         (void)page;
         widget->refresh();
     }
+}
+
+void MainWindow::clear_on_exit() {
+    if (!policy_.may_clear_profile_data() || !services_.prefs) return;
+    const bool cookies = services_.prefs->get_bool(
+        settings::PrefKeys::kClearOnExitCookies, settings::PrefDefaults::kClearOnExitCookies);
+    const bool history = services_.prefs->get_bool(
+        settings::PrefKeys::kClearOnExitHistory, settings::PrefDefaults::kClearOnExitHistory);
+    const bool downloads = services_.prefs->get_bool(
+        settings::PrefKeys::kClearOnExitDownloads, settings::PrefDefaults::kClearOnExitDownloads);
+    if (cookies || history || downloads) clear_browsing_data(history, downloads, cookies);
 }
 
 void MainWindow::on_close_tab() {
@@ -3925,6 +3951,13 @@ void MainWindow::showEvent(QShowEvent* e) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* e) {
+    if (privacy_exit_started_) {
+        e->accept();
+        return;
+    }
+    // Download clients retain a copy of the host callback, so clearing the
+    // controller's callback alone would not suppress late persistent writes.
+    privacy_exit_started_ = true;
     // Diagnostic for the startup crash: the browser was closing within ~1s of
     // "window shown" with a clean shutdown and no Chromium ERROR line. Logging
     // whether the close was OS/window-manager-initiated (spontaneous) and how
@@ -3959,6 +3992,7 @@ void MainWindow::closeEvent(QCloseEvent* e) {
     const bool is_last_visible = was_visible && visible_main_window_count() <= 1;
     if (was_visible) hide();  // vanish now; teardown happens off-screen
     prepare_shutdown();
+    clear_on_exit();
     if (is_last_visible) {
         QApplication::quit();
     }

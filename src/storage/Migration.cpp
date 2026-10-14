@@ -137,6 +137,17 @@ DbError create_adblock_exceptions(Database& db) {
     )SQL");
 }
 
+// V5 -> V6: first-seen, per-origin leaf-certificate SHA-256 fingerprints.
+// This is an audit alarm, not a TLS trust override or HPKP enforcement.
+DbError create_certificate_audit(Database& db) {
+    return db.execute(R"SQL(
+        CREATE TABLE IF NOT EXISTS certificate_audit (
+            origin TEXT PRIMARY KEY,
+            sha256 TEXT NOT NULL CHECK(length(sha256) = 64)
+        );
+    )SQL");
+}
+
 } // namespace
 
 std::vector<Migration> Migrator::builtin_migrations() {
@@ -146,6 +157,7 @@ std::vector<Migration> Migrator::builtin_migrations() {
         {2, "create downloads + sessions", create_downloads_and_sessions},
         {3, "create extensions", create_extensions},
         {4, "create adblock exceptions", create_adblock_exceptions},
+        {5, "create certificate fingerprint audit", create_certificate_audit},
     };
 }
 

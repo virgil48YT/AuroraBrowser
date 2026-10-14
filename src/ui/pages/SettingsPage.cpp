@@ -180,6 +180,45 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
         QStringLiteral("Block ads and trackers (Aurora Shields)"), privacy);
     adblock_enabled_->setObjectName("PageCheck");
     privacy_form->addRow(QString(), adblock_enabled_);
+    // Additional privacy rows use properties so refresh() can update them
+    // without changing the existing controls or their write/read-only policy.
+    struct PrivacyRow {
+        const char* label;
+        std::string_view key;
+        bool fallback;
+    };
+    const PrivacyRow privacy_rows[] = {
+        {"Use HTTPS-only mode (no insecure fallback)",
+         settings::PrefKeys::kHttpsOnly, settings::PrefDefaults::kHttpsOnly},
+        {"Clear cookies when closing this window",
+         settings::PrefKeys::kClearOnExitCookies,
+         settings::PrefDefaults::kClearOnExitCookies},
+        {"Clear browsing history when closing this window",
+         settings::PrefKeys::kClearOnExitHistory,
+         settings::PrefDefaults::kClearOnExitHistory},
+        {"Clear the download list when closing this window (keep files)",
+         settings::PrefKeys::kClearOnExitDownloads,
+         settings::PrefDefaults::kClearOnExitDownloads},
+        {"Warn when a site's certificate fingerprint changes",
+         settings::PrefKeys::kCertAudit, settings::PrefDefaults::kCertAudit},
+        {"Trim Referer headers to the referring origin",
+         settings::PrefKeys::kRefererTrim, settings::PrefDefaults::kRefererTrim},
+    };
+    for (const auto& row : privacy_rows) {
+        auto* box = new QCheckBox(QString::fromUtf8(row.label), privacy);
+        box->setObjectName("PageCheck");
+        box->setProperty("auroraPrivacyKey",
+                         QString::fromStdString(std::string(row.key)));
+        box->setProperty("auroraPrivacyDefault", row.fallback);
+        box->setEnabled(prefs_ != nullptr);
+        box->setChecked(prefs_ ? prefs_->get_bool(row.key, row.fallback)
+                               : row.fallback);
+        privacy_form->addRow(QString(), box);
+        connect(box, &QCheckBox::toggled, this, [this, box, key = row.key](bool on) {
+            if (loading_ || !prefs_ || !box->isEnabled()) return;
+            prefs_->set_bool(key, on);
+        });
+    }
     column->addWidget(privacy);
 
     if (!prefs_) {
@@ -329,6 +368,14 @@ void SettingsPage::refresh() {
         prefs_->get_bool(settings::PrefKeys::kAdblockEnabled, true));
     reduced_motion_->setChecked(
         prefs_->get_bool(settings::PrefKeys::kReducedMotion, false));
+
+    for (auto* box : findChildren<QCheckBox*>()) {
+        const auto key = box->property("auroraPrivacyKey");
+        if (!key.isValid()) continue;
+        box->setChecked(prefs_->get_bool(
+            key.toString().toStdString(),
+            box->property("auroraPrivacyDefault").toBool()));
+    }
 
     loading_ = false;
 }

@@ -34,6 +34,7 @@
 #include "downloads/DownloadService.hpp"
 #include "extensions/ExtensionService.hpp"
 #include "history/HistoryService.hpp"
+#include "privacy/CertificateAudit.hpp"
 #include "core/CefLayout.hpp"
 #include "core/InternalUrl.hpp"
 #include "core/Url.hpp"
@@ -419,6 +420,19 @@ int main(int argc, char** argv) {
     extensions::ExtensionService extension_svc(db);
     session::SessionService session_svc(db);
     adblock::AdblockService adblock_svc(db);
+    privacy::CertificateAudit certificate_audit(db);
+
+#if defined(AURORA_HAS_CEF)
+    cef::configure_privacy_preferences(db.is_open() ? &prefs : nullptr,
+                                      db.is_open() ? &certificate_audit : nullptr);
+    // Refresh the network-thread snapshot when settings change in any window,
+    // even for existing pages issuing requests without a new navigation.
+    QTimer privacy_refresh;
+    privacy_refresh.setInterval(250);
+    QObject::connect(&privacy_refresh, &QTimer::timeout,
+                     [] { cef::refresh_privacy_preferences(); });
+    privacy_refresh.start();
+#endif
 
     // Favicons are cached on disk per profile so the tab strip, history and
     // bookmarks show real site icons on the first paint after a restart
@@ -515,7 +529,9 @@ int main(int argc, char** argv) {
     // (they are destroyed when this function returns), so CEF can close the
     // browsers cleanly.
     cef_pump.stop();
+    privacy_refresh.stop();
     window.prepare_shutdown();
+    cef::configure_privacy_preferences(nullptr, nullptr);
     const auto cef_shutdown_start = std::chrono::steady_clock::now();
     cef::shutdown();
     const auto cef_shutdown_ms =

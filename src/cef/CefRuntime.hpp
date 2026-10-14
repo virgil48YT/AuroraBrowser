@@ -13,6 +13,8 @@
 #include <vector>
 
 namespace aurora::webview { class WebViewController; }
+namespace aurora::settings { class Settings; }
+namespace aurora::privacy { class CertificateAudit; }
 
 namespace aurora::cef {
 
@@ -43,5 +45,16 @@ int run_subprocess(int argc, char** argv);
 // Construct the concrete web-view controller (a CefAdapter). Returns null if
 // CEF is not available at runtime.
 std::unique_ptr<aurora::webview::WebViewController> make_webview_controller();
+
+// Borrowed profile objects; configure/refresh on the UI thread only. Request
+// callbacks read atomic snapshots, never Settings or SQLite on CEF's IO thread.
+void configure_privacy_preferences(settings::Settings* prefs,
+                                   privacy::CertificateAudit* audit);
+void refresh_privacy_preferences();
+
+// Delete and flush the regular profile's CEF cookies before CEF shutdown.
+// Call only after a normal window's browsers have drained, never in incognito.
+// Returns false on failure/timeout rather than claiming an incomplete clear.
+bool clear_profile_cookies();
 
 } // namespace aurora::cef

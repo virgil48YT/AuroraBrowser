@@ -48,6 +48,10 @@ struct IncognitoPolicy {
     // Preferences are read from the normal profile but never written from a
     // private window. Enforced by Settings' read-only view, not a null pointer.
     constexpr bool may_write_preferences() const { return !is_incognito; }
+
+    // Privacy actions must not mutate the shared profile from a private window.
+    constexpr bool may_clear_profile_data() const { return !is_incognito; }
+    constexpr bool may_write_certificate_audit() const { return !is_incognito; }
 };
 
 } // namespace aurora::core

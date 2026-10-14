@@ -314,6 +314,8 @@ private slots:
     void on_prev_tab();
     void on_theme_toggled();
     void on_clear_browsing_data();
+    void clear_browsing_data(bool history, bool downloads, bool cookies);
+    void clear_on_exit();
     // The downloads tray button / Ctrl+J: toggle the recent-downloads dropdown
     // popover under the button (the full history lives on aurora://downloads,
     // reachable from the popover's footer and the browser menu).
@@ -482,6 +484,8 @@ private:
     // Private (incognito) window flag. Drives core::IncognitoPolicy decisions
     // throughout this class; see the constructor for how it changes the bundle.
     bool incognito_ = false;
+    // Gate late engine writes while clear-on-exit drains asynchronous callbacks.
+    bool privacy_exit_started_ = false;
     // The policy the window consults for "may I write this?" decisions.
     core::IncognitoPolicy policy_;
     std::unique_ptr<webview::WebViewController> webview_;

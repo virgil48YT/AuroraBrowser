@@ -116,6 +116,7 @@ target_sources(aurora_core
         src/session/SessionService.cpp
         src/session/SessionRestore.cpp
         src/settings/Settings.cpp
+        src/privacy/CertificateAudit.cpp
         src/adblock/AdblockEngine.cpp
         src/adblock/AdblockService.cpp
 )

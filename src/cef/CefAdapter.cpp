@@ -3,21 +3,29 @@
 #include "adblock/AdblockEngine.hpp"
 #include "adblock/AdblockService.hpp"
 #include "cef/MediaPolicy.hpp"
+#include "cef/CefRuntime.hpp"
+#include "privacy/CertificateAudit.hpp"
+#include "settings/Settings.hpp"
 #include "util/Log.hpp"
+#include "util/Sha256.hpp"
 
 #include "include/cef_audio_handler.h"
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
 #include "include/cef_context_menu_handler.h"
+#include "include/cef_cookie.h"
 #include "include/cef_download_handler.h"
 #include "include/cef_download_item.h"
 #include "include/cef_image.h"
+#include "include/cef_navigation_entry.h"
 #include "include/cef_parser.h"
 #include "include/cef_permission_handler.h"
 #include "include/cef_request_context.h"
 #include "include/cef_request_context_handler.h"
 #include "include/cef_request_handler.h"
 #include "include/cef_resource_request_handler.h"
+#include "include/cef_ssl_info.h"
+#include "include/cef_ssl_status.h"
 #include "include/cef_task.h"
 
 #include "permissions/PermissionStore.hpp"
@@ -29,6 +37,7 @@
 #include <functional>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -69,6 +78,78 @@ using SavePathChooser =
 AskWhereProvider g_ask_where_provider;
 DownloadsDirProvider g_downloads_dir_provider;
 SavePathChooser g_save_path_chooser;
+
+// Only the UI thread touches these borrowed profile services. The network
+// hot path uses atomics, just as ad blocking uses a separate locked snapshot.
+settings::Settings* g_privacy_prefs = nullptr;
+privacy::CertificateAudit* g_certificate_audit = nullptr;
+std::atomic<bool> g_https_only{settings::PrefDefaults::kHttpsOnly};
+std::atomic<bool> g_referer_trim{settings::PrefDefaults::kRefererTrim};
+std::atomic<bool> g_cert_audit{settings::PrefDefaults::kCertAudit};
+
+// Use Chromium's parser, not core::Url's display parser, for security keys.
+// In particular query-only URLs, credentials, IPv6 and default ports must
+// never become distinct pins or leak into an outgoing Referer.
+std::string web_origin(const CefString& url) {
+    CefURLParts parts;
+    if (!CefParseURL(url, parts)) return {};
+    const auto scheme = CefString(&parts.scheme).ToString();
+    auto host = CefString(&parts.host).ToString();
+    const auto port = CefString(&parts.port).ToString();
+    if ((scheme != "http" && scheme != "https") || host.empty()) return {};
+    if (host.find(':') != std::string::npos && host.front() != '[')
+        host = "[" + host + "]";
+    std::string origin = scheme + "://" + host;
+    if (!port.empty() && !((scheme == "https" && port == "443") ||
+                          (scheme == "http" && port == "80")))
+        origin += ":" + port;
+    return origin;
+}
+
+std::string certificate_fingerprint(CefRefPtr<CefX509Certificate> certificate) {
+    if (!certificate) return {};
+    const auto der = certificate->GetDEREncoded();
+    if (!der || der->GetSize() == 0) return {};
+    std::vector<unsigned char> bytes(der->GetSize());
+    if (der->GetData(bytes.data(), bytes.size(), 0) != bytes.size()) return {};
+    util::Sha256 hash;
+    hash.update(bytes.data(), bytes.size());
+    return hash.finish_hex();
+}
+
+struct CookieClearState {
+    std::atomic<bool> done{false};
+    std::atomic<bool> success{false};
+};
+
+class CookieFlushCallback final : public CefCompletionCallback {
+public:
+    explicit CookieFlushCallback(std::shared_ptr<CookieClearState> state)
+        : state_(std::move(state)) {}
+    void OnComplete() override {
+        state_->success.store(true);
+        state_->done.store(true);
+    }
+private:
+    std::shared_ptr<CookieClearState> state_;
+    IMPLEMENT_REFCOUNTING(CookieFlushCallback);
+};
+
+class CookieDeleteCallback final : public CefDeleteCookiesCallback {
+public:
+    CookieDeleteCallback(CefRefPtr<CefCookieManager> manager,
+                         std::shared_ptr<CookieClearState> state)
+        : manager_(manager), state_(std::move(state)) {}
+    void OnComplete(int num_deleted) override {
+        if (num_deleted < 0 ||
+            !manager_->FlushStore(new CookieFlushCallback(state_)))
+            state_->done.store(true);
+    }
+private:
+    CefRefPtr<CefCookieManager> manager_;
+    std::shared_ptr<CookieClearState> state_;
+    IMPLEMENT_REFCOUNTING(CookieDeleteCallback);
+};
 
 // Cancel handles for running downloads, keyed by CEF download id.
 //
@@ -1271,7 +1352,7 @@ public:
               FullscreenEmitter fullscreen_emit,
               KeyEmitter key_emit, ExtensionEmitter extension_emit,
               PermissionEmitter permission_emit,
-              PopupShimProvider popup_shim_provider)
+              PopupShimProvider popup_shim_provider, bool private_window)
         : id_(id), emit_(std::move(emit)), close_emit_(std::move(close_emit)),
           new_tab_emit_(std::move(new_tab_emit)),
           downloads_dir_(std::move(downloads_dir)),
@@ -1283,7 +1364,8 @@ public:
           key_emit_(std::move(key_emit)),
           extension_emit_(std::move(extension_emit)),
           permission_emit_(std::move(permission_emit)),
-          popup_shim_provider_(std::move(popup_shim_provider)) {}
+          popup_shim_provider_(std::move(popup_shim_provider)),
+          private_window_(private_window) {}
 
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override {
         return this;
@@ -1305,6 +1387,42 @@ public:
     // the client has to hand CEF a request handler first for the resource hook
     // below to ever be consulted.
     CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+
+    bool OnBeforeBrowse(CefRefPtr<CefBrowser> /*browser*/,
+                        CefRefPtr<CefFrame> frame,
+                        CefRefPtr<CefRequest> /*request*/,
+                        bool /*user_gesture*/, bool /*is_redirect*/) override {
+        // CEF calls this on the UI thread, so reading Settings is safe.
+        refresh_privacy_preferences();
+        if (frame && frame->IsMain()) ++navigation_generation_;
+        return false; // TLS/navigation policy is never bypassed here.
+    }
+
+    bool OnCertificateError(CefRefPtr<CefBrowser> browser,
+                            cef_errorcode_t /*cert_error*/,
+                            const CefString& request_url,
+                            CefRefPtr<CefSSLInfo> ssl_info,
+                            CefRefPtr<CefCallback> /*callback*/) override {
+        refresh_privacy_preferences();
+        if (ssl_info)
+            audit_certificate(browser, request_url,
+                              ssl_info->GetX509Certificate(), false);
+        // Do not accept an invalid TLS certificate or seed one as trusted.
+        // Aurora currently has no explicit certificate-accept UI; any future
+        // one must call observe(..., explicit_user_accept=true) deliberately.
+        return false;
+    }
+
+    void OnResourceRedirect(CefRefPtr<CefBrowser> /*browser*/,
+                            CefRefPtr<CefFrame> /*frame*/,
+                            CefRefPtr<CefRequest> request,
+                            CefRefPtr<CefResponse> /*response*/,
+                            CefString& new_url) override {
+        if (!request) return;
+        const auto type = request->GetResourceType();
+        if (type == RT_MAIN_FRAME || type == RT_SUB_FRAME)
+            new_url = core::upgrade_http_url(new_url.ToString(), g_https_only.load());
+    }
     // Network filtering: the same client doubles as the resource request
     // handler, so every request this tab makes passes through the ad-block
     // check below before the network stack sees it.
@@ -1328,7 +1446,7 @@ public:
     }
 
     // The ad-block hot path. Runs on CEF's IO thread (not the UI thread), so
-    // it takes NO locks except g_adblock's own mutex and touches no Qt/
+    // it reads privacy atomics, takes g_adblock's mutex and touches no Qt/
     // SQLite objects — the shield badge update is posted to the UI thread.
     // |callback| is only for asynchronous continuation (RV_CONTINUE_ASYNC);
     // every path here answers synchronously, so it stays unused.
@@ -1347,11 +1465,29 @@ public:
                 << "OnBeforeResourceLoad #" << n << " entered url="
                 << request->GetURL().ToString();
         }
-        if (!request || !browser) return RV_CONTINUE;
+        if (!request) return RV_CONTINUE;
+        // Privacy applies BEFORE the top-level/adblock/exception early exits,
+        // and is independent of Aurora Shields and its per-site exceptions.
+        // CEF excludes Referer from HeaderMap: SetReferrer is the supported
+        // way to rewrite it. Preserve Chromium's policy (including no-referrer
+        // and downgrade suppression), and never synthesize an absent header.
+        if (g_referer_trim.load()) {
+            const auto referrer = request->GetReferrerURL();
+            if (!referrer.empty()) {
+                request->SetReferrer(CefString(web_origin(referrer)),
+                                     request->GetReferrerPolicy());
+            }
+        }
+        const cef_resource_type_t type = request->GetResourceType();
+        if (type == RT_MAIN_FRAME || type == RT_SUB_FRAME) {
+            const auto original = request->GetURL().ToString();
+            const auto upgraded = core::upgrade_http_url(original, g_https_only.load());
+            if (upgraded != original) request->SetURL(CefString(upgraded));
+        }
+        if (!browser) return RV_CONTINUE;
         // Never touch the top-level document: cancelling the page itself (not
         // a sub-resource) breaks navigation, and the blocker's "document"
         // category exists for exception rules, not for blocking.
-        const cef_resource_type_t type = request->GetResourceType();
         if (type == RT_MAIN_FRAME) return RV_CONTINUE;
 
         // The per-site exception is decided by the TOP-LEVEL page the user is
@@ -1526,8 +1662,21 @@ public:
 
     void OnLoadEnd(CefRefPtr<CefBrowser> browser,
                    CefRefPtr<CefFrame> frame,
-                   int /*httpStatusCode*/) override {
+                   int httpStatusCode) override {
         if (!browser || !frame) return;
+        if (frame->IsMain() && httpStatusCode > 0) {
+            refresh_privacy_preferences();
+            const auto entry = browser->GetHost()->GetVisibleNavigationEntry();
+            // Ignore stale/failed entries and never associate a prior page's
+            // certificate with a newly requested origin.
+            if (entry && entry->GetURL() == frame->GetURL()) {
+                const auto ssl = entry->GetSSLStatus();
+                if (ssl && ssl->IsSecureConnection())
+                    audit_certificate(browser, entry->GetURL(),
+                                      ssl->GetX509Certificate(),
+                                      ssl->GetCertStatus() == 0);
+            }
+        }
         inject_youtube_adskip(browser, frame);
         inject_cosmetic_filters(browser, frame);
     }
@@ -2006,6 +2155,7 @@ public:
     }
 
     void OnBeforeClose(CefRefPtr<CefBrowser> /*browser*/) override {
+        closed_ = true;
         g_cosmetic_refreshers.erase(id_);
         if (close_emit_) close_emit_(id_);
     }
@@ -2514,6 +2664,53 @@ public:
     }
 
 private:
+    void audit_certificate(CefRefPtr<CefBrowser> browser, const CefString& url,
+                           CefRefPtr<CefX509Certificate> certificate,
+                           bool trusted) {
+        if (closed_ || !browser || !g_cert_audit.load() || !g_certificate_audit)
+            return;
+        const auto origin = web_origin(url);
+        if (!origin.starts_with("https://")) return;
+        const auto fingerprint = certificate_fingerprint(certificate);
+        const core::IncognitoPolicy policy{private_window_};
+        const auto result = g_certificate_audit->observe(
+            origin, fingerprint, policy, trusted);
+        if (result == privacy::CertificateObservation::StorageError) {
+            AURORA_LOG(util::LogLevel::Warn, "privacy")
+                << "certificate audit storage unavailable for " << origin;
+            return;
+        }
+        if (result != privacy::CertificateObservation::Changed) return;
+        AURORA_LOG(util::LogLevel::Warn, "privacy")
+            << "certificate fingerprint changed for " << origin
+            << "; observed SHA-256=" << fingerprint;
+
+        // Minimal audit alarm: it fires after navigation, not as HPKP or an
+        // alternative TLS validator. No continue/accept action is automatic.
+        const std::string html =
+            "<!doctype html><html><head><meta charset=\"utf-8\">"
+            "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'\">"
+            "<title>Certificate fingerprint changed</title></head><body>"
+            "<h1>Certificate fingerprint changed</h1>"
+            "<p>Aurora has previously seen a different TLS certificate for this origin. "
+            "This can be a legitimate certificate renewal, or a sign of interception.</p>"
+            "<p>The saved fingerprint has not been replaced. Verify the change with "
+            "the site owner before disabling certificate auditing and retrying.</p>"
+            "<p>Observed leaf-certificate SHA-256:</p><pre>" + fingerprint +
+            "</pre></body></html>";
+        const std::string warning_url = "data:text/html;base64," +
+            CefBase64Encode(html.data(), html.size()).ToString();
+        const auto generation = navigation_generation_;
+        CefRefPtr<TabClient> self(this);
+        CefPostTask(TID_UI, new AdblockTask([self, browser, generation, warning_url] {
+            // A delayed warning must never overwrite a newer navigation.
+            if (self->closed_ || self->navigation_generation_ != generation ||
+                !browser->IsValid()) return;
+            if (const auto frame = browser->GetMainFrame())
+                frame->LoadURL(CefString(warning_url));
+        }));
+    }
+
     void apply_hidden(CefRefPtr<CefBrowser> browser) {
         if (browser && browser->GetHost())
             browser->GetHost()->WasHidden(!visible_ || suspended_);
@@ -2590,6 +2787,9 @@ private:
     ExtensionEmitter extension_emit_;
     PermissionEmitter permission_emit_;
     PopupShimProvider popup_shim_provider_;
+    bool private_window_ = false;
+    bool closed_ = false;
+    uint64_t navigation_generation_ = 0;
     std::unordered_map<uint32_t, PendingCrx> pending_crx_;
     IMPLEMENT_REFCOUNTING(TabClient);
 };
@@ -2676,9 +2876,10 @@ CefRefPtr<CefBrowser> create_browser(TabId tab, std::string_view url,
         on_key,
         on_extension,
         on_permission,
-        popup_shim));
+        popup_shim, private_context != nullptr));
     return CefBrowserHost::CreateBrowserSync(
-        info, client, CefString(std::string(url)), settings, nullptr,
+        info, client, CefString(core::upgrade_http_url(url, g_https_only.load())),
+        settings, nullptr,
         request_context);
 }
 
@@ -2718,6 +2919,42 @@ private:
 };
 
 } // namespace
+
+void refresh_privacy_preferences() {
+    const auto read = [](std::string_view key, bool fallback) {
+        return g_privacy_prefs ? g_privacy_prefs->get_bool(key, fallback) : fallback;
+    };
+    g_https_only.store(read(settings::PrefKeys::kHttpsOnly,
+                           settings::PrefDefaults::kHttpsOnly));
+    g_referer_trim.store(read(settings::PrefKeys::kRefererTrim,
+                             settings::PrefDefaults::kRefererTrim));
+    g_cert_audit.store(read(settings::PrefKeys::kCertAudit,
+                           settings::PrefDefaults::kCertAudit));
+}
+
+void configure_privacy_preferences(settings::Settings* prefs,
+                                   privacy::CertificateAudit* audit) {
+    g_privacy_prefs = prefs;
+    g_certificate_audit = audit;
+    refresh_privacy_preferences();
+}
+
+bool clear_profile_cookies() {
+    const auto context = CefRequestContext::GetGlobalContext();
+    const auto manager = context ? context->GetCookieManager(nullptr) : nullptr;
+    if (!manager) return false;
+    const auto state = std::make_shared<CookieClearState>();
+    // Empty URL and name clear every cookie (session and persistent).
+    if (!manager->DeleteCookies(CefString(), CefString(),
+                                new CookieDeleteCallback(manager, state)))
+        return false;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!state->done.load() && std::chrono::steady_clock::now() < deadline) {
+        pump_message_loop();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    return state->done.load() && state->success.load();
+}
 
 void configure_download_preferences(AskWhereProvider ask_where_provider,
                                     DownloadsDirProvider downloads_dir_provider,
@@ -2975,7 +3212,9 @@ void CefAdapter::resize(TabId tab, int width, int height) {
 
 void CefAdapter::load(TabId tab, const core::Url& url) {
     if (auto b = browser_for(tab); b.get()) {
-        b->GetMainFrame()->LoadURL(CefString(core::resolve_navigation(url)));
+        refresh_privacy_preferences();
+        b->GetMainFrame()->LoadURL(CefString(
+            core::resolve_navigation(url, g_https_only.load())));
     }
 }
 

@@ -216,16 +216,34 @@ std::string search_engine_home(std::string_view engine_id) {
     return "https://duckduckgo.com/";
 }
 
-std::string resolve_navigation(const Url& url) {
-    return resolve_navigation(url, search_engine_template("duckduckgo"));
+std::string upgrade_http_url(std::string_view url, bool https_only) {
+    // Do not use display(): reconstructing a URL can lose fragment/query
+    // details. Upgrade only a hierarchical HTTP URL with a non-empty authority.
+    if (https_only && url.size() > 7 &&
+        to_lower(url.substr(0, 7)) == "http://" &&
+        url[7] != '/' && url[7] != '?' && url[7] != '#') {
+        return std::string("https://") + std::string(url.substr(7));
+    }
+    return std::string(url);
 }
 
-std::string resolve_navigation(const Url& url, std::string_view engine_template) {
+std::string resolve_navigation(const Url& url, bool https_only) {
+    return resolve_navigation(url, search_engine_template("duckduckgo"), https_only);
+}
+
+std::string resolve_navigation(const Url& url, std::string_view engine_template,
+                               bool https_only) {
     // Extension and other in-app schemes must round-trip as themselves.
     // Routing them through a search engine is what opened Chromium as an
     // external window on install/options clicks.
     if (url.is_extension_url() || url.is_internal_scheme()) return url.display();
-    if (!url.is_search_query()) return url.display();
+    if (!url.is_search_query()) {
+        if ((url.scheme() == "http" || url.scheme() == "https") &&
+            url.raw().find("://") != std::string::npos) {
+            return upgrade_http_url(url.raw(), https_only);
+        }
+        return url.display();
+    }
     // Route a bare search query to a search engine, percent-encoding the text.
     const std::string kEngine(engine_template);
     std::string encoded;
@@ -242,7 +260,7 @@ std::string resolve_navigation(const Url& url, std::string_view engine_template)
             encoded.append(buf);
         }
     }
-    return kEngine + encoded;
+    return upgrade_http_url(kEngine + encoded, https_only);
 }
 
 } // namespace aurora::core
