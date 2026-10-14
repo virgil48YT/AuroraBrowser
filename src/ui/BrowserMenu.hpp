@@ -48,6 +48,7 @@ public slots:
 signals:
     void new_tab_requested();
     void new_window_requested();
+    void new_incognito_window_requested();
     void history_requested();
     void downloads_requested();
     void bookmarks_requested();

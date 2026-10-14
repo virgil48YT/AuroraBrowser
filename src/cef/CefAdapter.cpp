@@ -2607,7 +2607,8 @@ CefRefPtr<CefBrowser> create_browser(TabId tab, std::string_view url,
                                       const TabClient::KeyEmitter& on_key,
                                       const TabClient::ExtensionEmitter& on_extension,
                                       const TabClient::PermissionEmitter& on_permission,
-                                      const TabClient::PopupShimProvider& popup_shim) {
+                                      const TabClient::PopupShimProvider& popup_shim,
+                                      CefRefPtr<CefRequestContext> private_context) {
     CefWindowInfo info;
 #if defined(OS_WIN)
     info.SetAsChild(static_cast<HWND>(native_parent), CefRect(0, 0, 0, 0));
@@ -2644,7 +2645,14 @@ CefRefPtr<CefBrowser> create_browser(TabId tab, std::string_view url,
     // Pass the request context explicitly after applying the host's desired
     // color scheme. SetChromeColorScheme updates Blink's prefers-color-scheme
     // value and also performs the renderer notification needed for live pages.
-    auto request_context = CefRequestContext::GetGlobalContext();
+    //
+    // When `private_context` is set the adapter is serving an incognito window
+    // and must never touch the global (regular-profile) context. The private
+    // context has an empty cache_path so Chromium keeps it purely in memory,
+    // and CefAdapter holds the only strong reference, so it dies with the
+    // adapter (i.e. with the private window).
+    auto request_context = private_context ? private_context
+                                         : CefRequestContext::GetGlobalContext();
     if (request_context) {
         request_context->SetChromeColorScheme(
             preferred_dark ? CEF_COLOR_VARIANT_DARK : CEF_COLOR_VARIANT_LIGHT,
@@ -2836,7 +2844,8 @@ void CefAdapter::create(TabId tab, std::string_view initial_url,
         },
         [this](TabId popup, std::string_view bridge_request) {
             return extension_popup_script(popup, bridge_request);
-        });
+        },
+        private_context_);
     if (!browser) {
         // CreateBrowserSync failure has no OnBeforeClose callback. Drop any
         // popup association now and do not leave a null browser entry that
@@ -3128,6 +3137,30 @@ void CefAdapter::set_muted(TabId tab, bool muted) {
 void CefAdapter::set_new_tab_callback(NewTabCallback cb) {
     std::lock_guard<std::mutex> lock(new_tab_mutex_);
     new_tab_callback_ = std::move(cb);
+}
+
+bool CefAdapter::set_private_context(bool on) {
+    std::lock_guard<std::mutex> lock(private_context_mutex_);
+    if (!on) {
+        private_context_ = nullptr;
+        return true;
+    }
+    if (private_context_.get()) return true;  // idempotent
+    // An empty cache_path makes CEF keep the context entirely in memory: no
+    // disk cache, no cookie store on disk, no service-worker storage. The
+    // last CefRefPtr is this one, so the context (and everything Chromium
+    // stored in it) dies when the adapter does — i.e. with the private window.
+    CefRequestContextSettings settings;
+    CefString(&settings.cache_path) = std::string();
+    private_context_ = CefRequestContext::CreateContext(settings, nullptr);
+    if (!private_context_.get()) {
+        AURORA_LOG(util::LogLevel::Error, "cef")
+            << "failed to create private request context; refusing private mode";
+        return false;
+    }
+    AURORA_LOG(util::LogLevel::Info, "cef")
+        << "private request context created (in-memory)";
+    return true;
 }
 
 void CefAdapter::set_downloads_dir(std::string_view dir) {

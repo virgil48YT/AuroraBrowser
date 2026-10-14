@@ -33,6 +33,11 @@ public:
     CefAdapter() = default;
     ~CefAdapter() override;
 
+    // True when this adapter serves a private (incognito) window. Must be set
+    // BEFORE the first create() call in that window, otherwise create() would
+    // fall back to the global (regular-profile) context.
+    bool set_private_context(bool on) override;
+
     void create(TabId tab, std::string_view initial_url,
                 void* native_parent) override;
     void destroy(TabId tab) override;
@@ -117,6 +122,13 @@ private:
     // callback reports each download's lifecycle to the host so it can record
     // it in DownloadService. downloads_mutex_ guards the callback only.
     std::string downloads_dir_;
+    // Private (incognito) request context. Created lazily by
+    // set_private_context(true) before the first create() call of the private
+    // window. CEF holds no other strong reference to it, so it dies with the
+    // adapter (i.e. with the private window) and every browser in this window
+    // is discarded along with its cookies/storage. Empty cache_path = in-memory.
+    CefRefPtr<CefRequestContext> private_context_;
+    std::mutex private_context_mutex_;
     DownloadCallback download_callback_;
     std::mutex downloads_mutex_;
 

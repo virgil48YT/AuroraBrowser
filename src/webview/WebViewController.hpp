@@ -207,6 +207,24 @@ public:
         return false;
     }
 
+    // Private (incognito) browsing support.
+    //
+    // A window calls `set_private_context(true)` BEFORE creating any web view
+    // in that window. Every tab/popup created afterwards must use a distinct
+    // in-memory request context whose lifetime is tied to this controller
+    // (i.e. to the private window), never to the global/shared context, and
+    // must never fall back to the global context. Returns false when the
+    // engine does not support private contexts at all — the window must then
+    // refuse to open as private rather than silently browsing in the regular
+    // profile.
+    //
+    // NOTE: `set_private_context` is NOT virtual default-no-op on purpose: a
+    // real adapter that silently ignores the request would browse in the
+    // regular profile, which is the exact failure incognito exists to prevent.
+    // Each concrete WebViewController must implement it. The CEF adapter
+    // creates a CefRequestContext with an empty cache_path (in-memory).
+    virtual bool set_private_context(bool on) = 0;
+
     // Pause/resume a running download through the same engine-side id. The
     // engine reports the new paused state on the next download callback
     // (DownloadEvent::paused); the host may also set its own row state

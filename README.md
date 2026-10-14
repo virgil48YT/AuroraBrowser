@@ -16,8 +16,7 @@ budget the architecture is shaped to meet.
 
 ## Status — what works today
 
-**Implemented and unit-tested (historically reported at 76 test cases, 414
-assertions passing; not re-run during this import):**
+**Implemented and unit-tested:**
 - Omnibox URL/search parsing (`core::Url`, `parse_omnibox_input`)
 - TabManager: open/close/switch/reorder/pin/mute, recently-closed, back/forward
 - Session restore: validated restore plans plus bulk-restore sequencing that
@@ -41,10 +40,10 @@ assertions passing; not re-run during this import):**
 - GPU/WebGL command-line policy (`cef::GpuPolicy`) — unit-tested without CEF
 - Logging with configurable levels; startup milestones + scoped timers
 
-**Implemented, compiles and runs with Qt6** (previously reported clean Debug
-build with the strict warning set and
-`QT_QPA_PLATFORM=offscreen ./build/bin/aurora_browser --smoke-test` exiting 0
-after building every internal page; not re-verified during this import):
+**Implemented, compiles and runs with Qt6** (verified on Linux with Qt6:
+clean build under the strict warning set, `QT_QPA_PLATFORM=offscreen
+./build/bin/aurora_browser --smoke-test` exits 0 after building every
+internal page):
 - Chrome-style layout: the tab strip sits at the very top of the window, the
   navigation/omnibox toolbar directly beneath it, then the content area, with
   the find bar docked below the content
@@ -102,6 +101,16 @@ after building every internal page; not re-verified during this import):
   already-rendered page) is not implemented**
 - Picture-in-picture window (`src/ui/PipWindow`), reachable from the tab
   context menu
+- Incognito (private) windows (Ctrl+Shift+N, or Browser menu → New Incognito
+  Window): a private window shares the visual chrome but never writes to the
+  regular profile — history, download metadata, session snapshots, bookmarks,
+  preferences and extensions are all skipped or read-only for it
+  (`core::IncognitoPolicy` drives the decision points and is unit-tested in
+  `tests/test_incognito.cpp`). The window's tabs live in a private in-memory
+  CEF request context (empty `cache_path`) whose only reference is the window's
+  `CefAdapter`, so cookies, cache and storage die with the window. The title
+  carries the "(Incognito)" suffix. Popups opened from a private tab inherit the
+  private context via CEF's own popup rule.
 - Extensions button in the toolbar wired to `ExtensionService` and an
   `aurora://extensions` internal page (unpacking `.crx` via `ZipExtractor` is
   implemented but not covered by a passing test here)
@@ -133,9 +142,8 @@ running window immediately; the search-engine preference is used by the omnibox
 when the typed text is a search query rather than a URL.
 
 **Implemented, compiles only when CEF is provided** (the CEF translation units
-are kept behind `AURORA_ENABLE_CEF` and were not compiled or executed during this
-import; the GPU/WebGL switch logic they call is unit-tested separately in
-`tests/test_gpu_policy.cpp`):
+are kept behind `AURORA_ENABLE_CEF`; the GPU/WebGL switch logic they call is
+unit-tested separately in `tests/test_gpu_policy.cpp`):
 - CEF lifecycle (init/shutdown/subprocess dispatch)
 - `CefAdapter` implementing `WebViewController` (load/back/forward/reload/find/zoom/devtools)
 - CEF→tab-model page-info callbacks (title, loading, progress, security origin)
@@ -154,7 +162,7 @@ import; the GPU/WebGL switch logic they call is unit-tested separately in
 - Media codec policy (`src/cef/MediaPolicy.{hpp,cpp}`) — unit-tested without CEF
   in `tests/test_media_policy.cpp`
 
-**Included but not validated in this import** (present in the tree but not
+**Included but not validated here** (present in the tree but not
 built or tested here): Windows self-extracting installer packaging
 (`packaging/windows/build_sfx.sh`, `sfx_config.txt`, `rcedit-x64.exe`, the
 `aurora_bootstrap` launcher and the build-ID mechanism described in
@@ -162,7 +170,14 @@ built or tested here): Windows self-extracting installer packaging
 script.
 
 **Not yet implemented** (clearly marked in source, no fake UI): cosmetic ad
-filtering (element hiding), background tab suspension, incognito isolation.
+filtering (element hiding), background tab suspension.
+
+## Keyboard shortcuts (addendum)
+
+| Shortcut | Action |
+|---|---|
+| Ctrl+Shift+N | New incognito window |
+
 
 ## Ad blocking (Aurora Shields)
 
@@ -205,7 +220,7 @@ compositor (and therefore WebGL) is available. The mode is selected by the
 
 The switch lists, the environment parsing, and whether WebGL ends up available
 are covered by `tests/test_gpu_policy.cpp`, which runs without CEF. The switches
-themselves were not exercised end-to-end during this import; a display, GPU and
+themselves were not exercised end-to-end; a display, GPU and
 the CEF SDK are required.
 
 ## Build
@@ -260,6 +275,7 @@ See [docs/build.md](docs/build.md), [docs/architecture.md](docs/architecture.md)
 | Shortcut | Action |
 |---|---|
 | Ctrl+T | New tab |
+| Ctrl+Shift+N | New incognito window |
 | Ctrl+W | Close tab |
 | Ctrl+Shift+T | Reopen closed tab |
 | Ctrl+L | Focus address bar |

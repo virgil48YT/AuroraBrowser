@@ -270,9 +270,29 @@ private:
 #endif
 } // namespace
 
-MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent)
+MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
+                       bool is_incognito)
     : QMainWindow(parent), tabs_(), services_(services) {
-    setWindowTitle("Aurora");
+    incognito_ = is_incognito;
+    if (incognito_) {
+        // core::IncognitoPolicy: a private window must never write to the
+        // regular profile. History and download metadata are skipped, the
+        // session save/restore hooks are off, extensions are disabled, and
+        // preferences/bookmarks become read-only. We null the write-capable
+        // service pointers in the local copy so every existing null-check
+        // down through the code already handles "no profile" — a private
+        // window is just a profile-less window.
+        services_.history = nullptr;
+        services_.downloads = nullptr;
+        services_.session = nullptr;
+        services_.extensions = nullptr;
+        services_.adblock = nullptr;
+        // `prefs` and `bookmarks` stay shared read-only. Writes are rejected
+        // below by `policy_` (see on_bookmark_bar_toggled, apply_theme_preference
+        // and every set_bool call — they consult `policy_`).
+    }
+    setWindowTitle(incognito_ ? QStringLiteral("Aurora (Incognito)")
+                               : QStringLiteral("Aurora"));
     // FRESHNESS PROBE: written to the Desktop (NOT %TEMP%) because the remote
     // device bridge cannot read the user's %TEMP% folder, which is why the
     // earlier "log missing" conclusion was bogus. If this line appears in
@@ -325,6 +345,15 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent)
 
 #if defined(AURORA_HAS_CEF)
     webview_ = cef::make_webview_controller();
+    // Incognito: hand the engine a private in-memory request context before
+    // any tab is created. If the engine cannot do private mode at all, refuse
+    // to open the window rather than browse in the regular profile.
+    if (incognito_ && !webview_->set_private_context(true)) {
+        AURORA_LOG(util::LogLevel::Error, "main")
+            << "engine does not support private mode; aborting window";
+        QTimer::singleShot(0, this, &MainWindow::close);
+        return;
+    }
     // Open target=_blank / window.open links as new in-app tabs instead of
     // letting CEF spawn a popup (which on some setups escapes to the OS
     // default browser). Deferred to the next event-loop turn so we don't
@@ -780,6 +809,24 @@ void MainWindow::open_new_window() {
     // changes. `new MainWindow()` used the empty ServiceBundle and fell back
     // to the light "system" theme — the frankenstein new-window bug.
     auto* w = new MainWindow(services_);
+    w->setAttribute(Qt::WA_DeleteOnClose, true);
+    w->inherit_theme_from(this);
+    w->resize(size());
+    if (!isMaximized() && !isFullScreen()) {
+        w->move(pos() + QPoint(24, 24));
+    }
+    w->show();
+    w->raise();
+    w->activateWindow();
+}
+
+void MainWindow::open_incognito_window() {
+    // The source window's profile pointers are shared read-only; the private
+    // window's constructor nulls the write-capable ones (history / downloads /
+    // session / extensions / adblock) and keeps prefs+bookmarks for reads.
+    // See core::IncognitoPolicy and the MainWindow ctor.
+    auto* w = new MainWindow(services_, /*parent=*/nullptr,
+                             /*is_incognito=*/true);
     w->setAttribute(Qt::WA_DeleteOnClose, true);
     w->inherit_theme_from(this);
     w->resize(size());
@@ -1728,6 +1775,8 @@ void MainWindow::setup_menu_button() {
     if (toolbar_layout_) toolbar_layout_->addWidget(menu_button_);
     connect(menu_button_, &IconButton::clicked, menu_button_,
             &BrowserMenu::toggle_popup);
+    connect(menu_button_, &BrowserMenu::new_incognito_window_requested, this,
+            &MainWindow::open_incognito_window);
     // The menu button was created after the first apply_theme(), so hand it the
     // current mode now (it tints its icons from the active theme).
     menu_button_->set_dark_mode(dark_mode_);
@@ -1797,6 +1846,7 @@ void MainWindow::setup_shortcuts() {
     bind("Ctrl+W", &MainWindow::on_close_tab);
     bind("Ctrl+Shift+T", &MainWindow::on_reopen_closed);
     bind("Ctrl+N", &MainWindow::open_new_window);  // mirrors the browser menu
+    bind("Ctrl+Shift+N", &MainWindow::open_incognito_window);
     bind("Ctrl+Tab", &MainWindow::on_next_tab);
     bind("Ctrl+Shift+Tab", &MainWindow::on_prev_tab);
     // Qt's spelling is "PgDown"/"PgUp": "Ctrl+PageDown" parses to
@@ -1923,6 +1973,7 @@ bool MainWindow::forward_engine_key(const webview::EngineKeyEvent& ev) {
     } else if (ctrl && shift && !ev.alt) {
         switch (k) {
             case VK_T: post(&MainWindow::on_reopen_closed); return true;
+            case VK_N: post(&MainWindow::open_incognito_window); return true;
             case VK_I: post(&MainWindow::on_devtools); return true;
             case VK_A: post(&MainWindow::show_tab_search_menu); return true;
             // Ctrl++ is physically Ctrl+Shift+= on a US layout (VK_OEM_PLUS),
@@ -3795,6 +3846,10 @@ int MainWindow::restore_session() {
 }
 
 void MainWindow::save_session() {
+    // core::IncognitoPolicy: a private window never persists its session.
+    // `services_.session` is already null in a private window (constructor);
+    // this guard is belt-and-braces in case a future code path re-attaches one.
+    if (incognito_) return;
     if (!services_.session) return;
     auto snapshot = tabs_.snapshot();
     if (snapshot.empty()) return;

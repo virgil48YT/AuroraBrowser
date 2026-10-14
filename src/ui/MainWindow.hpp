@@ -48,6 +48,7 @@
 #include "ui/FindBar.hpp"
 #include "ui/IconButton.hpp"
 #include "ui/Omnibox.hpp"
+#include "core/IncognitoPolicy.hpp"
 #include "ui/ServiceBundle.hpp"
 #include "ui/ShieldButton.hpp"
 #include "ui/TabBar.hpp"
@@ -95,9 +96,20 @@ public:
     // `services` are borrowed and must outlive the window (main.cpp owns the
     // Database and the services). A default-constructed bundle is valid: the
     // window runs without a profile and the internal pages say so.
+    //
+    // `is_incognito` creates a private window. In private mode the window
+    // never writes to the regular profile: history, download metadata and
+    // session snapshots are skipped (see core::IncognitoPolicy), preferences
+    // and bookmarks are read-only, extensions are disabled, and the window's
+    // tabs share a private in-memory CEF request context that is discarded
+    // when the window closes. The title suffix "(Incognito)" and a purple
+    // indicator make the mode visible.
     explicit MainWindow(const ServiceBundle& services = ServiceBundle{},
-                        QWidget* parent = nullptr);
+                        QWidget* parent = nullptr, bool is_incognito = false);
     ~MainWindow() override;
+
+    // True when this window is a private (incognito) window.
+    bool is_incognito() const { return incognito_; }
 
     // core::TabObserver: drives host-widget lifecycle from the tab model.
     void on_tab_changed(core::TabId id, core::TabChange change) override;
@@ -420,6 +432,9 @@ private:
     // Spawn a sibling window that shares this window's ServiceBundle (so prefs,
     // extensions and history are the same profile) and inherits its live theme.
     void open_new_window();
+    // Spawn a private (incognito) sibling window: same visual chrome, no
+    // writes to the regular profile. See core::IncognitoPolicy.
+    void open_incognito_window();
     // Re-paint the live extension popup's 1px frame from the active palette so
     // a theme toggle never leaves a light border on a dark popup (or vice versa).
     void apply_extension_popup_theme();
@@ -462,6 +477,11 @@ private:
 
     core::TabManager tabs_;
     ServiceBundle services_;
+    // Private (incognito) window flag. Drives core::IncognitoPolicy decisions
+    // throughout this class; see the constructor for how it changes the bundle.
+    bool incognito_ = false;
+    // The policy the window consults for "may I write this?" decisions.
+    core::IncognitoPolicy policy_;
     std::unique_ptr<webview::WebViewController> webview_;
     TabBar* tab_bar_ = nullptr;
     // Container holding the tab bar, the new-tab button, the draggable caption

@@ -16,6 +16,7 @@ add_executable(aurora_tests
     test_adblock.cpp
     test_gpu_policy.cpp
     test_media_policy.cpp
+    test_incognito.cpp
     test_extensions.cpp
     test_sha256.cpp
     test_build_id.cpp

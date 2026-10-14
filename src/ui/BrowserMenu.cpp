@@ -182,6 +182,8 @@ void BrowserMenu::build_actions() {
          &BrowserMenu::new_tab_requested);
     make(QStringLiteral("New Window"), "Ctrl+N", icons::Name::NewTab,
          &BrowserMenu::new_window_requested);
+    make(QStringLiteral("New Incognito Window"), "Ctrl+Shift+N",
+         icons::Name::NewTab, &BrowserMenu::new_incognito_window_requested);
     separator();
 
     make(QStringLiteral("History"), "Ctrl+H", icons::Name::History,
