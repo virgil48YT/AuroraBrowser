@@ -21,6 +21,7 @@
 #include <QWidget>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <string_view>
 #include "core/Types.hpp"
 
@@ -62,6 +63,10 @@ public:
     bool is_current() const { return current_; }
     // How many times this host has been made the current content widget.
     int activation_count() const { return activations_; }
+    // Where the engine starts when the browser is created later. A tab that
+    // sat on an internal page has no browser yet, so a load requested for it
+    // must be remembered here or the new browser opens blank (white screen).
+    void set_initial_url(std::string url) { initial_url_ = std::move(url); }
     aurora::core::TabId tab() const { return tab_; }
 
 protected:

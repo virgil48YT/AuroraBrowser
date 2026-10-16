@@ -16,6 +16,7 @@
 #include "ui/Icons.hpp"
 #include "ui/PopupPlacement.hpp"
 #include "ui/ThemeState.hpp"
+#include "ui/ToggleSwitch.hpp"
 
 namespace aurora::ui {
 
@@ -169,7 +170,7 @@ void ShieldButton::build_popup() {
     separator->setFrameShape(QFrame::HLine);
     lay->addWidget(separator);
 
-    toggle_ = new QCheckBox(QStringLiteral("Block ads on this site"), panel);
+    toggle_ = new ToggleSwitch(QStringLiteral("Block ads on this site"), panel);
     toggle_->setObjectName(QStringLiteral("ShieldToggle"));
     lay->addWidget(toggle_);
 

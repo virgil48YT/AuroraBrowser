@@ -11,6 +11,16 @@
 #include "include/cef_app.h"
 #include "include/cef_version.h"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <psapi.h>
+#elif defined(__linux__)
+#include <cstdio>
+#endif
+
 namespace aurora::core { class TabId; }  // forward
 
 namespace aurora::cef {
@@ -44,10 +54,64 @@ constexpr char kLoadExtensionSwitch[] = "load-extension";
 // CefApp implementation shared by the browser process and all subprocesses.
 // Process-type detection (CefBrowserProcessHandler vs CefRenderProcessHandler)
 // happens here so the main executable stays thin.
+// Private memory of THIS process in bytes, or -1 when the platform gives no
+// answer. Run inside a renderer so a tab's card can show what its page costs.
+double current_process_memory_bytes() {
+#if defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    counters.cb = sizeof(counters);
+    if (GetProcessMemoryInfo(GetCurrentProcess(),
+                             reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+                             sizeof(counters))) {
+        return static_cast<double>(counters.PrivateUsage);
+    }
+    return -1.0;
+#elif defined(__linux__)
+    std::FILE* f = std::fopen("/proc/self/status", "r");
+    if (!f) return -1.0;
+    char line[256];
+    double bytes = -1.0;
+    while (std::fgets(line, sizeof(line), f)) {
+        long kb = 0;
+        if (std::sscanf(line, "VmRSS: %ld kB", &kb) == 1) {
+            bytes = static_cast<double>(kb) * 1024.0;
+            break;
+        }
+    }
+    std::fclose(f);
+    return bytes;
+#else
+    return -1.0;
+#endif
+}
+
 class AuroraApp : public CefApp,
-                  public CefBrowserProcessHandler {
+                  public CefBrowserProcessHandler,
+                  public CefRenderProcessHandler {
 public:
     AuroraApp() = default;
+
+    // Renderer-process hook: answers the browser's memory query.
+    CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override {
+        return this;
+    }
+
+    bool OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,
+                                  CefRefPtr<CefFrame> frame,
+                                  CefProcessId /*source_process*/,
+                                  CefRefPtr<CefProcessMessage> message) override {
+        if (!message.get() || message->GetName() != "aurora.memory.request") {
+            return false;
+        }
+        const double bytes = current_process_memory_bytes();
+        if (bytes >= 0.0 && frame.get()) {
+            CefRefPtr<CefProcessMessage> reply =
+                CefProcessMessage::Create("aurora.memory.reply");
+            reply->GetArgumentList()->SetDouble(0, bytes);
+            frame->SendProcessMessage(PID_BROWSER, reply);
+        }
+        return true;
+    }
 
     // Browser-process-only hooks.
     CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {

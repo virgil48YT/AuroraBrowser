@@ -20,6 +20,7 @@ signals:
     void duplicate_tab(int index);
     void reopen_closed();
     void close_tab(int index);
+    void close_other_tabs(int index);
     void pin_tab(int index);
     void mute_tab(int index);
     void reload_tab(int index);

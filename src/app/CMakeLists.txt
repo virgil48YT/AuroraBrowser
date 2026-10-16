@@ -23,6 +23,8 @@ qt_add_executable(aurora_browser
     ../ui/LeftDock.cpp
     ../ui/TabSpinner.cpp
     ../ui/ShortcutList.cpp
+    ../ui/ToggleSwitch.cpp
+    ../ui/TabHoverCard.cpp
     ../ui/ShortcutDialog.cpp
     ../ui/WeatherService.cpp
     ../ui/pages/InternalPageWidget.cpp

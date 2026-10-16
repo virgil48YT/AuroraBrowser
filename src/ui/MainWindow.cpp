@@ -181,6 +181,8 @@ inline bool ensure_native_frame(void* hwnd) {
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QMenu>
+#include <QUrl>
+#include <vector>
 #include <QMessageBox>
 
 #include "core/InternalUrl.hpp"
@@ -212,6 +214,7 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "ui/pages/HistoryPage.hpp"
 #include "ui/LeftDock.hpp"
 #include "ui/ShortcutDialog.hpp"
+#include "ui/TabHoverCard.hpp"
 #include "ui/ShortcutList.hpp"
 #include "ui/pages/HomePage.hpp"
 #include "ui/pages/SettingsPage.hpp"
@@ -565,6 +568,19 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
             if (!state || state->suspended ||
                 (host != hosts_.end() && host->second->browser_closing()))
                 return;
+            if (info.memory_bytes >= 0) {
+                // A renderer's answer to the hover card's memory query; it
+                // carries no navigation state, so nothing else applies.
+                tab_memory_[id] = info.memory_bytes;
+                if (tab_hover_card_ && tab_hover_card_->isVisible() &&
+                    hover_card_tab_ == id) {
+                    tab_hover_card_->set_memory_text(
+                        QStringLiteral("Memory usage: %1")
+                            .arg(TabHoverCard::format_memory(
+                                info.memory_bytes)));
+                }
+                return;
+            }
             if (info.has_audible_state) tabs_.set_audible(id, info.audible);
             if (info.pending_downloads >= 0)
                 tabs_.set_pending_downloads(id, static_cast<size_t>(info.pending_downloads));
@@ -2191,6 +2207,12 @@ void MainWindow::setup_connections() {
     // Tab bar context menu signals.
     connect(tab_bar_, &TabBar::context_menu_duplicate, this, &MainWindow::on_duplicate_tab);
     connect(tab_bar_, &TabBar::context_menu_close, this, &MainWindow::on_close_tab_at);
+    connect(tab_bar_, &TabBar::context_menu_close_others, this,
+            &MainWindow::on_close_other_tabs);
+    connect(tab_bar_, &TabBar::hover_dwell, this,
+            &MainWindow::show_tab_hover_card);
+    connect(tab_bar_, &TabBar::hover_dwell_cancelled, this,
+            &MainWindow::hide_tab_hover_card);
     connect(tab_bar_, &TabBar::context_menu_pin, this, &MainWindow::on_pin_tab);
     connect(tab_bar_, &TabBar::context_menu_mute, this, &MainWindow::on_mute_tab);
     connect(tab_bar_, &TabBar::context_menu_reload, this, &MainWindow::on_reload_tab);
@@ -2379,6 +2401,20 @@ void MainWindow::tear_off_tab(core::TabId id, const QPoint& release_global,
     detached->activateWindow();
 }
 
+void MainWindow::load_url_in_tab(core::TabId id, const core::Url& url) {
+    if (!webview_) return;
+    // A tab that has only ever shown an internal page has no engine browser
+    // yet, and the engine ignores loads for browsers that do not exist. Hand
+    // the address to the host instead: it becomes the browser's start page
+    // the moment the host is shown, so the page loads instead of staying blank.
+    auto host = hosts_.find(id);
+    if (host != hosts_.end() && !host->second->browser_created()) {
+        host->second->set_initial_url(url.raw());
+        return;
+    }
+    webview_->load(id, url);
+}
+
 void MainWindow::navigate_active_tab(const core::Url& url) {
     auto active = tabs_.active();
     if (!active.valid()) {
@@ -2406,7 +2442,7 @@ void MainWindow::navigate_active_tab(const core::Url& url) {
     tabs_.commit_navigation(active, core::NavigationEntry{target, "", "", {}});
     record_web_nav(active, target);
     if (webview_) {
-        webview_->load(active, target);
+        load_url_in_tab(active, target);
         engine_url_[active] = target.raw();
     }
     show_host_for(active);
@@ -2474,7 +2510,7 @@ bool MainWindow::apply_chrome_entry(core::TabId id,
         const bool loaded = engine != engine_url_.end() &&
                             core::Url(engine->second) == entry.url;
         if (!loaded && webview_ && entry.url.is_valid()) {
-            webview_->load(id, entry.url);
+            load_url_in_tab(id, entry.url);
             engine_url_[id] = entry.url.raw();
         }
     }
@@ -2985,7 +3021,7 @@ void MainWindow::on_back() {
     }
     if (restored_history_.contains(active) && tabs_.go_back(active)) {
         const auto* entry = tabs_.find(active)->current_entry();
-        if (entry && webview_) webview_->load(active, entry->url);
+        if (entry && webview_) load_url_in_tab(active, entry->url);
         update_nav_button_states();
         return;
     }
@@ -3010,7 +3046,7 @@ void MainWindow::on_forward() {
     }
     if (restored_history_.contains(active) && tabs_.go_forward(active)) {
         const auto* entry = tabs_.find(active)->current_entry();
-        if (entry && webview_) webview_->load(active, entry->url);
+        if (entry && webview_) load_url_in_tab(active, entry->url);
         update_nav_button_states();
         return;
     }
@@ -3681,6 +3717,72 @@ void MainWindow::on_close_tab_at(int index) {
     tabs_.close(id);
 }
 
+void MainWindow::on_close_other_tabs(int index) {
+    const auto& tabs = tabs_.tabs();
+    if (index < 0 || static_cast<size_t>(index) >= tabs.size()) return;
+    const core::TabId keep = tabs[static_cast<size_t>(index)].id;
+    // Collect first: closing mutates the model's tab list. Pinned tabs stay,
+    // as in Chrome.
+    std::vector<core::TabId> to_close;
+    for (const auto& tab : tabs) {
+        if (tab.id != keep && !tab.pinned) to_close.push_back(tab.id);
+    }
+    if (to_close.empty()) return;
+    tabs_.set_active(keep);
+    for (const core::TabId id : to_close) {
+        tabs_.set_loading(id, false, -1);
+        tabs_.close(id);
+    }
+}
+
+void MainWindow::show_tab_hover_card(int index) {
+    const auto& tabs = tabs_.tabs();
+    if (!tab_bar_ || index < 0 || static_cast<size_t>(index) >= tabs.size()) {
+        hide_tab_hover_card();
+        return;
+    }
+    const auto& tab = tabs[static_cast<size_t>(index)];
+    if (!tab_hover_card_) tab_hover_card_ = new TabHoverCard(this);
+    hover_card_tab_ = tab.id;
+
+    const std::string raw = tab.url.raw();
+    const bool internal = page_of(tab.id).has_value() ||
+                          core::parse_internal_url(raw).has_value();
+    QString address;
+    if (internal) {
+        address = QStringLiteral("Aurora");
+    } else {
+        address = QUrl(QString::fromStdString(raw)).host();
+        if (address.isEmpty()) address = QString::fromStdString(raw);
+    }
+
+    QString memory;
+    if (tab.suspended) {
+        memory = QStringLiteral("Suspended · memory freed");
+    } else if (!internal) {
+        const auto known = tab_memory_.find(tab.id);
+        memory = known != tab_memory_.end()
+            ? QStringLiteral("Memory usage: %1")
+                  .arg(TabHoverCard::format_memory(known->second))
+            : QStringLiteral("Memory usage: measuring…");
+        // Ask for a fresh figure; the answer updates the card in place.
+        if (webview_) webview_->request_memory(tab.id);
+    }
+
+    QString title = QString::fromStdString(tab.title);
+    if (title.isEmpty() && internal) title = QStringLiteral("Aurora");
+    tab_hover_card_->set_content(title, address, memory);
+    const QRect local = tab_bar_->tabRect(index);
+    tab_hover_card_->show_below(
+        QRect(tab_bar_->mapToGlobal(local.topLeft()), local.size()));
+    tab_bar_->set_hover_card_visible(true);
+}
+
+void MainWindow::hide_tab_hover_card() {
+    if (tab_hover_card_) tab_hover_card_->hide();
+    if (tab_bar_) tab_bar_->set_hover_card_visible(false);
+}
+
 void MainWindow::on_pin_tab(int index) {
     const auto& tabs = tabs_.tabs();
     if (index < 0 || static_cast<size_t>(index) >= tabs.size()) return;
@@ -3881,6 +3983,8 @@ void MainWindow::on_tab_changed(core::TabId id, core::TabChange change) {
             engine_url_.erase(id);
             restored_history_.erase(id);
             adblock_counts_.erase(id);
+            tab_memory_.erase(id);
+            hide_tab_hover_card();   // the close button swallows the press
             auto it = hosts_.find(id);
             if (it != hosts_.end()) {
                 auto* host = it->second;

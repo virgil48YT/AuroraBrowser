@@ -36,6 +36,7 @@
 #include "ui/Theme.hpp"
 #include "ui/ThemeState.hpp"
 #include "ui/pages/SettingsRow.hpp"
+#include "ui/ToggleSwitch.hpp"
 
 namespace aurora::ui {
 
@@ -318,7 +319,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
     }
     theme_row->add_search_text(QStringLiteral("dark light auto"));
     add_divider(container, appearance_body);
-    reduced_motion_ = new QCheckBox(container);
+    reduced_motion_ = new ToggleSwitch(container);
     reduced_motion_->setObjectName(QStringLiteral("PageCheck"));
     add_row(appearance_body,
             QStringLiteral("Reduce interface animation"),
@@ -341,7 +342,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
                            "return to them"),
             suspend_minutes_);
     add_divider(container, tabs_body);
-    restore_session_ = new QCheckBox(container);
+    restore_session_ = new ToggleSwitch(container);
     restore_session_->setObjectName(QStringLiteral("PageCheck"));
     add_row(tabs_body,
             QStringLiteral("Reopen the tabs from my last session on startup"),
@@ -350,7 +351,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
     // === Privacy & Security =================================================
     QVBoxLayout* privacy_body =
         add_section(QStringLiteral("Privacy & Security"), icons::Name::Lock);
-    adblock_enabled_ = new QCheckBox(container);
+    adblock_enabled_ = new ToggleSwitch(container);
     adblock_enabled_->setObjectName(QStringLiteral("PageCheck"));
     add_row(privacy_body,
             QStringLiteral("Aurora Shields"),
@@ -359,14 +360,14 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
                            "turns the whole feature off"),
             adblock_enabled_);
     add_divider(container, privacy_body);
-    block_third_party_cookies_ = new QCheckBox(container);
+    block_third_party_cookies_ = new ToggleSwitch(container);
     block_third_party_cookies_->setObjectName(QStringLiteral("PageCheck"));
     add_row(privacy_body,
             QStringLiteral("Block third-party cookies"),
             QStringLiteral("Sites you visit directly can still use cookies"),
             block_third_party_cookies_);
     add_divider(container, privacy_body);
-    send_dnt_ = new QCheckBox(container);
+    send_dnt_ = new ToggleSwitch(container);
     send_dnt_->setObjectName(QStringLiteral("PageCheck"));
     add_row(privacy_body,
             QStringLiteral("Send a “Do Not Track” request"),
@@ -405,7 +406,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
     };
     for (const auto& row : privacy_rows) {
         add_divider(container, privacy_body);
-        auto* box = new QCheckBox(container);
+        auto* box = new ToggleSwitch(container);
         box->setObjectName(QStringLiteral("PageCheck"));
         box->setProperty("auroraPrivacyKey",
                          QString::fromStdString(std::string(row.key)));
@@ -442,7 +443,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
             QStringLiteral("Folder files are saved to"),
             downloads_location);
     add_divider(container, downloads_body);
-    downloads_ask_where_ = new QCheckBox(container);
+    downloads_ask_where_ = new ToggleSwitch(container);
     downloads_ask_where_->setObjectName(QStringLiteral("PageCheck"));
     add_row(downloads_body,
             QStringLiteral("Ask where to save each file before downloading"),
