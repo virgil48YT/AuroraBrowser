@@ -39,10 +39,12 @@ the target path is never auto-executed.
 
 Cookies, local storage, and service workers live in the per-profile CEF cache
 (`cache_path` passed to `cef::initialize`). Clearing browsing data deletes the
-relevant CEF-managed data. Incognito/private windows will use a separate,
-in-memory CEF cache with no persistence — **this is architecture-ready but not
-yet wired**; until it is, the privacy controls reflect what is actually
-implemented.
+relevant CEF-managed data. Incognito/private windows use a separate, in-memory
+CEF request context (empty `cache_path`) whose only reference dies with the
+window: persistent writes are suppressed per `IncognitoPolicy`,
+cross-privacy-mode tab transfers are rejected, and internal pages are
+read-only in private windows. Opt-in clear-on-exit covers CEF cookies,
+history, and download metadata.
 
 ## Data at rest
 
