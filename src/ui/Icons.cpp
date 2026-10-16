@@ -253,6 +253,23 @@ QString svg_markup(Name n) {
         case Name::User:
             return doc("<circle cx=\"12\" cy=\"8\" r=\"3.6\"/>"
                        "<path d=\"M5 20a7 7 0 0 1 14 0\"/>");
+        case Name::WeatherCloud:
+            return doc("<path d=\"M7 19h10a4 4 0 0 0 .7-7.9A5.5 5.5 0 0 0 7.2 9.6 4.7 4.7 0 0 0 7 19z\"/>");
+        case Name::WeatherRain:
+            return doc("<path d=\"M7 15h10a4 4 0 0 0 .7-7.9A5.5 5.5 0 0 0 7.2 5.6 4.7 4.7 0 0 0 7 15z\"/>"
+                       "<path d=\"M8 18.5l-1 2.5\"/><path d=\"M12.5 18.5l-1 2.5\"/>"
+                       "<path d=\"M17 18.5l-1 2.5\"/>");
+        case Name::WeatherSnow:
+            return doc("<path d=\"M7 15h10a4 4 0 0 0 .7-7.9A5.5 5.5 0 0 0 7.2 5.6 4.7 4.7 0 0 0 7 15z\"/>"
+                       "<circle cx=\"8\" cy=\"19\" r=\"0.7\" fill=\"__C__\" stroke=\"none\"/>"
+                       "<circle cx=\"12\" cy=\"20.5\" r=\"0.7\" fill=\"__C__\" stroke=\"none\"/>"
+                       "<circle cx=\"16\" cy=\"19\" r=\"0.7\" fill=\"__C__\" stroke=\"none\"/>");
+        case Name::WeatherStorm:
+            return doc("<path d=\"M7 14h10a4 4 0 0 0 .7-7.9A5.5 5.5 0 0 0 7.2 4.6 4.7 4.7 0 0 0 7 14z\"/>"
+                       "<path d=\"M12.5 14l-2.5 4h3.5l-2 3.5\"/>");
+        case Name::WeatherFog:
+            return doc("<path d=\"M7 14h10a4 4 0 0 0 .7-7.9A5.5 5.5 0 0 0 7.2 4.6 4.7 4.7 0 0 0 7 14z\"/>"
+                       "<path d=\"M5 17.5h14\"/><path d=\"M8 21h8\"/>");
         case Name::Gauge:
             return doc("<path d=\"M4 14a8 8 0 1 1 16 0\"/>"
                        "<path d=\"M12 14l3.5-4\"/>"

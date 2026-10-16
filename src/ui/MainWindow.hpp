@@ -30,6 +30,7 @@
 #include <QPointer>
 #include <QSize>
 #include <QString>
+#include <QVector>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -52,6 +53,7 @@
 #include "searchengines/SearchEngine.hpp"
 #include "ui/ServiceBundle.hpp"
 #include "ui/ShieldButton.hpp"
+#include "ui/ShortcutList.hpp"
 #include "ui/TabBar.hpp"
 #include "webview/WebViewController.hpp"
 
@@ -598,6 +600,7 @@ private:
     IconButton* profile_btn_ = nullptr;
     // Slim far-left launcher dock (icon rail + glowing settings gear).
     LeftDock* left_dock_ = nullptr;
+    QVector<Shortcut> dock_pins_;   // user-pinned sites on the dock
 
     // Frameless window: the draggable caption (the tab strip row) and the
     // custom minimize/maximize/close buttons that fill the top-right corner.
