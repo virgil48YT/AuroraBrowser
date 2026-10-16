@@ -93,6 +93,12 @@ enum class Name {
     CloudSun,  // weather widget (cloud with a partial sun)
     User,      // rounded-corner avatar silhouette
     Gauge,     // performance / memory-saver dial
+    // --- Weather conditions (homepage weather chip) ---
+    WeatherCloud,
+    WeatherRain,
+    WeatherSnow,
+    WeatherStorm,
+    WeatherFog,
 };
 
 // Paint an icon centered within `rect` using `color`. The pixmap is cached.

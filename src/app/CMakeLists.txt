@@ -22,6 +22,9 @@ qt_add_executable(aurora_browser
     ../ui/IconButton.cpp
     ../ui/LeftDock.cpp
     ../ui/TabSpinner.cpp
+    ../ui/ShortcutList.cpp
+    ../ui/ShortcutDialog.cpp
+    ../ui/WeatherService.cpp
     ../ui/pages/InternalPageWidget.cpp
     ../ui/pages/HistoryPage.cpp
     ../ui/pages/HomePage.cpp
@@ -32,6 +35,15 @@ qt_add_executable(aurora_browser
     ../ui/pages/ExtensionsPage.cpp
     main.cpp
 )
+
+# Brand artwork (logo + emblem) compiled into the executable so the window
+# and the homepage never depend on loose files next to the .exe.
+qt_add_resources(aurora_browser aurora_brand
+    PREFIX "/brand"
+    BASE "${CMAKE_SOURCE_DIR}/assets/brand"
+    FILES
+        "${CMAKE_SOURCE_DIR}/assets/brand/aurora_logo_full.png"
+        "${CMAKE_SOURCE_DIR}/assets/brand/aurora_mark.png")
 
 target_include_directories(aurora_browser PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(aurora_browser PRIVATE

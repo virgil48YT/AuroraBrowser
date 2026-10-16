@@ -12,6 +12,7 @@
 #include <QCommandLineParser>
 #include <QCloseEvent>
 #include <QDir>
+#include <QIcon>
 #include <QFileDialog>
 #include <QMetaObject>
 #include <QStandardPaths>
@@ -348,6 +349,7 @@ int main(int argc, char** argv) {
     // the last visible MainWindow goes away, so Alt+F4 / the window X on the
     // last window still exits the app.
     QApplication::setQuitOnLastWindowClosed(false);
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/brand/aurora_mark.png")));
 
     QCommandLineParser parser;
     parser.setApplicationDescription("Aurora browser");

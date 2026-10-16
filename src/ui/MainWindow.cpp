@@ -211,6 +211,8 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "ui/pages/ExtensionsPage.hpp"
 #include "ui/pages/HistoryPage.hpp"
 #include "ui/LeftDock.hpp"
+#include "ui/ShortcutDialog.hpp"
+#include "ui/ShortcutList.hpp"
 #include "ui/pages/HomePage.hpp"
 #include "ui/pages/SettingsPage.hpp"
 #include "util/Log.hpp"
@@ -1211,6 +1213,67 @@ void MainWindow::setup_left_dock(QHBoxLayout* outer) {
     });
     connect(left_dock_, &LeftDock::settings_requested, this, [this, open_page] {
         open_page(core::InternalPage::Settings);
+    });
+
+    // Pinned sites ("+" on the rail). Both lists start empty; the profile
+    // preferences remember them between runs.
+    dock_pins_ = load_shortcuts(services_.prefs,
+                                settings::PrefKeys::kDockPins);
+    left_dock_->set_pins(dock_pins_);
+    const auto save_pins = [this] {
+        save_shortcuts(services_.prefs, settings::PrefKeys::kDockPins,
+                       dock_pins_);
+        left_dock_->set_pins(dock_pins_);
+    };
+    connect(left_dock_, &LeftDock::add_requested, this,
+            [this, save_pins](const QPoint& global_pos) {
+        QMenu menu(this);
+        QAction* pin_current = menu.addAction(
+            QStringLiteral("Pin current page"));
+        const std::string current = active_tab_url();
+        const QString current_url = normalize_shortcut_url(
+            QString::fromStdString(current));
+        pin_current->setEnabled(!current_url.isEmpty() &&
+                                !active_tab_is_internal());
+        QAction* by_url = menu.addAction(QStringLiteral("Add site by address…"));
+        QAction* chosen = menu.exec(global_pos);
+        if (!chosen) return;
+        Shortcut result;
+        if (chosen == pin_current) {
+            result.url = current_url;
+            result.title = default_shortcut_title(current_url);
+        } else if (chosen == by_url) {
+            if (!prompt_shortcut(this, QStringLiteral("Add to sidebar"), {},
+                                 &result)) {
+                return;
+            }
+        } else {
+            return;
+        }
+        dock_pins_.append(result);
+        save_pins();
+    });
+    connect(left_dock_, &LeftDock::pin_open_requested, this,
+            [this](const QString& url) {
+                navigate_active_tab(
+                    core::parse_omnibox_input(url.toStdString()));
+            });
+    connect(left_dock_, &LeftDock::pin_edit_requested, this,
+            [this, save_pins](int index) {
+        if (index < 0 || index >= dock_pins_.size()) return;
+        Shortcut result;
+        if (!prompt_shortcut(this, QStringLiteral("Edit sidebar site"),
+                             dock_pins_[index], &result)) {
+            return;
+        }
+        dock_pins_[index] = result;
+        save_pins();
+    });
+    connect(left_dock_, &LeftDock::pin_remove_requested, this,
+            [this, save_pins](int index) {
+        if (index < 0 || index >= dock_pins_.size()) return;
+        dock_pins_.removeAt(index);
+        save_pins();
     });
     outer->insertWidget(0, left_dock_, 0);
 }
@@ -2453,6 +2516,7 @@ QWidget* MainWindow::page_widget(core::InternalPage page) {
             // Live history feeds the "Continue" / "Recently visited" cards;
             // without a profile the page keeps its built-in mock rows.
             home_page->set_history_service(services_.history);
+            home_page->set_prefs(services_.prefs);
             // The page emits raw queries; the window owns the search-engine
             // state, so hand it a projector that resolves each query with the
             // ACTIVE engine and routes anything that already parses as a URL.

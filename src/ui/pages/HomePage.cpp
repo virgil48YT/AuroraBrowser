@@ -1,15 +1,20 @@
 #include "ui/pages/HomePage.hpp"
 
+#include <QContextMenuEvent>
 #include <QDateTime>
 #include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QInputDialog>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPaintEvent>
-#include <QProgressBar>
+#include <QPixmap>
 #include <QRadialGradient>
 #include <QScreen>
 #include <QTimer>
@@ -18,11 +23,17 @@
 
 #include <utility>
 
+#include <QSet>
+#include <QUrl>
+
 #include "history/HistoryService.hpp"
+#include "settings/Settings.hpp"
 #include "ui/FaviconCache.hpp"
 #include "ui/Icons.hpp"
+#include "ui/ShortcutDialog.hpp"
 #include "ui/Theme.hpp"
 #include "ui/ThemeState.hpp"
+#include "ui/WeatherService.hpp"
 
 namespace aurora::ui {
 
@@ -47,64 +58,28 @@ void paint_blob(QPainter& p, const QPointF& center, qreal radius,
                       radius * 2.0, radius * 2.0), g);
 }
 
-// The glowing gradient-ribbon "A" logo plus the widely-tracked "A U R O R A"
-// wordmark, both drawn against a cyan → purple → magenta gradient. Painted
-// here (not in the stylesheet) because QSS cannot gradient-fill text.
+// The Aurora logo (emblem + wordmark) from the brand artwork, scaled to fit
+// and drawn crisply at any device pixel ratio. The artwork is a transparent
+// PNG, so it sits directly on the cosmic backdrop.
 class BrandLabel : public QWidget {
 public:
     explicit BrandLabel(QWidget* parent = nullptr) : QWidget(parent) {
         setAttribute(Qt::WA_TranslucentBackground, true);
-        setFixedSize(420, 150);
+        logo_.load(QStringLiteral(":/brand/aurora_logo_full.png"));
+        const qreal aspect = logo_.isNull()
+            ? 0.78 : static_cast<qreal>(logo_.height()) / logo_.width();
+        setFixedSize(300, static_cast<int>(300 * aspect));
     }
 
     void paintEvent(QPaintEvent*) override {
-        const ThemeColors& c = current_theme().colors;
+        if (logo_.isNull()) return;
         QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
-
-        QLinearGradient grad(rect().topLeft(), rect().bottomRight());
-        grad.setColorAt(0.0, c.accent);
-        grad.setColorAt(0.55, c.accent2);
-        grad.setColorAt(1.0, c.accent3);
-
-        // --- Ribbon "A" -------------------------------------------------
-        // Two leaning wings meeting at an apex: an up-then-down chevron
-        // with a soft inner fold, heavily rounded by the pen caps.
-        const qreal cx = width() / 2.0;
-        const qreal top = 6.0;
-        const qreal base = 66.0;
-        const qreal wing = 30.0;
-        QPainterPath a;
-        a.moveTo(cx - wing, base);
-        a.cubicTo(cx - wing * 0.55, base - 26, cx - 7, top + 22, cx, top);
-        a.cubicTo(cx + 7, top + 22, cx + wing * 0.55, base - 26,
-                  cx + wing, base);
-        // Glow pass, then the crisp pass.
-        QColor glow(c.accent2);
-        glow.setAlpha(90);
-        p.setPen(QPen(glow, 15.0, Qt::SolidLine, Qt::RoundCap,
-                      Qt::RoundJoin));
-        p.setBrush(Qt::NoBrush);
-        p.drawPath(a);
-        p.setPen(QPen(QBrush(grad), 6.5, Qt::SolidLine, Qt::RoundCap,
-                      Qt::RoundJoin));
-        p.drawPath(a);
-
-        // --- "A U R O R A" ----------------------------------------------
-        QFont f = font();
-        f.setPixelSize(40);
-        f.setWeight(QFont::Light);
-        f.setLetterSpacing(QFont::AbsoluteSpacing, 16);
-        QPainterPath text;
-        const QString word = QStringLiteral("AURORA");
-        text.addText(0, 0, f, word);
-        const QRectF tb = text.boundingRect();
-        text.translate((width() - tb.width()) / 2.0 - tb.x(),
-                       112.0 - tb.y());
-        p.setPen(Qt::NoPen);
-        p.setBrush(QBrush(grad));
-        p.drawPath(text);
+        p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        p.drawPixmap(rect(), logo_);
     }
+
+private:
+    QPixmap logo_;
 };
 
 // The search pill's capsule host: paints the glassy fill and the cyan →
@@ -168,20 +143,28 @@ QPixmap letter_badge(const QString& label, const QColor& color, int px,
     return pm;
 }
 
-// Brand colors for the well-known tiles (only used for the letter badges).
+// Brand colors for well-known sites, used only for the letter badge shown
+// until a real favicon has loaded; anything else gets a calm slate.
 QColor brand_color(const QString& label) {
-    if (label == QStringLiteral("YouTube"))  return QColor(QStringLiteral("#FF0033"));
-    if (label == QStringLiteral("GitHub"))   return QColor(QStringLiteral("#3B4252"));
-    if (label == QStringLiteral("Discord"))  return QColor(QStringLiteral("#5865F2"));
-    if (label == QStringLiteral("Gmail"))    return QColor(QStringLiteral("#EA4335"));
-    if (label == QStringLiteral("Drive"))    return QColor(QStringLiteral("#0F9D58"));
-    if (label == QStringLiteral("Reddit"))   return QColor(QStringLiteral("#FF4500"));
-    if (label == QStringLiteral("Stack Overflow"))
-        return QColor(QStringLiteral("#F48024"));
-    if (label == QStringLiteral("Vercord Web") ||
-        label == QStringLiteral("Vencord Web"))
-        return QColor(QStringLiteral("#8B5CF6"));
+    const QString l = label.toLower();
+    if (l.contains(QStringLiteral("youtube")))  return QColor(QStringLiteral("#FF0033"));
+    if (l.contains(QStringLiteral("github")))   return QColor(QStringLiteral("#3B4252"));
+    if (l.contains(QStringLiteral("discord")))  return QColor(QStringLiteral("#5865F2"));
+    if (l.contains(QStringLiteral("gmail")))    return QColor(QStringLiteral("#EA4335"));
+    if (l.contains(QStringLiteral("drive")))    return QColor(QStringLiteral("#0F9D58"));
+    if (l.contains(QStringLiteral("reddit")))   return QColor(QStringLiteral("#FF4500"));
+    if (l.contains(QStringLiteral("stack")))    return QColor(QStringLiteral("#F48024"));
     return QColor(QStringLiteral("#33415C"));
+}
+
+constexpr int kTilesPerRow = 6;
+constexpr int kMaxShortcuts = 18;
+constexpr int kRowsPerCard = 3;
+
+bool is_internal_url(const QString& url) {
+    return url.startsWith(QStringLiteral("aurora://")) ||
+           url.startsWith(QStringLiteral("about:")) ||
+           url.startsWith(QStringLiteral("chrome://"));
 }
 
 } // namespace
@@ -212,29 +195,6 @@ HomePage::HomePage(QWidget* parent) : QWidget(parent) {
     clock_timer_->start();
     tick();
 
-    // Static fallback rows (also what an empty history shows). The times are
-    // relative to now so the time-ago labels always read naturally.
-    const qint64 now = QDateTime::currentSecsSinceEpoch();
-    resume_entries_ = {
-        {QStringLiteral("https://www.youtube.com"),
-         QStringLiteral("YouTube — Project Hail Mary — Chapter 12"),
-         now - 2 * 60},
-        {QStringLiteral("https://github.com"),
-         QStringLiteral("GitHub — aurora-browser/aurora"),
-         now - 60 * 60},
-        {QStringLiteral("https://docs.google.com"),
-         QStringLiteral("Google Docs — Aurora Design Brief"),
-         now - 26 * 60 * 60},
-    };
-    recent_entries_ = {
-        {QStringLiteral("https://www.reddit.com"),
-         QStringLiteral("Reddit — r/webdev"), now - 45 * 60},
-        {QStringLiteral("https://stackoverflow.com"),
-         QStringLiteral("Stack Overflow — Qt6 rounded corners"),
-         now - 2 * 60 * 60},
-        {QStringLiteral("https://vencord.dev"),
-         QStringLiteral("Vencord Web"), now - 26 * 60 * 60},
-    };
     render_history_rows();
 
     // Keep every glyph in step with the live theme.
@@ -244,10 +204,18 @@ HomePage::HomePage(QWidget* parent) : QWidget(parent) {
     });
     apply_icons();
 
-    // Site icons land asynchronously; refresh the rows so the letter badges
-    // get swapped for real favicons as they arrive.
+    // Site icons land asynchronously; refresh the rows and tiles so the
+    // letter badges get swapped for real favicons as they arrive.
     connect(&FaviconCache::instance(), &FaviconCache::icon_ready, this,
-            [this](const QString&) { render_history_rows(); });
+            [this](const QString&) {
+                render_history_rows();
+                apply_icons();
+            });
+
+    // Live weather: show whatever is already known, follow later updates.
+    connect(&WeatherService::instance(), &WeatherService::updated, this,
+            [this] { update_weather(); });
+    update_weather();
 }
 
 HomePage::~HomePage() {
@@ -261,6 +229,32 @@ void HomePage::set_query_url_resolver(SearchUrlFor fn) {
 void HomePage::set_history_service(history::HistoryService* history) {
     history_ = history;
     render_history_rows();
+}
+
+void HomePage::set_prefs(settings::Settings* prefs) {
+    prefs_ = prefs;
+    shortcuts_ = load_shortcuts(prefs_, settings::PrefKeys::kHomeShortcuts);
+    rebuild_shortcuts();
+    apply_icons();
+
+    // A city the user pinned earlier takes over from the IP lookup.
+    if (!prefs_) {
+        WeatherService::instance().refresh_if_stale();
+        return;
+    }
+    const QJsonObject loc = QJsonDocument::fromJson(QByteArray::fromStdString(
+        prefs_->get_string(settings::PrefKeys::kWeatherLocation, "auto")))
+        .object();
+    if (loc.contains(QStringLiteral("lat")) &&
+        loc.contains(QStringLiteral("lon"))) {
+        WeatherService::instance().use_location(
+            loc.value(QStringLiteral("name")).toString(),
+            loc.value(QStringLiteral("lat")).toDouble(),
+            loc.value(QStringLiteral("lon")).toDouble(),
+            loc.value(QStringLiteral("f")).toBool(false));
+    } else {
+        WeatherService::instance().refresh_if_stale();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +281,7 @@ void HomePage::build_ui() {
     auto* column = new QWidget(this);
     column->setObjectName(QStringLiteral("HomeColumn"));
     column->setAttribute(Qt::WA_TranslucentBackground, true);
-    column->setMaximumWidth(760);
+    column->setMaximumWidth(780);
     auto* column_layout = new QVBoxLayout(column);
     column_layout->setContentsMargins(0, 0, 0, 0);
     column_layout->setSpacing(Spacing::xl);
@@ -341,30 +335,14 @@ void HomePage::build_ui() {
 
     column_layout->addWidget(pill);
 
-    // --- Shortcut tiles ----------------------------------------------------
-    auto* tiles = new QWidget(column);
-    tiles->setObjectName(QStringLiteral("HomeShortcutTile"));
-    auto* tiles_layout = new QHBoxLayout(tiles);
-    tiles_layout->setContentsMargins(0, 0, 0, 0);
-    tiles_layout->setSpacing(Spacing::md);
-    const struct {
-        const char* label;
-        const char* url;
-    } kShortcuts[] = {
-        {"YouTube", "https://www.youtube.com"},
-        {"GitHub", "https://github.com"},
-        {"Discord", "https://discord.com"},
-        {"Gmail", "https://mail.google.com"},
-        {"Drive", "https://drive.google.com"},
-    };
-    for (const auto& tile : kShortcuts) {
-        tiles_layout->addWidget(build_shortcut_tile(
-            tiles, QString::fromUtf8(tile.label),
-            QString::fromUtf8(tile.url), /*is_add=*/false));
-    }
-    tiles_layout->addWidget(build_shortcut_tile(
-        tiles, QStringLiteral("Add shortcut"), QString(), /*is_add=*/true));
-    column_layout->addWidget(tiles);
+    // --- Shortcut tiles: the user's own sites, none by default ------------
+    tiles_host_ = new QWidget(column);
+    tiles_host_->setObjectName(QStringLiteral("HomeShortcutTile"));
+    tiles_layout_ = new QVBoxLayout(tiles_host_);
+    tiles_layout_->setContentsMargins(0, 0, 0, 0);
+    tiles_layout_->setSpacing(Spacing::md);
+    column_layout->addWidget(tiles_host_);
+    rebuild_shortcuts();
 
     root->addWidget(column, 0, Qt::AlignHCenter);
     root->addStretch(3);
@@ -379,15 +357,13 @@ void HomePage::build_ui() {
     cards_row_->setMaximumWidth(1120);
 
     QWidget* resume = build_history_card(
-        cards_row_, QStringLiteral("Continue where you left off"),
-        /*with_progress=*/true);
+        cards_row_, QStringLiteral("Continue where you left off"));
     resume_rows_ = resume->findChild<QVBoxLayout*>(
         QStringLiteral("HomeRows"));
     cards_layout->addWidget(resume, 1);
 
     QWidget* recent = build_history_card(
-        cards_row_, QStringLiteral("Recently visited"),
-        /*with_progress=*/false);
+        cards_row_, QStringLiteral("Recently visited"));
     recent_rows_ = recent->findChild<QVBoxLayout*>(
         QStringLiteral("HomeRows"));
     cards_layout->addWidget(recent, 1);
@@ -399,24 +375,112 @@ void HomePage::build_ui() {
 
 QWidget* HomePage::build_weather_chip() {
     auto* chip = new QWidget(this);
+    weather_chip_ = chip;
     chip->setAttribute(Qt::WA_TranslucentBackground, true);
+    chip->setContextMenuPolicy(Qt::CustomContextMenu);
+    chip->setCursor(Qt::PointingHandCursor);
+    chip->setToolTip(QStringLiteral("Right-click to change location"));
+    connect(chip, &QWidget::customContextMenuRequested, this,
+            [this, chip](const QPoint& pos) {
+                show_weather_menu(chip->mapToGlobal(pos));
+            });
     auto* row = new QHBoxLayout(chip);
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(Spacing::sm);
     weather_icon_ = new QLabel(chip);
-    weather_icon_->setFixedSize(22, 22);
+    weather_icon_->setFixedSize(26, 26);
     row->addWidget(weather_icon_, 0, Qt::AlignVCenter);
     auto* texts = new QVBoxLayout;
     texts->setContentsMargins(0, 0, 0, 0);
     texts->setSpacing(0);
-    auto* temp = new QLabel(QStringLiteral("14°C"), chip);
-    temp->setObjectName(QStringLiteral("HomeWeatherTemp"));
-    texts->addWidget(temp);
-    auto* sub = new QLabel(QStringLiteral("Partly cloudy"), chip);
-    sub->setObjectName(QStringLiteral("HomeWeatherSub"));
-    texts->addWidget(sub);
+    weather_temp_ = new QLabel(chip);
+    weather_temp_->setObjectName(QStringLiteral("HomeWeatherTemp"));
+    texts->addWidget(weather_temp_);
+    weather_sub_ = new QLabel(chip);
+    weather_sub_->setObjectName(QStringLiteral("HomeWeatherSub"));
+    texts->addWidget(weather_sub_);
     row->addLayout(texts);
+    // Hidden until real conditions arrive: never a made-up temperature.
+    chip->hide();
     return chip;
+}
+
+void HomePage::update_weather() {
+    if (!weather_chip_) return;
+    const WeatherInfo& w = WeatherService::instance().current();
+    if (!w.valid) {
+        weather_chip_->hide();
+        return;
+    }
+    weather_temp_->setText(QStringLiteral("%1°%2")
+        .arg(qRound(w.temperature))
+        .arg(w.fahrenheit ? QStringLiteral("F") : QStringLiteral("C")));
+    QString sub = WeatherService::describe(w.code, w.is_day);
+    if (!w.place.isEmpty()) sub += QStringLiteral(" · ") + w.place;
+    weather_sub_->setText(sub);
+    apply_icons();
+    weather_chip_->show();
+}
+
+void HomePage::show_weather_menu(const QPoint& global_pos) {
+    QMenu menu(this);
+    QAction* refresh = menu.addAction(QStringLiteral("Refresh"));
+    QAction* city = menu.addAction(QStringLiteral("Change city…"));
+    QAction* automatic =
+        menu.addAction(QStringLiteral("Use my location (automatic)"));
+    QAction* chosen = menu.exec(global_pos);
+    if (chosen == refresh) {
+        WeatherService::instance().refresh();
+    } else if (chosen == city) {
+        set_weather_city();
+    } else if (chosen == automatic) {
+        if (prefs_) {
+            prefs_->set_string(settings::PrefKeys::kWeatherLocation, "auto");
+        }
+        WeatherService::instance().use_automatic_location();
+    }
+}
+
+void HomePage::set_weather_city() {
+    bool ok = false;
+    const QString name = QInputDialog::getText(
+        this, QStringLiteral("Weather location"),
+        QStringLiteral("City name:"), QLineEdit::Normal, QString(), &ok)
+        .trimmed();
+    if (!ok || name.isEmpty()) return;
+    auto& weather = WeatherService::instance();
+    // One-shot: persist the pin the moment the lookup resolves.
+    auto* resolved = new QMetaObject::Connection;
+    auto* missing = new QMetaObject::Connection;
+    *resolved = connect(&weather, &WeatherService::city_resolved, this,
+        [this, resolved, missing](const QString& n, double lat, double lon,
+                                  bool f) {
+            disconnect(*resolved);
+            disconnect(*missing);
+            delete resolved;
+            delete missing;
+            if (!prefs_) return;
+            QJsonObject o;
+            o.insert(QStringLiteral("name"), n);
+            o.insert(QStringLiteral("lat"), lat);
+            o.insert(QStringLiteral("lon"), lon);
+            o.insert(QStringLiteral("f"), f);
+            const QByteArray json =
+                QJsonDocument(o).toJson(QJsonDocument::Compact);
+            prefs_->set_string(settings::PrefKeys::kWeatherLocation,
+                               std::string_view(json.constData(),
+                                   static_cast<size_t>(json.size())));
+        });
+    *missing = connect(&weather, &WeatherService::city_not_found, this,
+        [this, resolved, missing](const QString& q) {
+            disconnect(*resolved);
+            disconnect(*missing);
+            delete resolved;
+            delete missing;
+            emit status_message(
+                QStringLiteral("Couldn't find a city named \"%1\"").arg(q));
+        });
+    weather.search_city(name);
 }
 
 QWidget* HomePage::build_clock_block() {
@@ -437,31 +501,113 @@ QWidget* HomePage::build_clock_block() {
 }
 
 QWidget* HomePage::build_shortcut_tile(QWidget* parent, const QString& label,
-                                       const QString& target_url,
-                                       bool is_add) {
+                                       const QString& target_url, bool is_add,
+                                       int index) {
     auto* tile = new QToolButton(parent);
     tile->setObjectName(QStringLiteral("HomeShortcut"));
     tile->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-    tile->setText(label);
     tile->setCursor(Qt::PointingHandCursor);
     tile->setFixedSize(106, 84);
     tile->setIconSize(QSize(30, 30));
     tile->setProperty("auroraTileAdd", is_add);
     tile->setProperty("auroraTileLabel", label);
+    tile->setProperty("auroraTileUrl", target_url);
+    // Long names must not stretch the tile: elide to the tile's width.
+    const QFontMetrics fm(tile->font());
+    tile->setText(fm.elidedText(label, Qt::ElideRight, 94));
+    tile->setToolTip(is_add ? QStringLiteral("Add a shortcut") : target_url);
     connect(tile, &QToolButton::clicked, this, [this, target_url, is_add] {
         if (is_add) {
-            emit status_message(QStringLiteral(
-                "Custom shortcuts are not available yet"));
-            return;
+            add_shortcut();
+        } else if (!target_url.isEmpty()) {
+            emit open_url_requested(target_url);
         }
-        if (!target_url.isEmpty()) emit open_url_requested(target_url);
     });
+    if (!is_add) {
+        tile->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(tile, &QToolButton::customContextMenuRequested, this,
+                [this, tile, index](const QPoint& pos) {
+                    QMenu menu(this);
+                    QAction* edit = menu.addAction(QStringLiteral("Edit…"));
+                    QAction* remove = menu.addAction(QStringLiteral("Remove"));
+                    QAction* chosen = menu.exec(tile->mapToGlobal(pos));
+                    if (chosen == edit) edit_shortcut(index);
+                    else if (chosen == remove) remove_shortcut(index);
+                });
+    }
     shortcut_buttons_.append(tile);
     return tile;
 }
 
-QWidget* HomePage::build_history_card(QWidget* parent, const QString& heading,
-                                      bool with_progress) {
+void HomePage::rebuild_shortcuts() {
+    if (!tiles_layout_) return;
+    // Tear down the old rows (tiles are owned by tiles_host_).
+    shortcut_buttons_.clear();
+    while (QLayoutItem* item = tiles_layout_->takeAt(0)) {
+        if (QLayout* row = item->layout()) {
+            while (QLayoutItem* inner = row->takeAt(0)) {
+                if (QWidget* w = inner->widget()) w->deleteLater();
+                delete inner;
+            }
+        }
+        delete item;
+    }
+
+    // The final slot is always the "Add shortcut" tile (until the cap).
+    const int total = shortcuts_.size() +
+                      (shortcuts_.size() < kMaxShortcuts ? 1 : 0);
+    for (int start = 0; start < total; start += kTilesPerRow) {
+        auto* row = new QHBoxLayout;
+        row->setContentsMargins(0, 0, 0, 0);
+        row->setSpacing(Spacing::md);
+        row->addStretch(1);
+        for (int i = start; i < qMin(total, start + kTilesPerRow); ++i) {
+            if (i < shortcuts_.size()) {
+                row->addWidget(build_shortcut_tile(
+                    tiles_host_, shortcuts_[i].title, shortcuts_[i].url,
+                    /*is_add=*/false, i));
+            } else {
+                row->addWidget(build_shortcut_tile(
+                    tiles_host_, QStringLiteral("Add shortcut"), QString(),
+                    /*is_add=*/true, -1));
+            }
+        }
+        row->addStretch(1);
+        tiles_layout_->addLayout(row);
+    }
+    apply_icons();
+}
+
+void HomePage::add_shortcut() {
+    Shortcut result;
+    if (!prompt_shortcut(this, QStringLiteral("Add shortcut"), {}, &result)) {
+        return;
+    }
+    shortcuts_.append(result);
+    save_shortcuts(prefs_, settings::PrefKeys::kHomeShortcuts, shortcuts_);
+    rebuild_shortcuts();
+}
+
+void HomePage::edit_shortcut(int index) {
+    if (index < 0 || index >= shortcuts_.size()) return;
+    Shortcut result;
+    if (!prompt_shortcut(this, QStringLiteral("Edit shortcut"),
+                         shortcuts_[index], &result)) {
+        return;
+    }
+    shortcuts_[index] = result;
+    save_shortcuts(prefs_, settings::PrefKeys::kHomeShortcuts, shortcuts_);
+    rebuild_shortcuts();
+}
+
+void HomePage::remove_shortcut(int index) {
+    if (index < 0 || index >= shortcuts_.size()) return;
+    shortcuts_.removeAt(index);
+    save_shortcuts(prefs_, settings::PrefKeys::kHomeShortcuts, shortcuts_);
+    rebuild_shortcuts();
+}
+
+QWidget* HomePage::build_history_card(QWidget* parent, const QString& heading) {
     auto* card = new QWidget(parent);
     card->setObjectName(QStringLiteral("HomeCard"));
     card->setAttribute(Qt::WA_StyledBackground, true);
@@ -501,7 +647,6 @@ QWidget* HomePage::build_history_card(QWidget* parent, const QString& heading,
     card_layout->addLayout(rows);
     card_layout->addStretch(1);
 
-    card->setProperty("withProgress", with_progress);
     return card;
 }
 
@@ -571,43 +716,62 @@ void HomePage::render_history_rows() {
     clear(recent_rows_);
     if (!resume_rows_ || !recent_rows_) return;
 
-    QVector<HistoryEntry> resume = resume_entries_;
-    QVector<HistoryEntry> recent = recent_entries_;
+    // Real history only. "Continue where you left off" is the newest pages;
+    // "Recently visited" is the next newest, from sites not already shown
+    // above, so the two cards never repeat each other.
+    QVector<HistoryEntry> resume;
+    QVector<HistoryEntry> recent;
     if (history_) {
-        const auto visits = history_->recent(6);
-        if (!visits.empty()) {
-            resume.clear();
-            recent.clear();
-            for (const auto& v : visits) {
-                HistoryEntry entry;
-                entry.url = QString::fromStdString(v.url);
-                entry.title = v.title.empty()
-                    ? entry.url : QString::fromStdString(v.title);
-                entry.when_epoch = static_cast<std::int64_t>(
-                    std::chrono::duration_cast<std::chrono::seconds>(
-                        v.last_visit.time_since_epoch()).count());
-                recent.append(entry);
+        QSet<QString> seen_urls;
+        QSet<QString> resume_hosts;
+        for (const auto& v : history_->recent(80)) {
+            HistoryEntry entry;
+            entry.url = QString::fromStdString(v.url);
+            if (entry.url.isEmpty() || is_internal_url(entry.url) ||
+                seen_urls.contains(entry.url)) {
+                continue;
             }
-            resume = recent;
+            seen_urls.insert(entry.url);
+            entry.title = v.title.empty()
+                ? FaviconCache::host_of(entry.url)
+                : QString::fromStdString(v.title);
+            entry.when_epoch = static_cast<std::int64_t>(
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    v.last_visit.time_since_epoch()).count());
+            const QString host = FaviconCache::host_of(entry.url);
+            if (resume.size() < kRowsPerCard) {
+                resume.append(entry);
+                resume_hosts.insert(host);
+            } else if (!resume_hosts.contains(host) &&
+                       recent.size() < kRowsPerCard) {
+                recent.append(entry);
+                resume_hosts.insert(host);   // one row per site in this card
+            }
+            if (resume.size() >= kRowsPerCard &&
+                recent.size() >= kRowsPerCard) {
+                break;
+            }
         }
     }
 
-    // The progress strip is a visual "how far in" hint derived from the row's
-    // age: newer rows are further along. Real page-progress is not tracked.
-    int index = 0;
-    for (const HistoryEntry& entry : resume) {
-        render_entry(resume_rows_, entry, /*with_progress=*/true);
-        if (++index >= 3) break;
-    }
-    index = 0;
-    for (const HistoryEntry& entry : recent) {
-        render_entry(recent_rows_, entry, /*with_progress=*/false);
-        if (++index >= 3) break;
-    }
+    const auto fill = [this](QVBoxLayout* rows,
+                             const QVector<HistoryEntry>& list) {
+        if (list.isEmpty()) {
+            auto* empty = new QLabel(
+                QStringLiteral("Pages you visit will show up here."),
+                rows->parentWidget());
+            empty->setObjectName(QStringLiteral("HomeRowSub"));
+            empty->setWordWrap(true);
+            rows->addWidget(empty);
+            return;
+        }
+        for (const HistoryEntry& entry : list) render_entry(rows, entry);
+    };
+    fill(resume_rows_, resume);
+    fill(recent_rows_, recent);
 }
 
-void HomePage::render_entry(QVBoxLayout* rows, const HistoryEntry& entry,
-                            bool with_progress) {
+void HomePage::render_entry(QVBoxLayout* rows, const HistoryEntry& entry) {
     auto* row = new QWidget(rows->parentWidget());
     row->setObjectName(QStringLiteral("HomeRow"));
     row->setAttribute(Qt::WA_StyledBackground, true);
@@ -626,35 +790,24 @@ void HomePage::render_entry(QVBoxLayout* rows, const HistoryEntry& entry,
         icon_label->setPixmap(site.pixmap(28, 28));
     } else {
         const qreal dpr = screen() ? screen()->devicePixelRatio() : 1.0;
-        const QString name = entry.title.section(
-            QStringLiteral("—"), 0, 0).trimmed();
+        const QString host = FaviconCache::host_of(entry.url);
         icon_label->setPixmap(letter_badge(
-            name.isEmpty() ? entry.title : name,
-            brand_color(name.isEmpty() ? entry.title : name), 28, dpr));
+            host.isEmpty() ? entry.title : host, brand_color(host), 28, dpr));
     }
     row_layout->addWidget(icon_label, 0, Qt::AlignTop);
 
     auto* texts = new QVBoxLayout;
     texts->setContentsMargins(0, 0, 0, 0);
     texts->setSpacing(Spacing::xxs);
-    auto* title = new QLabel(entry.title, row);
+    auto* title = new QLabel(row);
     title->setObjectName(QStringLiteral("HomeRowTitle"));
+    title->setToolTip(entry.title);
+    title->setText(QFontMetrics(title->font()).elidedText(
+        entry.title, Qt::ElideRight, 190));
     texts->addWidget(title);
     auto* sub = new QLabel(FaviconCache::host_of(entry.url), row);
     sub->setObjectName(QStringLiteral("HomeRowSub"));
     texts->addWidget(sub);
-    if (with_progress) {
-        auto* bar = new QProgressBar(row);
-        bar->setObjectName(QStringLiteral("HomeRowProgress"));
-        bar->setRange(0, 100);
-        // Deterministic pseudo-progress: spread the rows so the column
-        // doesn't show three identical bars.
-        const int ordinal = rows->count() + 1;
-        bar->setValue(30 + ordinal * 20 > 92 ? 92 : 30 + ordinal * 20);
-        bar->setProperty("auroraBarOrdinal", ordinal);
-        texts->addSpacing(Spacing::xxs);
-        texts->addWidget(bar);
-    }
     row_layout->addLayout(texts, 1);
 
     auto* when = new QLabel(time_ago(entry.when_epoch), row);
@@ -757,19 +910,27 @@ void HomePage::apply_icons() {
                                           theme.colors.accent2, 18, dpr));
     }
     if (weather_icon_) {
+        const WeatherInfo& w = WeatherService::instance().current();
+        const icons::Name glyph = w.valid
+            ? WeatherService::icon_for(w.code, w.is_day)
+            : icons::Name::CloudSun;
         weather_icon_->setPixmap(icons::pixmap(
-            icons::Name::CloudSun, 22, theme.colors.text_muted, dpr));
+            glyph, 26, theme.colors.accent, dpr));
     }
     for (QToolButton* tile : shortcut_buttons_) {
-        const bool is_add = tile->property("auroraTileAdd").toBool();
-        const QString label =
-            tile->property("auroraTileLabel").toString();
-        if (is_add) {
+        if (tile->property("auroraTileAdd").toBool()) {
             tile->setIcon(icons::icon(icons::Name::Plus,
                                       theme.colors.text_muted, 22, dpr));
+            continue;
+        }
+        const QString label = tile->property("auroraTileLabel").toString();
+        const QString url = tile->property("auroraTileUrl").toString();
+        const QIcon site = FaviconCache::instance().icon_for_url(url);
+        if (!site.isNull()) {
+            tile->setIcon(site);
         } else {
-            tile->setIcon(QIcon(letter_badge(label, brand_color(label), 30,
-                                             dpr)));
+            tile->setIcon(QIcon(letter_badge(
+                label, brand_color(FaviconCache::host_of(url)), 30, dpr)));
         }
     }
     for (QToolButton* row : action_buttons_) {

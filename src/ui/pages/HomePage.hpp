@@ -4,11 +4,12 @@
 // gradient with cyan (left) and magenta (right) aurora glows painted in
 // paintEvent(); a live clock + date in the top-right corner and a weather
 // chip in the top-left; the gradient-ribbon "A" logo and widely-tracked
-// "A U R O R A" wordmark above one glowing gradient-outlined search pill; a
-// grid of shortcut tiles; and three bottom cards (resume rows, recently
-// visited, quick actions). Real history feeds the two list cards when a
-// HistoryService is attached; without one the page falls back to the mock's
-// static rows.
+// "A U R O R A" wordmark above one glowing gradient-outlined search pill; the
+// user's own shortcut tiles (none by default, added with the "Add shortcut"
+// tile); and three bottom cards (resume rows, recently visited, quick
+// actions). Real history feeds the two list cards; with no history they show
+// an empty state rather than made-up rows. The weather chip shows live
+// conditions (see WeatherService) and stays hidden until they arrive.
 //
 // Qt widget so the page lives natively in the content stack like every other
 // aurora:// page. The page paints its own backdrop in paintEvent(), so it
@@ -20,6 +21,8 @@
 #include <QString>
 #include <QVector>
 #include <QWidget>
+
+#include "ui/ShortcutList.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -34,6 +37,7 @@ class QToolButton;
 class QVBoxLayout;
 
 namespace aurora::history { class HistoryService; }
+namespace aurora::settings { class Settings; }
 
 namespace aurora::ui {
 
@@ -53,6 +57,9 @@ public:
     // "Recently visited" cards re-render from the newest visits. Safe to
     // call with nullptr to fall back to the built-in mock rows.
     void set_history_service(history::HistoryService* history);
+    // Profile preferences: where the user's shortcut tiles and pinned
+    // weather city are stored. Safe to call with nullptr (nothing persists).
+    void set_prefs(settings::Settings* prefs);
 
 signals:
     // Same contract as InternalPageWidget: typing a query (Enter or the
@@ -79,15 +86,21 @@ private:
 
     void build_ui();
     QWidget* build_shortcut_tile(QWidget* parent, const QString& label,
-                                 const QString& target_url, bool is_add);
-    QWidget* build_history_card(QWidget* parent, const QString& heading,
-                                bool with_progress);
+                                 const QString& target_url, bool is_add,
+                                 int index);
+    void rebuild_shortcuts();                  // tiles from shortcuts_
+    void add_shortcut();
+    void edit_shortcut(int index);
+    void remove_shortcut(int index);
+    void update_weather();                     // chip from WeatherService
+    void show_weather_menu(const QPoint& global_pos);
+    void set_weather_city();
+    QWidget* build_history_card(QWidget* parent, const QString& heading);
     QWidget* build_actions_card(QWidget* parent);
     QWidget* build_weather_chip();
     QWidget* build_clock_block();
     void render_history_rows();
-    void render_entry(QVBoxLayout* rows, const HistoryEntry& entry,
-                      bool with_progress);
+    void render_entry(QVBoxLayout* rows, const HistoryEntry& entry);
     QString time_ago(std::int64_t epoch_seconds) const;
     void apply_icons();   // re-stamp every glyph from the live theme
 
@@ -101,14 +114,19 @@ private:
     QLabel* clock_label_ = nullptr;
     QLabel* date_label_ = nullptr;
     QLabel* weather_icon_ = nullptr;
+    QWidget* weather_chip_ = nullptr;
+    QLabel* weather_temp_ = nullptr;
+    QLabel* weather_sub_ = nullptr;
+    QWidget* tiles_host_ = nullptr;           // holds the shortcut rows
+    QVBoxLayout* tiles_layout_ = nullptr;
+    settings::Settings* prefs_ = nullptr;
+    QVector<Shortcut> shortcuts_;
     QTimer* clock_timer_ = nullptr;
 
     QVector<QToolButton*> shortcut_buttons_;  // tiles (icon re-tint helper)
     QVector<QToolButton*> action_buttons_;    // quick-action rows
 
     history::HistoryService* history_ = nullptr;
-    QVector<HistoryEntry> resume_entries_;    // static fallback rows
-    QVector<HistoryEntry> recent_entries_;
 
     SearchUrlFor query_url_for_;              // window-provided query → URL
     std::uint64_t theme_observer_ = 0;        // ThemeState subscription

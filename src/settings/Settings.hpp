@@ -61,6 +61,11 @@ struct PrefKeys {
     static constexpr std::string_view kCertAudit = "privacy.cert_audit";
     static constexpr std::string_view kRefererTrim = "privacy.referer_trim";
     static constexpr std::string_view kReducedMotion = "accessibility.reduced_motion";
+    // User-collected sites (JSON arrays of {title, url}); both start empty.
+    static constexpr std::string_view kHomeShortcuts = "home.shortcuts";
+    static constexpr std::string_view kDockPins = "dock.pins";
+    // Homepage weather: "auto" locates by IP; a JSON {name,lat,lon} pins a city.
+    static constexpr std::string_view kWeatherLocation = "home.weather_location";
 };
 
 class Settings {
