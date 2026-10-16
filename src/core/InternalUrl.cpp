@@ -40,6 +40,7 @@ std::optional<InternalPage> parse_internal_url(std::string_view input) {
     if (s.compare(pos, 2, "//") == 0) pos += 2;
     const std::string host = s.substr(pos);
 
+    if (host == "home" || host == "newtab") return InternalPage::Home;
     if (host == "history") return InternalPage::History;
     if (host == "downloads") return InternalPage::Downloads;
     if (host == "bookmarks") return InternalPage::Bookmarks;
@@ -62,6 +63,7 @@ bool is_internal_url(std::string_view input) {
 
 std::string internal_url(InternalPage page) {
     switch (page) {
+        case InternalPage::Home:      return "aurora://home";
         case InternalPage::History:   return "aurora://history";
         case InternalPage::Downloads: return "aurora://downloads";
         case InternalPage::Bookmarks: return "aurora://bookmarks";
@@ -73,6 +75,7 @@ std::string internal_url(InternalPage page) {
 
 std::string internal_page_title(InternalPage page) {
     switch (page) {
+        case InternalPage::Home:      return "New Tab";
         case InternalPage::History:   return "History";
         case InternalPage::Downloads: return "Downloads";
         case InternalPage::Bookmarks: return "Bookmarks";

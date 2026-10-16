@@ -1,11 +1,11 @@
 // Aurora — internal (aurora://) page URLs.
 //
-// The browser ships five native pages — history, downloads, bookmarks,
-// extensions and settings — that are rendered by Qt widgets rather than by the
-// web engine. They are addressable so the omnibox, the browser menu and session
-// restore all speak the same language: `aurora://history`,
-// `aurora://downloads`, `aurora://bookmarks`, `aurora://extensions`,
-// `aurora://settings`.
+// The browser ships six native pages — home (the new-tab page), history,
+// downloads, bookmarks, extensions and settings — that are rendered by Qt
+// widgets rather than by the web engine. They are addressable so the omnibox,
+// the browser menu and session restore all speak the same language:
+// `aurora://home`, `aurora://history`, `aurora://downloads`,
+// `aurora://bookmarks`, `aurora://extensions`, `aurora://settings`.
 //
 // chrome-extension:// URLs are not Qt pages, but they are also in-app: they
 // must load inside Aurora and must never be handed to an external browser.
@@ -21,6 +21,7 @@
 namespace aurora::core {
 
 enum class InternalPage {
+    Home,       // the aurora://home new-tab page (aurora://newtab aliases it)
     History,
     Downloads,
     Bookmarks,

@@ -187,38 +187,26 @@ public:
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
 
+        // Aurora glass: tabs are minimal dark pills floating on the strip —
+        // fully rounded capsules inset from the tab cell, never the old
+        // folder-tab shape fused to a toolbar plate. Active is the surface
+        // token, hover is the same pill in the tab-hover tint.
         if (selected) {
-            // Folder tab: full-bleed so the bottom edge lands flush on the
-            // toolbar plate (same color → no seam, ever). Rounded top corners
-            // with outward-curved fillets at the bottom base.
-            QPainterPath path;
-            constexpr qreal kTopR = 8.0;   // top corner radius
-            constexpr qreal kFlair = 10.0; // outward bottom fillet
-            const qreal bottom = r.bottom(); // the shared strip/toolbar edge
-            path.moveTo(r.left() - kFlair, bottom);
-            path.quadTo(QPointF(r.left(), bottom),
-                        QPointF(r.left(), bottom - kFlair));
-            path.lineTo(r.left(), r.top() + kTopR);
-            path.quadTo(QPointF(r.left(), r.top()),
-                        QPointF(r.left() + kTopR, r.top()));
-            path.lineTo(r.right() - kTopR, r.top());
-            path.quadTo(QPointF(r.right(), r.top()),
-                        QPointF(r.right(), r.top() + kTopR));
-            path.lineTo(r.right(), bottom - kFlair);
-            path.quadTo(QPointF(r.right(), bottom),
-                        QPointF(r.right() + kFlair, bottom));
-            path.closeSubpath();
+            const QRectF pill = r.adjusted(2, 4, -2, -4);
             painter->setPen(Qt::NoPen);
             painter->setBrush(bar->property("incognito").toBool()
                                  ? incognito_tint(c.surface) : c.surface);
-            painter->drawPath(path);
+            painter->drawRoundedRect(pill, pill.height() / 2.0,
+                                     pill.height() / 2.0);
         } else if (h > 0.02) {
-            // Hover lift: a subtly raised rounded plate, fully inside the tab.
+            // Hover lift: a subtly raised pill, fully inside the tab.
             QColor fill = c.tab_hover_bg;
             fill.setAlphaF(fill.alphaF() * static_cast<float>(h));
+            const QRectF pill = r.adjusted(2, 4, -2, -4);
             painter->setPen(Qt::NoPen);
             painter->setBrush(fill);
-            painter->drawRoundedRect(r.adjusted(2, 4, -2, 5), 9, 9);
+            painter->drawRoundedRect(pill, pill.height() / 2.0,
+                                     pill.height() / 2.0);
         }
 
         // Hairline divider between two calm adjacent tabs. A divider is only

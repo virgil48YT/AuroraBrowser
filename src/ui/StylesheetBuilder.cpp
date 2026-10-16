@@ -41,7 +41,12 @@ QString StylesheetBuilder::build(const Theme& t) {
     // responds with one consistent gesture.
     const QString accent_wash        = rgba_of(c.accent_soft);
     const QString accent_wash_strong = rgba(c.accent, c.accent_soft.alpha() * 2);
+    const QString accent2_wash       = rgba_of(c.accent2_soft);
     const QString focus_ring         = rgba(c.accent, 90);
+    // Aurora glass edge: hairlines that separate chrome from content carry a
+    // faint purple glow, so the boundaries read as light, not as boxes.
+    const QString glow_edge          = rgba(c.accent2, 60);
+    const QString glow_edge_soft     = rgba(c.accent2, 34);
 
     // =======================================================================
     // Global
@@ -52,48 +57,66 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "}")
             .arg(t.body_font_px);
 
+    // The whole window is one piece of dark aurora glass with the big rounded
+    // top (and bottom) corners from the mockup. Qt clips a stylesheet-painted
+    // background to border-radius, and MainWindow is frameless, so the
+    // radius is what shapes the window silhouette.
     s += QString("QMainWindow, QWidget#Root {"
                  "  background: %1;"
                  "  color: %2;"
+                 "  border-radius: %3px;"
                  "}")
-            .arg(hex(c.background), hex(c.text));
+            .arg(hex(c.background), hex(c.text))
+            .arg(Radius::xxl);
 
-    s += QString("QWidget#ContentStack { background: %1; border: none; }")
-            .arg(hex(c.background));
+    // The content stack floats inside the window as its own rounded card —
+    // slightly lighter than the glass behind it, with a faint purple glow
+    // hairline, inset from the window edge.
+    s += QString("QWidget#ContentStack {"
+                 "  background: %1;"
+                 "  border: %2px solid %3;"
+                 "  border-radius: %4px;"
+                 "  margin: 0px %5px %5px %5px;"
+                 "}")
+            .arg(hex(c.card_bg))
+            .arg(Metrics::hairline)
+            .arg(glow_edge_soft)
+            .arg(Radius::xxl)
+            .arg(Spacing::lg);
 
     // =======================================================================
     // Chrome surface
     //
-    // ChromeTop is one continuous plate holding the tab strip and the
-    // toolbar. It owns the only hard edge in the chrome: the hairline that
-    // separates chrome from web content.
-    // =======================================================================
+    // Aurora glass: the chrome is part of the window glass, not a separate
+    // plate, so it stays transparent over Root and keeps only the big rounded
+    // top corners. The glow that separates chrome from the content card now
+    // comes from the card's own border.
     s += QString("QWidget#ChromeTop {"
-                 "  background: %1;"
+                 "  background: transparent;"
                  "  border: none;"
-                 "  border-bottom: %2px solid %3;"
+                 "  border-top-left-radius: %1px;"
+                 "  border-top-right-radius: %1px;"
                  "}")
-            .arg(hex(c.surface))
-            .arg(Metrics::hairline)
-            .arg(hex(c.border));
+            .arg(Radius::xxl);
 
-    // The tab strip is the recessed layer: darker than the plate, so the
-    // active tab appears to rise out of it and merge with the toolbar.
+    // Strip and toolbar ride the same transparent glass as ChromeTop; tabs
+    // float on it as dark pills (painted by TabStripStyle in C++).
     // Padding is owned by the row's QHBoxLayout; the sheet owns only the
     // fill, so the two can never double up.
     s += QString("QWidget#TabStrip {"
-                 "  background: %1;"
+                 "  background: transparent;"
                  "  border: none;"
                  "  padding: 0px;"
+                 "  border-top-left-radius: %1px;"
+                 "  border-top-right-radius: %1px;"
                  "}")
-            .arg(hex(c.tab_strip_bg));
+            .arg(Radius::xxl);
 
     s += QString("QWidget#ToolbarRow {"
-                 "  background: %1;"
+                 "  background: transparent;"
                  "  border: none;"
                  "  padding: 0px;"
-                 "}")
-            .arg(hex(c.toolbar_bg));
+                 "}");
 
     // Per-window selectors keep the accent wash out of normal windows, even
     // though custom-painted widgets share the current global theme.
@@ -119,15 +142,13 @@ QString StylesheetBuilder::build(const Theme& t) {
             .arg(Spacing::xs)
             .arg(Spacing::sm);
 
-    // The bookmarks bar is the last band of the same plate: same fill as the
-    // toolbar so the chrome stays one surface, separated from content only by
-    // ChromeTop's own bottom hairline.
+    // The bookmarks bar is the last band of the chrome glass: same
+    // transparent fill as the toolbar so the chrome stays one surface.
     s += QString("QWidget#BookmarkBar {"
-                 "  background: %1;"
+                 "  background: transparent;"
                  "  border: none;"
                  "  padding: 0px;"
-                 "}")
-            .arg(hex(c.toolbar_bg));
+                 "}");
 
     // Bar items are flat and quiet until hovered — they are chrome, not
     // buttons competing with the omnibox.
@@ -205,6 +226,27 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: transparent;"
                  "  border: none;"
                  "}");
+    // Pill tabs: tab pixels are normally painted by TabStripStyle (C++), so
+    // these rules are the QSS hooks QTabBar consults plus the look for any
+    // style fallback — dark pills with no hard edges, never squared tabs.
+    s += QString("QTabBar::tab {"
+                 "  background: transparent;"
+                 "  color: %1;"
+                 "  border: none;"
+                 "  border-radius: %2px;"
+                 "  padding: 2px %3px;"
+                 "  margin: 1px;"
+                 "}")
+            .arg(hex(c.text_muted))
+            .arg(Radius::pill)
+            .arg(Spacing::md);
+    s += QString("QTabBar::tab:selected {"
+                 "  background: %1; color: %2; border-radius: %3px;"
+                 "}")
+            .arg(hex(c.surface), hex(c.text))
+            .arg(Radius::pill);
+    s += QString("QTabBar::tab:hover:!selected { background: %1; }")
+            .arg(hex(c.tab_hover_bg));
     s += QString("QTabWidget::pane { border: none; background: %1; }")
             .arg(hex(c.background));
     s += QString("QTabWidget::tab-bar { alignment: left; }");
@@ -266,17 +308,23 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QToolButton#NewTabButton:focus, QToolButton#TabSearchButton:focus {"
                  "  background: %1; }").arg(accent_wash);
 
-    // Custom window controls (frameless): wide chromeless hit targets flush to
-    // the top-right corner; the close button turns danger on hover.
+    // Custom window controls (frameless): small round ghost buttons floating
+    // over the glass in the top-right corner; the close button turns danger on
+    // hover. Qt clips the hover fill to the radius, so `pill` renders as a
+    // true circle on the square hit target.
     s += QString("QToolButton#WindowButton, QToolButton#WindowCloseButton {"
                  "  background: transparent;"
                  "  border: none;"
-                 "  border-radius: 0px;"
-                 "  margin: 0px;"
+                 "  border-radius: %1px;"
+                 "  color: %2;"
+                 "  margin: %3px;"
                  "  padding: 0px;"
-                 "}");
-    s += QString("QToolButton#WindowButton:hover { background: %1; }")
-            .arg(rgba(c.text, 22));
+                 "}")
+            .arg(Radius::pill)
+            .arg(hex(c.text_muted))
+            .arg(Spacing::xs);
+    s += QString("QToolButton#WindowButton:hover { background: %1; color: %2; }")
+            .arg(rgba(c.text, 22), hex(c.text));
     s += QString("QToolButton#WindowButton:pressed { background: %1; }")
             .arg(rgba(c.text, 40));
     s += QString("QToolButton#WindowCloseButton:hover { background: %1; }")
@@ -987,7 +1035,7 @@ QString StylesheetBuilder::build(const Theme& t) {
     // column, a header band (title + subtitle + hairline), a toolbar row, the
     // body, and an empty-state card. Everything below is expressed in the same
     // tokens as the chrome so the pages stop looking like a different app.
-    s += QString("QWidget#InternalPage { background: %1; }").arg(c.background.name());
+    s += QString("QWidget#InternalPage { background: %1; }").arg(c.card_bg.name());
     s += QString("QWidget#PageColumn, QWidget#PageHeader, QWidget#PageToolbar {"
                  "  background: transparent; }");
     // Title: one clear step above everything else, tightened tracking so a
@@ -1207,6 +1255,63 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QLabel#ExtensionCardPath { color: %1; font-size: %2px; }")
             .arg(c.text_faint.name()).arg(t.small_font_px);
     s += QString("QLabel#ExtensionCardIcon { background: transparent; }");
+
+    // --- Home page (aurora://home) -------------------------------------------
+    // The background is a painted dark nebula gradient (see HomePage's
+    // paintEvent); the sheet owns everything interactive so the C++ stays a
+    // layout and a canvas.
+    s += QString("QWidget#HomePage { background: transparent; }");
+    // The wordmark: near-white with a quiet letter-spaced glow; the gradient
+    // lives in the painted blobs, the name stays crisp on top of them.
+    s += QString("QLabel#HomeWordmark {"
+                 "  color: %1; font-size: %2px; font-weight: 300;"
+                 "  letter-spacing: 12px; padding-bottom: %3px;}"
+                 "QWidget#HomeColumn, QWidget#HomeSearchPillHost {"
+                 "  background: transparent; }")
+            .arg(c.text.name())
+            .arg(t.body_font_px + 17)
+            .arg(Spacing::lg);
+    // The big centered search pill: an elevated glass capsule with the
+    // accent/glow border when focused, exactly the mockup's top-center search
+    // bar carried onto the new-tab page.
+    s += QString("QLineEdit#HomeSearchPill {"
+                 "  background: %1; color: %2;"
+                 "  border: %3px solid %4;"
+                 "  border-radius: %5px;"
+                 "  padding: 0px %6px 0px %7px;"
+                 "  font-size: %8px;"
+                 "  selection-background-color: %9; selection-color: %2;}")
+            .arg(rgba(c.surface_raised, 210)).arg(c.text.name())
+            .arg(Metrics::hairline)
+            .arg(glow_edge)
+            .arg(Radius::pill)
+            .arg(Spacing::lg)
+            .arg(Spacing::xl + Spacing::xs)
+            .arg(t.title_font_px + 2)
+            .arg(rgba(c.accent, 60));
+    s += QString("QLineEdit#HomeSearchPill:hover { border-color: %1; }")
+            .arg(rgba(c.accent, 130));
+    s += QString("QLineEdit#HomeSearchPill:focus { border-color: %1; }")
+            .arg(c.accent.name());
+    // The circular search orb in the pill's trailing gutter (and the
+    // standalone bottom-right orb while the field is unfocused): accent
+    // teal at rest, purple nebula on hover, brighter teal when pressed.
+    s += QString("QToolButton#HomeSearchButton, QToolButton#HomeSearchOrb {"
+                 "  background: %1; color: %2; border: none;"
+                 "  border-radius: %3px; padding: 0px; margin: 0px;"
+                 "  min-width: 44px; max-width: 44px;"
+                 "  min-height: 44px; max-height: 44px;}")
+            .arg(c.accent.name()).arg(c.background.name())
+            .arg(Radius::pill);
+    s += QString("QToolButton#HomeSearchButton:hover, QToolButton#HomeSearchOrb:hover {"
+                 "  background: %1;}")
+            .arg(c.accent2.name());
+    s += QString("QToolButton#HomeSearchButton:pressed, QToolButton#HomeSearchOrb:pressed {"
+                 "  background: %1;}")
+            .arg(c.accent_hover.name());
+    // HomePage paints its own backdrop; keep the orb's hover wash token
+    // referenced so a theme refresh can re-tint both accents together.
+    (void)accent2_wash;
 
     s += QString("QCheckBox#PageCheck { color: %1; spacing: %2px; }")
             .arg(c.text.name()).arg(Spacing::sm);
