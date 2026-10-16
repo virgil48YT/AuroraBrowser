@@ -26,6 +26,7 @@ qt_add_executable(aurora_browser
     ../ui/pages/DownloadsPage.cpp
     ../ui/pages/BookmarksPage.cpp
     ../ui/pages/SettingsPage.cpp
+    ../ui/pages/SettingsRow.cpp
     ../ui/pages/ExtensionsPage.cpp
     main.cpp
 )
@@ -33,6 +34,11 @@ qt_add_executable(aurora_browser
 target_include_directories(aurora_browser PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(aurora_browser PRIVATE
     aurora_core Qt::Widgets Qt::Gui Qt::Network Qt::Svg)
+
+# Shown on the About section of aurora://settings; the macro is otherwise
+# only compiled into the bootstrap/packaging tools.
+target_compile_definitions(aurora_browser PRIVATE
+    AURORA_VERSION_STRING="${PROJECT_VERSION}")
 
 # Embed the Aurora app icon into the Windows executable so it shows in the
 # taskbar, window title, and Explorer. The .rc is generated at configure time
