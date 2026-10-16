@@ -52,8 +52,9 @@ signals:
     void status_message(const QString& text);
 
 protected:
-    // Accepted and ignored: the skeleton renders no title/subtitle block.
-    // Kept so pages can keep declaring their purpose without a header band.
+    // Header block above the body: the page title (bold, one step up) and an
+    // optional one-line subtitle. Both live over the toolbar row; an empty
+    // subtitle hides only its label, never the title.
     void set_subtitle(const QString& text);
     // Row of controls at the top of the page (search field, action buttons).
     QHBoxLayout* toolbar_row();
@@ -66,6 +67,7 @@ protected:
 
 private:
     QVBoxLayout* root_ = nullptr;
+    QLabel* title_label_ = nullptr;
     QWidget* toolbar_host_ = nullptr;
     QHBoxLayout* toolbar_ = nullptr;
     QLabel* subtitle_ = nullptr;

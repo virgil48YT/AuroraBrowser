@@ -51,9 +51,19 @@ struct ThemeColors {
     // Aurora-glass additions. Default-constructed to a neutral purple / card
     // grey so any code path that skips dark_theme() still compiles and renders
     // something sane; the dark theme assigns the real nebula pair.
-    QColor accent2          = QColor(QStringLiteral("#8B5CF6")); // secondary brand: purple nebula glow
+    QColor accent2          = QColor(QStringLiteral("#A855F7")); // secondary brand: neon purple glow
     QColor accent2_soft;    // translucent accent2 wash (has alpha)
-    QColor card_bg          = QColor(QStringLiteral("#16161D")); // floating content card
+    QColor accent3          = QColor(QStringLiteral("#D946EF")); // gradient endpoint: neon magenta
+    QColor card_bg          = QColor(QStringLiteral("#0E1626")); // dark-blue content card
+    QColor card_raised      = QColor(QStringLiteral("#111C30")); // one-step-lighter card (homepage tiles)
+
+    // --- Toggle switch ------------------------------------------------------
+    // Pill toggles (settings, shields): the track/knob pair for its on and
+    // off states. Gradient ends for the ON track are accent / accent3 above.
+    QColor toggle_track_off;
+    QColor toggle_border_off;
+    QColor toggle_knob_on;   // dark core dot on the ON toggle
+    QColor toggle_knob_off;  // slate dot on the OFF toggle
 
     // --- Semantic ----------------------------------------------------------
     QColor danger;          // destructive
@@ -89,6 +99,13 @@ struct Theme {
     int body_font_px = 13;
     int title_font_px = 14;
     int small_font_px = 11;
+
+    // Geometric sans stack (the design's Inter-like voice). Applied by
+    // StylesheetBuilder as the app-wide font-family; the first family
+    // present on the host OS wins, so there is nothing to bundle.
+    QString font_family = QStringLiteral(
+        "Inter, 'Segoe UI', 'Noto Sans', Ubuntu, Cantarell, 'Helvetica Neue', "
+        "Arial, sans-serif");
 };
 
 // Pixel spacing scale (4px grid). Every layout gap is one of these.

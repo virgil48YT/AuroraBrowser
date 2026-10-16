@@ -237,6 +237,26 @@ QString svg_markup(Name n) {
                        "<path d=\"M4.5 4.5l15 15\"/>");
         case Name::Block:
             return doc("<circle cx=\"12\" cy=\"12\" r=\"8\"/><path d=\"M6.5 6.5l11 11\"/>");
+        case Name::Sparkle:
+            // Four-point sparkle star (concave sides) with a small offset
+            // satellite spark — the "AI assist" affordance on the homepage
+            // search pill.
+            return doc("<path d=\"M10 3c.7 4.5 2.5 6.3 7 7-4.5.7-6.3 2.5-7 7-.7-4.5-2.5-6.3-7-7 4.5-.7 6.3-2.5 7-7z\"/>", true)
+                .replace(QStringLiteral("</svg>"),
+                         "<path d=\"M18.5 15c.3 1.7 1 2.4 2.7 2.7-1.7.3-2.4 1-2.7 2.7"
+                         "-.3-1.7-1-2.4-2.7-2.7 1.7-.3 2.4-1 2.7-2.7z\"
+                         " fill=\"__C__\" stroke=\"none\"/></svg>");
+        case Name::CloudSun:
+            return doc("<path d=\"M17 4v2\"/><path d=\"M21 6.5l1-1\"/><path d=\"M13 6.5l-1-1\"/>"
+                       "<circle cx=\"17\" cy=\"8.5\" r=\"2.4\"/>"
+                       "<path d=\"M10 20h6.5a3.5 3.5 0 0 0 .6-6.9 4.6 4.6 0 0 0-9-1.1A3.8 3.8 0 0 0 10 20z\"/>");
+        case Name::User:
+            return doc("<circle cx=\"12\" cy=\"8\" r=\"3.6\"/>"
+                       "<path d=\"M5 20a7 7 0 0 1 14 0\"/>");
+        case Name::Gauge:
+            return doc("<path d=\"M4 14a8 8 0 1 1 16 0\"/>"
+                       "<path d=\"M12 14l3.5-4\"/>"
+                       "<circle cx=\"12\" cy=\"14\" r=\"1\" fill=\"__C__\" stroke=\"none\"/>");
         default:
             return doc("<rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"3\"/>");
     }

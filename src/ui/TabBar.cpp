@@ -193,9 +193,14 @@ public:
         // token, hover is the same pill in the tab-hover tint.
         if (selected) {
             const QRectF pill = r.adjusted(2, 4, -2, -4);
-            painter->setPen(Qt::NoPen);
+            // Aurora neon: the active pill carries a whisper of the nebula
+            // on its edge (purple at low alpha) so it reads as lit glass
+            // rather than a plain plate.
             painter->setBrush(bar->property("incognito").toBool()
                                  ? incognito_tint(c.surface) : c.surface);
+            QColor edge = c.accent2;
+            edge.setAlpha(70);
+            painter->setPen(QPen(edge, 1.0));
             painter->drawRoundedRect(pill, pill.height() / 2.0,
                                      pill.height() / 2.0);
         } else if (h > 0.02) {

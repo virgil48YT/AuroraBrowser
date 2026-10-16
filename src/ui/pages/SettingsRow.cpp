@@ -20,27 +20,29 @@ SettingsRow::SettingsRow(const QString& title, const QString& subtitle,
     layout_->setContentsMargins(Spacing::lg, 0, Spacing::lg, 0);
     layout_->setSpacing(Spacing::lg);
 
-    auto* text_column = new QVBoxLayout;
-    text_column->setContentsMargins(0, Spacing::md - Spacing::xxs, 0,
-                                    Spacing::md - Spacing::xxs);
-    text_column->setSpacing(Spacing::xxs);
+    if (!title.isEmpty()) {
+        auto* text_column = new QVBoxLayout;
+        text_column->setContentsMargins(0, Spacing::md - Spacing::xxs, 0,
+                                        Spacing::md - Spacing::xxs);
+        text_column->setSpacing(Spacing::xxs);
 
-    title_ = new QLabel(title, this);
-    title_->setObjectName(QStringLiteral("SettingsRowTitle"));
-    title_->setWordWrap(true);
-    text_column->addWidget(title_);
+        title_ = new QLabel(title, this);
+        title_->setObjectName(QStringLiteral("SettingsRowTitle"));
+        title_->setWordWrap(true);
+        text_column->addWidget(title_);
 
-    if (!subtitle.isEmpty()) {
-        subtitle_ = new QLabel(subtitle, this);
-        subtitle_->setObjectName(QStringLiteral("SettingsRowSubtitle"));
-        subtitle_->setWordWrap(true);
-        text_column->addWidget(subtitle_);
-    } else {
-        // A single-line row is denser in Chrome: trim the top/bottom air
-        // so the control sits on one line-height, not two.
-        text_column->setContentsMargins(0, Spacing::sm, 0, Spacing::sm);
+        if (!subtitle.isEmpty()) {
+            subtitle_ = new QLabel(subtitle, this);
+            subtitle_->setObjectName(QStringLiteral("SettingsRowSubtitle"));
+            subtitle_->setWordWrap(true);
+            text_column->addWidget(subtitle_);
+        } else {
+            // A single-line row is denser in Chrome: trim the top/bottom air
+            // so the control sits on one line-height, not two.
+            text_column->setContentsMargins(0, Spacing::sm, 0, Spacing::sm);
+        }
+        layout_->addLayout(text_column, 1);
     }
-    layout_->addLayout(text_column, 1);
 
     if (control) {
         layout_->addWidget(control, 0, Qt::AlignVCenter);
@@ -61,6 +63,11 @@ void SettingsRow::add_search_text(const QString& text) {
 void SettingsRow::add_accessory(QWidget* widget) {
     if (!layout_ || !widget) return;
     layout_->addWidget(widget, 0, Qt::AlignVCenter);
+}
+
+void SettingsRow::prepend_leading(QWidget* widget) {
+    if (!layout_ || !widget) return;
+    layout_->insertWidget(0, widget, 1);
 }
 
 } // namespace aurora::ui

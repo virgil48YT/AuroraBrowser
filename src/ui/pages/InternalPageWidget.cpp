@@ -30,8 +30,8 @@ InternalPageWidget::InternalPageWidget(const QString& title, QWidget* parent)
     : QWidget(parent) {
     setObjectName("InternalPage");
 
-    // The title is no longer drawn (see below), but it still identifies the
-    // page for accessibility tooling and for anything inspecting the widget.
+    // The title also identifies the page for accessibility tooling and for
+    // anything inspecting the widget.
     setAccessibleName(title);
 
     // Outer row: a fixed gutter plus a column that takes ALL remaining width.
@@ -56,14 +56,20 @@ InternalPageWidget::InternalPageWidget(const QString& title, QWidget* parent)
     root_->setSpacing(Spacing::md);
 
     // --- Header ------------------------------------------------------------
-    // No large page title and no subtitle: the tab label and the omnibox
-    // already say which page this is, and a 24px heading plus a paragraph of
-    // explanation pushed the actual content down the window for no gain.
-    // set_subtitle() is kept as an accepted no-op so the pages that call it
-    // keep compiling; subtitle_ stays null.
-    subtitle_ = nullptr;
+    // Aurora neon: every internal page leads with its section name and a
+    // one-line subtitle ("General — Customize your browsing experience.").
+    // Both render above the toolbar row; an empty subtitle hides its label.
+    title_label_ = new QLabel(title, column);
+    title_label_->setObjectName("SettingsPageTitle");
+    root_->addWidget(title_label_);
 
-    // The actions row is now the top of the page.
+    subtitle_ = new QLabel(column);
+    subtitle_->setObjectName("SettingsPageSubtitle");
+    subtitle_->setWordWrap(true);
+    subtitle_->hide();   // populated by set_subtitle()
+    root_->addWidget(subtitle_);
+
+    // The actions row sits beneath the header block.
     toolbar_host_ = new QWidget(column);
     toolbar_host_->setObjectName("PageToolbar");
     toolbar_ = new QHBoxLayout(toolbar_host_);
@@ -77,6 +83,7 @@ InternalPageWidget::InternalPageWidget(const QString& title, QWidget* parent)
     divider_->setObjectName("PageDivider");
     divider_->setFrameShape(QFrame::NoFrame);
     divider_->setFixedHeight(Metrics::hairline);
+    divider_->hide();   // the aurora pages use spacing, not hairlines
     root_->addWidget(divider_);
 
     empty_label_ = new QLabel(column);
@@ -89,23 +96,21 @@ InternalPageWidget::InternalPageWidget(const QString& title, QWidget* parent)
 
 void InternalPageWidget::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    // A page with no toolbar controls (there is at least one today, but the
-    // base class must not assume it) would otherwise leave an empty row's
-    // worth of spacing under the header.
+    // A page with no toolbar controls leaves an empty row's worth of spacing
+    // under the header; hide the host and its hairline when that happens.
     const bool has_controls = toolbar_ && toolbar_->count() > 0;
     if (toolbar_host_) toolbar_host_->setVisible(has_controls);
-    // With no title above it, a lone hairline over the body would read as a
-    // stray line; it only makes sense as the underline of an actions row.
-    if (divider_) divider_->setVisible(has_controls);
+    // The divider is always hidden on the aurora pages (spacing does the
+    // separation); it stays connected only as an artifact of construction.
+    if (divider_) divider_->setVisible(false);
 }
 
 QHBoxLayout* InternalPageWidget::toolbar_row() { return toolbar_; }
 
 void InternalPageWidget::set_subtitle(const QString& text) {
-    // Intentionally a no-op: the skeleton no longer renders a title/subtitle
-    // block. Retained so the pages can keep documenting themselves in code
-    // without a header band eating the top of the window.
-    Q_UNUSED(text);
+    if (!subtitle_) return;
+    subtitle_->setText(text);
+    subtitle_->setVisible(!text.trimmed().isEmpty());
 }
 
 void InternalPageWidget::set_body(QWidget* body) {

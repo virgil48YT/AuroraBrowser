@@ -20,6 +20,7 @@ qt_add_executable(aurora_browser
     ../ui/ThemeState.cpp
     ../ui/Icons.cpp
     ../ui/IconButton.cpp
+    ../ui/LeftDock.cpp
     ../ui/TabSpinner.cpp
     ../ui/pages/InternalPageWidget.cpp
     ../ui/pages/HistoryPage.cpp

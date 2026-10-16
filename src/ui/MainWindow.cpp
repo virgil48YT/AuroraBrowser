@@ -210,6 +210,7 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "ui/pages/DownloadsPage.hpp"
 #include "ui/pages/ExtensionsPage.hpp"
 #include "ui/pages/HistoryPage.hpp"
+#include "ui/LeftDock.hpp"
 #include "ui/pages/HomePage.hpp"
 #include "ui/pages/SettingsPage.hpp"
 #include "util/Log.hpp"
@@ -675,9 +676,19 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
     auto* central = new QWidget(this);
     central->setObjectName("Root");
     central->setMouseTracking(true);
-    auto* root = new QVBoxLayout(central);
+    // The far-left launcher dock and the main column (chrome + content) sit
+    // side by side; `root` keeps owning the vertical chrome stack inside the
+    // column so everything below (setup_chrome, content, find bar) is
+    // unchanged.
+    auto* outer = new QHBoxLayout(central);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+    auto* main_column = new QWidget(central);
+    main_column->setObjectName("MainColumn");
+    auto* root = new QVBoxLayout(main_column);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
+    outer->addWidget(main_column, 1);
 
     // Chrome-style stacking order. The whole chrome plate (tab strip + toolbar)
     // is a child of the central layout, never a docked QToolBar (which would
@@ -704,6 +715,10 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
     find_bar_->setObjectName("FindBarContainer");
     root->addWidget(find_bar_);
     find_bar_->hide();
+
+    // The launcher dock rides the left edge of the whole window, beside both
+    // the chrome and the content (see setup_left_dock).
+    setup_left_dock(outer);
 
     setCentralWidget(central);
 
@@ -1168,6 +1183,36 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     cl->addWidget(bookmark_bar_);
 
     root->addWidget(chrome);
+}
+
+void MainWindow::setup_left_dock(QHBoxLayout* outer) {
+    // The aurora chrome keeps a slim launcher rail glued to the far-left
+    // window edge: app shortcuts on top, the glowing settings gear pinned to
+    // the bottom. The dock routes to the same internal pages as the browser
+    // menu (chrome::kHome plus CorePages), so behavior stays single-sourced.
+    left_dock_ = new LeftDock(this);
+    const auto open_page = [this](core::InternalPage page) {
+        show_page(page);
+    };
+    connect(left_dock_, &LeftDock::home_requested, this, [this, open_page] {
+        open_page(core::InternalPage::Home);
+    });
+    connect(left_dock_, &LeftDock::history_requested, this, [this, open_page] {
+        open_page(core::InternalPage::History);
+    });
+    connect(left_dock_, &LeftDock::downloads_requested, this, [this, open_page] {
+        open_page(core::InternalPage::Downloads);
+    });
+    connect(left_dock_, &LeftDock::bookmarks_requested, this, [this, open_page] {
+        open_page(core::InternalPage::Bookmarks);
+    });
+    connect(left_dock_, &LeftDock::extensions_requested, this, [this, open_page] {
+        open_page(core::InternalPage::Extensions);
+    });
+    connect(left_dock_, &LeftDock::settings_requested, this, [this, open_page] {
+        open_page(core::InternalPage::Settings);
+    });
+    outer->insertWidget(0, left_dock_, 0);
 }
 
 void MainWindow::setup_window_controls(QHBoxLayout* tab_row) {
@@ -1752,10 +1797,18 @@ bool MainWindow::nativeEvent(const QByteArray& eventType, void* message,
 
 
 void MainWindow::setup_menu_button() {
-    // Right of the omnibox, in the reference order: Aurora shields, downloads
-    // tray, the puzzle-piece extensions button, then the hamburger. The shield
-    // sits FIRST (leftmost of the trailing cluster) so the badge is next to the
-    // omnibox it reports on — the same place Brave puts its shield.
+    // Right of the omnibox, in the aurora reference order: downloads tray,
+    // Aurora Shields, the puzzle-piece extensions button, the rounded
+    // profile avatar, then the hamburger.
+    downloads_btn_ = new IconButton(icons::Name::Downloads, this);
+    downloads_btn_->setObjectName("NavButton");
+    downloads_btn_->setToolTip("Downloads");
+    // A dropdown popover of recent downloads, not a page navigation (the
+    // full history is one click away in the popover's footer).
+    connect(downloads_btn_, &IconButton::clicked, this,
+            &MainWindow::show_downloads_popover);
+    if (toolbar_layout_) toolbar_layout_->addWidget(downloads_btn_);
+
     shield_btn_ = new ShieldButton(this);
     shield_btn_->setObjectName("NavButton");
     // Honest UI: a build without the Rust engine must say so in the panel
@@ -1775,15 +1828,6 @@ void MainWindow::setup_menu_button() {
                     webview_->reload(tabs_.active(), false);
                 }
             });
-
-    downloads_btn_ = new IconButton(icons::Name::Downloads, this);
-    downloads_btn_->setObjectName("NavButton");
-    downloads_btn_->setToolTip("Downloads");
-    // A dropdown popover of recent downloads, not a page navigation (the
-    // full history is one click away in the popover's footer).
-    connect(downloads_btn_, &IconButton::clicked, this,
-            &MainWindow::show_downloads_popover);
-    if (toolbar_layout_) toolbar_layout_->addWidget(downloads_btn_);
 
     // Extensions sit to the LEFT of the hamburger, the same place Chrome puts
     // the puzzle-piece button, so opening an extension's options is a single
@@ -1812,6 +1856,19 @@ void MainWindow::setup_menu_button() {
             [this](const QString& extension_id, const QString& popup_url) {
                 open_extension_popup(popup_url, extension_id);
             });
+
+    // The aurora chrome keeps a rounded profile/avatar affordance between the
+    // extensions puzzle and the hamburger menu. There is no profile surface
+    // yet, so it opens the About page — the same place the app introduces
+    // itself.
+    profile_btn_ = new IconButton(icons::Name::User, this);
+    profile_btn_->setObjectName("NavButton");
+    profile_btn_->setToolTip(
+        QStringLiteral("Aurora profile"));
+    connect(profile_btn_, &IconButton::clicked, this, [this] {
+        show_page(core::InternalPage::Settings);
+    });
+    if (toolbar_layout_) toolbar_layout_->addWidget(profile_btn_);
 
     menu_button_ = new BrowserMenu(this);
     // Insert the menu button at the end of the toolbar row.
@@ -2393,6 +2450,9 @@ QWidget* MainWindow::page_widget(core::InternalPage page) {
     switch (page) {
         case core::InternalPage::Home: {
             auto* home_page = new HomePage(this);
+            // Live history feeds the "Continue" / "Recently visited" cards;
+            // without a profile the page keeps its built-in mock rows.
+            home_page->set_history_service(services_.history);
             // The page emits raw queries; the window owns the search-engine
             // state, so hand it a projector that resolves each query with the
             // ACTIVE engine and routes anything that already parses as a URL.

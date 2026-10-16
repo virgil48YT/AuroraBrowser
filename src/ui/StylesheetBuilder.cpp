@@ -27,6 +27,14 @@ static QString hex(const QColor& c) {
     return c.name();
 }
 
+// Reusable gradient snippets returning the accent pair as QSS. Kept as
+// lambdas inside build() scope would be cleaner, but the functions below
+// already exist as statics, so the two tiny helpers follow that layout.
+static QString qss_gradient(const QColor& a, const QColor& b) {
+    return QString("qlineargradient(x1:0, y1:1, x2:1, y2:0, stop:0 %1, stop:1 %2)")
+        .arg(hex(a), hex(b));
+}
+
 // Height of the in-progress bar in an aurora://downloads Status cell. Mirrors
 // kProgressHeight in DownloadsPage.cpp: the widget sets the fixed height, and
 // this re-states it in the sheet because the generic QProgressBar rule below
@@ -52,9 +60,11 @@ QString StylesheetBuilder::build(const Theme& t) {
     // Global
     // =======================================================================
     s += QString("* {"
-                 "  font-size: %1px;"
+                 "  font-family: %1;"
+                 "  font-size: %2px;"
                  "  outline: none;"
                  "}")
+            .arg(t.font_family)
             .arg(t.body_font_px);
 
     // The whole window is one piece of dark aurora glass with the big rounded
@@ -68,6 +78,9 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "}")
             .arg(hex(c.background), hex(c.text))
             .arg(Radius::xxl);
+    // The vertical column beside the dock (chrome + content) rides the same
+    // window glass; it must stay transparent or it would box out the rail.
+    s += QString("QWidget#MainColumn { background: transparent; border: none; }");
 
     // The content stack floats inside the window as its own rounded card —
     // slightly lighter than the glass behind it, with a faint purple glow
@@ -743,12 +756,32 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "}")
             .arg(hex(c.divider))
             .arg(Metrics::hairline);
+    // Same pill-switch recipe as the settings page toggles (see the
+    // #PageCheck rules below) so shields read as one switch language.
     s += QString("QCheckBox#ShieldToggle {"
                  "  color: %1; font-size: %2px; spacing: %3px;"
                  "}")
             .arg(hex(c.text))
             .arg(t.body_font_px)
-            .arg(Spacing::sm);
+            .arg(Spacing::xs);
+    s += QString("QCheckBox#ShieldToggle::indicator {"
+                 "  width: 34px; height: 20px; border-radius: 10px;"
+                 "  border: 1px solid %1;"
+                 "  background: qradialgradient(cx:0.18, cy:0.5, radius:0.75,"
+                 "   fx:0.18, fy:0.5,"
+                 "   stop:0 %2, stop:0.34 %2, stop:0.42 %6, stop:1 %6);"
+                 "  subcontrol-position: left center; left: 2px; top: 1px;}"
+                 "QCheckBox#ShieldToggle::indicator:checked {"
+                 "  background: qradialgradient(cx:0.82, cy:0.5, radius:0.75,"
+                 "   fx:0.82, fy:0.5,"
+                 "   stop:0 %3, stop:0.34 %3, stop:0.42 %4, stop:1 %5);"
+                 "  border-color: %4;"
+                 "  subcontrol-position: right center; right: 2px;}"
+                 "QCheckBox#ShieldToggle::indicator:hover {"
+                 "  border-color: %4;}")
+            .arg(hex(c.toggle_border_off), hex(c.toggle_knob_off),
+                 hex(c.toggle_knob_on), hex(c.accent2), hex(c.accent3),
+                 hex(c.toggle_track_off));
     s += QString("QLabel#ShieldNote {"
                  "  color: %1; font-size: %2px;"
                  "}")
@@ -1196,18 +1229,23 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "QWidget#SettingsRow, QScrollArea#SettingsScroll,"
                  "QWidget#SettingsContainer {"
                  "  background: transparent; border: none; }");
-    s += QString("QWidget#SettingsSidebar { min-width: 200px; max-width: 240px; }");
+    s += QString("QWidget#SettingsSidebar { min-width: 190px; max-width: 220px; }");
     s += QString("QToolButton#SettingsNavButton {"
-                 "  background: transparent; border: none; color: %1;"
-                 "  font-size: %2px; font-weight: 500; text-align: left;"
-                 "  padding: %3px %4px; border-radius: %5px; }")
-            .arg(c.text_muted.name()).arg(t.body_font_px)
-            .arg(Spacing::sm).arg(Spacing::md).arg(Radius::md);
+                 "  background: transparent; border: %1px solid transparent; color: %2;"
+                 "  font-size: %3px; font-weight: 500; text-align: left;"
+                 "  padding: %4px %5px; border-radius: %6px; }")
+            .arg(Metrics::hairline).arg(c.text_muted.name())
+            .arg(t.body_font_px)
+            .arg(Spacing::sm).arg(Spacing::md).arg(Radius::lg);
     s += QString("QToolButton#SettingsNavButton:hover { background: %1; color: %2; }")
-            .arg(c.surface_hover.name()).arg(c.text.name());
+            .arg(rgba(c.accent, 14)).arg(c.text.name());
+    // Active nav item: the mockup's purple-outlined pill with a soft glow
+    // wash and full-brightness text.
     s += QString("QToolButton#SettingsNavButton:checked {"
-                 "  background: %1; color: %2; font-weight: 600; }")
-            .arg(c.surface_selected.name()).arg(c.accent.name());
+                 "  background: %1; color: %2; font-weight: 600;"
+                 "  border: %3px solid %4; }")
+            .arg(rgba(c.accent2, 38)).arg(c.text.name())
+            .arg(Metrics::hairline).arg(hex(c.accent2));
     s += QString("QLabel#SettingsSectionHeader {"
                  "  color: %1; font-size: %2px; font-weight: 600;"
                  "  letter-spacing: 0.2px; padding-left: %3px; background: transparent; }")
@@ -1215,8 +1253,8 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QWidget#SettingsCard {"
                  "  background: %1; border: %2px solid %3;"
                  "  border-radius: %4px; }")
-            .arg(c.surface.name()).arg(Metrics::hairline)
-            .arg(c.border_subtle.name()).arg(Radius::xl);
+            .arg(c.card_bg.name()).arg(Metrics::hairline)
+            .arg(c.border.name()).arg(Radius::xl);
     s += QString("QWidget#SettingsCard QLabel { color: %1; background: transparent; }")
             .arg(c.text.name());
     s += QString("QLabel#SettingsRowTitle { color: %1; font-size: %2px; }")
@@ -1228,6 +1266,79 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: %1; border: none;"
                  "  margin-left: %2px; margin-right: %3px; }")
             .arg(c.divider.name()).arg(Spacing::lg).arg(Spacing::lg);
+
+    // Settings page header block: the section title + one-line explanation
+    // that introduces the card column ("General — Customize your browsing
+    // experience.").
+    s += QString("QLabel#SettingsPageTitle {"
+                 "  color: %1; font-size: %2px; font-weight: 600;"
+                 "  letter-spacing: -0.2px; background: transparent; }")
+            .arg(c.text.name()).arg(t.body_font_px + 9);
+    s += QString("QLabel#SettingsPageSubtitle {"
+                 "  color: %1; font-size: %2px; background: transparent; }")
+            .arg(c.text_muted.name()).arg(t.body_font_px);
+
+    // Startup radio group: circular pill radios matching the toggle pair —
+    // a slate ring at rest, the cyan→magenta gradient with a navy core dot
+    // when selected.
+    s += QString("QRadioButton#PageRadio { color: %1; spacing: %2px; "
+                 "  background: transparent; min-height: 32px; }")
+            .arg(c.text.name()).arg(Spacing::sm);
+    s += QString("QRadioButton#PageRadio::indicator {"
+                 "  width: 16px; height: 16px; border-radius: 9px;"
+                 "  border: 1px solid %1; background: transparent; }")
+            .arg(hex(c.toggle_border_off));
+    s += QString("QRadioButton#PageRadio::indicator:hover { border-color: %1; }")
+            .arg(hex(c.accent2));
+    // Checked: a radial fill whose outer band is the neon purple → magenta
+    // ring and whose core is the window navy, so the radio reads as a
+    // gradient ring with a dark center (the mockup's pill radios).
+    s += QString("QRadioButton#PageRadio::indicator:checked {"
+                 "  background: qradialgradient(cx:0.5, cy:0.5, radius:0.5,"
+                 "   fx:0.5, fy:0.5,"
+                 "   stop:0 %1, stop:0.5 %1, stop:0.72 %2, stop:1 %3);"
+                 "  border-color: %2; }")
+            .arg(hex(c.background), hex(c.accent2), hex(c.accent3));
+    s += QString("QRadioButton#PageRadio:disabled { color: %1; }")
+            .arg(c.text_faint.name());
+
+    // Theme preview chips (Dark / Light / Auto): small rounded thumbs whose
+    // checked state carries the purple outline + soft glow.
+    s += QString("QToolButton#ThemeChip {"
+                 "  background: %1; color: %2;"
+                 "  border: %3px solid %4; border-radius: %5px;"
+                 "  padding: %6px %7px; font-size: %8px; font-weight: 500; }")
+            .arg(c.surface_alt.name()).arg(c.text_muted.name())
+            .arg(Metrics::hairline).arg(c.border.name())
+            .arg(Radius::lg).arg(Spacing::sm).arg(Spacing::md)
+            .arg(t.small_font_px + 1);
+    s += QString("QToolButton#ThemeChip:hover { color: %1; border-color: %2; }")
+            .arg(c.text.name()).arg(rgba(c.accent2, 150));
+    s += QString("QToolButton#ThemeChip:checked {"
+                 "  background: %1; color: %2;"
+                 "  border: %3px solid %4; }")
+            .arg(rgba(c.accent2, 38)).arg(c.text.name())
+            .arg(Metrics::hairline + 1).arg(hex(c.accent2));
+
+    // The startup URL capture row: a recessed input next to its outlined
+    // action button on the right of the radio option.
+    s += QString("QLineEdit#PageInputInline {"
+                 "  background: %1; color: %2; border: 1px solid %3;"
+                 "  padding: 4px 10px; border-radius: %4px; min-height: 22px;"
+                 "  selection-background-color: %5; selection-color: %2; }")
+            .arg(c.surface_alt.name()).arg(c.text.name())
+            .arg(c.border.name()).arg(Radius::md).arg(rgba(c.accent, 60));
+    s += QString("QLineEdit#PageInputInline:focus { border-color: %1; }")
+            .arg(c.accent.name());
+    s += QString("QPushButton#PageOutlineButton {"
+                 "  background: transparent; color: %1;"
+                 "  border: 1px solid %2; border-radius: %3px;"
+                 "  padding: 4px 12px; min-height: 24px; font-weight: 500; }")
+            .arg(c.accent.name()).arg(rgba(c.accent2, 170)).arg(Radius::md);
+    s += QString("QPushButton#PageOutlineButton:hover { background: %1; }")
+            .arg(rgba(c.accent2, 34));
+    s += QString("QPushButton#PageOutlineButton:pressed { background: %1; }")
+            .arg(rgba(c.accent2, 60));
 
     // --- Extension cards (aurora://extensions) ------------------------------
     // One card per extension: artwork, the manifest's name + version, its
@@ -1257,73 +1368,195 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QLabel#ExtensionCardIcon { background: transparent; }");
 
     // --- Home page (aurora://home) -------------------------------------------
-    // The background is a painted dark nebula gradient (see HomePage's
-    // paintEvent); the sheet owns everything interactive so the C++ stays a
-    // layout and a canvas.
-    s += QString("QWidget#HomePage { background: transparent; }");
-    // The wordmark: near-white with a quiet letter-spaced glow; the gradient
-    // lives in the painted blobs, the name stays crisp on top of them.
-    s += QString("QLabel#HomeWordmark {"
-                 "  color: %1; font-size: %2px; font-weight: 300;"
-                 "  letter-spacing: 12px; padding-bottom: %3px;}"
-                 "QWidget#HomeColumn, QWidget#HomeSearchPillHost {"
-                 "  background: transparent; }")
+    // The background is a painted deep-cosmic gradient with the cyan/magenta
+    // aurora glows (see HomePage::paintEvent); the sheet owns everything
+    // interactive so the C++ stays a layout and a canvas.
+    s += QString("QWidget#HomePage { background: transparent; }"
+                 "QWidget#HomeColumn, QWidget#HomeCardsRow,"
+                 "QWidget#HomeShortcutTile, QWidget#HomeRow {"
+                 "  background: transparent; }");
+
+    // Brand block: "A U R O R A" in a widely-tracked cyan→magenta gradient
+    // (painted by HomeBrandLabel in C++, which also draws the glowing ribbon
+    // "A" logo above it), with the dot-phrase subtitle underneath.
+    s += QString("QLabel#HomeSubtitle {"
+                 "  color: %1; font-size: %2px;}"
+                 "QLabel#HomeClock {"
+                 "  color: %3; font-size: %4px; font-weight: 600;}"
+                 "QLabel#HomeDate, QLabel#HomeWeatherSub {"
+                 "  color: %1; font-size: %5px;}"
+                 "QFrame#HomeCardDivider { background: %6; border: none; } ")
+            .arg(c.text_muted.name())
+            .arg(t.body_font_px)
             .arg(c.text.name())
-            .arg(t.body_font_px + 17)
-            .arg(Spacing::lg);
-    // The big centered search pill: an elevated glass capsule with the
-    // accent/glow border when focused, exactly the mockup's top-center search
-    // bar carried onto the new-tab page.
+            .arg(t.body_font_px + 9)
+            .arg(t.small_font_px + 1)
+            .arg(c.divider.name());
+
+    s += QString("QLabel#HomeWeatherTemp {"
+                 "  color: %1; font-size: %2px; font-weight: 600;}"
+                 "QLabel#HomeCardTitle {"
+                 "  color: %1; font-size: %3px; font-weight: 600;"
+                 "  letter-spacing: 0.2px;}"
+                 "QLabel#HomeRowTitle { color: %1; font-size: %4px;}"
+                 "QLabel#HomeRowSub { color: %5; font-size: %6px;}")
+            .arg(c.text.name())
+            .arg(t.title_font_px)
+            .arg(t.body_font_px + 1)
+            .arg(t.body_font_px)
+            .arg(c.text_muted.name())
+            .arg(t.small_font_px + 1);
+
+    // The big centered search pill: a glowing glass capsule with the
+    // cyan→purple gradient border. The border lives on the HOST (the pill's
+    // icons sit inside it); the field itself is a transparent strip.
+    // The host is transparent: its capsule + cyan→purple border are painted
+    // by HomePage's PillHost (QSS cannot gradient-stroke a border).
+    s += QString("QWidget#HomeSearchPillHost {"
+                 "  background: transparent; border: none; border-radius: %1px;}")
+            .arg(Radius::pill);
     s += QString("QLineEdit#HomeSearchPill {"
-                 "  background: %1; color: %2;"
-                 "  border: %3px solid %4;"
-                 "  border-radius: %5px;"
-                 "  padding: 0px %6px 0px %7px;"
-                 "  font-size: %8px;"
-                 "  selection-background-color: %9; selection-color: %2;}")
-            .arg(rgba(c.surface_raised, 210)).arg(c.text.name())
-            .arg(Metrics::hairline)
-            .arg(glow_edge)
-            .arg(Radius::pill)
-            .arg(Spacing::lg)
-            .arg(Spacing::xl + Spacing::xs)
+                 "  background: transparent; color: %1; border: none;"
+                 "  padding: 0px %2px;"
+                 "  font-size: %3px;"
+                 "  selection-background-color: %4; selection-color: %1;}")
+            .arg(c.text.name())
+            .arg(Spacing::xs)
             .arg(t.title_font_px + 2)
             .arg(rgba(c.accent, 60));
-    s += QString("QLineEdit#HomeSearchPill:hover { border-color: %1; }")
-            .arg(rgba(c.accent, 130));
-    s += QString("QLineEdit#HomeSearchPill:focus { border-color: %1; }")
-            .arg(c.accent.name());
-    // The circular search orb in the pill's trailing gutter (and the
-    // standalone bottom-right orb while the field is unfocused): accent
-    // teal at rest, purple nebula on hover, brighter teal when pressed.
-    s += QString("QToolButton#HomeSearchButton, QToolButton#HomeSearchOrb {"
-                 "  background: %1; color: %2; border: none;"
-                 "  border-radius: %3px; padding: 0px; margin: 0px;"
-                 "  min-width: 44px; max-width: 44px;"
-                 "  min-height: 44px; max-height: 44px;}")
-            .arg(c.accent.name()).arg(c.background.name())
-            .arg(Radius::pill);
-    s += QString("QToolButton#HomeSearchButton:hover, QToolButton#HomeSearchOrb:hover {"
-                 "  background: %1;}")
-            .arg(c.accent2.name());
-    s += QString("QToolButton#HomeSearchButton:pressed, QToolButton#HomeSearchOrb:pressed {"
-                 "  background: %1;}")
-            .arg(c.accent_hover.name());
-    // HomePage paints its own backdrop; keep the orb's hover wash token
-    // referenced so a theme refresh can re-tint both accents together.
-    (void)accent2_wash;
+
+    // In-pill trailing sparkle: chromeless, glows to magenta on hover.
+    s += QString("QToolButton#HomeSparkleButton {"
+                 "  background: transparent; border: none;"
+                 "  border-radius: %1px; padding: 0px; margin: 0px;"
+                 "  min-width: 34px; max-width: 34px;"
+                 "  min-height: 34px; max-height: 34px;}"
+                 "QToolButton#HomeSparkleButton:hover { background: %2;}"
+                 "QToolButton#HomeSparkleButton:pressed { background: %3;}")
+            .arg(Radius::pill)
+            .arg(accent2_wash)
+            .arg(rgba(c.accent2, 70));
+
+    // Shortcut tiles: dark-blue cards with slate hairlines; hover lifts the
+    // border to the cyan half of the gradient.
+    s += QString("QToolButton#HomeShortcut {"
+                 "  background: %1; border: %2px solid %3;"
+                 "  border-radius: %4px; color: %5;"
+                 "  font-size: %6px; padding: %7px 0px %8px 0px;}"
+                 "QToolButton#HomeShortcut:hover {"
+                 "  background: %9; border-color: %10; color: %5;}"
+                 "QToolButton#HomeShortcut:pressed { background: %11;}")
+            .arg(rgba(c.card_raised, 210))
+            .arg(Metrics::hairline)
+            .arg(hex(c.border))
+            .arg(Radius::xl)
+            .arg(hex(c.text_muted))
+            .arg(t.small_font_px + 1)
+            .arg(Spacing::sm)
+            .arg(Spacing::xs)
+            .arg(rgba(c.card_raised, 250))
+            .arg(rgba(c.accent, 140))
+            .arg(hex(c.surface_selected));
+
+    // Bottom three-column cards share the settings-card recipe; the rows
+    // inside them are flat until hovered.
+    s += QString("QWidget#HomeCard {"
+                 "  background: %1; border: %2px solid %3;"
+                 "  border-radius: %4px;}")
+            .arg(rgba(c.card_bg, 235))
+            .arg(Metrics::hairline)
+            .arg(hex(c.border_subtle))
+            .arg(Radius::xl);
+    s += QString("QWidget#HomeRow { border-radius: %1px; padding: 0px %2px;}"
+                 "QWidget#HomeRow:hover { background: %3;}")
+            .arg(Radius::md)
+            .arg(Spacing::xs)
+            .arg(rgba(c.accent, 22));
+    // Clickable card rows (quick actions) use the row recipe on a button.
+    s += QString("QToolButton#HomeActionRow {"
+                 "  background: transparent; border: none; color: %1;"
+                 "  font-size: %2px; text-align: left;"
+                 "  border-radius: %3px; padding: %4px %5px;}"
+                 "QToolButton#HomeActionRow:hover { background: %6; color: %1;}"
+                 "QToolButton#HomeActionRow:pressed { background: %7;}"
+                 "QToolButton#HomeActionRow[accent=\"true\"] { color: %8;}"
+                 "QToolButton#HomeActionRow[accent=\"true\"]:hover { color: %9;}")
+            .arg(hex(c.text))
+            .arg(t.body_font_px)
+            .arg(Radius::md)
+            .arg(Spacing::xs)
+            .arg(Spacing::sm)
+            .arg(rgba(c.accent, 22))
+            .arg(rgba(c.accent, 40))
+            .arg(hex(c.accent))
+            .arg(hex(c.accent3));
+    // Resume progress hairlines: the track is the slate border color so only
+    // the colored chunk reads as content.
+    s += QString("QProgressBar#HomeRowProgress {"
+                 "  background: %1; border: none; border-radius: 2px;"
+                 "  min-height: 4px; max-height: 4px;"
+                 "  text-align: center; color: transparent;}"
+                 "QProgressBar#HomeRowProgress::chunk {"
+                 "  background: %2; border-radius: 2px;}")
+            .arg(hex(c.border_subtle))
+            .arg(hex(c.accent));
 
     s += QString("QCheckBox#PageCheck { color: %1; spacing: %2px; }")
             .arg(c.text.name()).arg(Spacing::sm);
     s += QString("QCheckBox#PageCheck:disabled { color: %1; }").arg(c.text_faint.name());
+    // Settings switches render as pill toggles, not square checkboxes: a
+    // 34×20 capsule whose indicator travels left (off) to right (on). The ON
+    // track is the cyan→magenta gradient with a dark core dot; OFF is a
+    // slate track with a slate dot. Sub-control position only animates via
+    // state repaint, but the pill + dot still read as a switch instantly.
+    s += QString("QCheckBox#PageCheck { spacing: 0px; min-height: 20px; }");
+    // OFF: slate track with the slate knob painted as a radial stop cluster
+    // hugging the LEFT end of the pill (mirrors the ON knob).
     s += QString("QCheckBox#PageCheck::indicator {"
-                 "  width: 16px; height: 16px; border-radius: %1px;"
-                 "  border: 1px solid %2; background: %3; }")
-            .arg(Radius::sm).arg(c.border.name()).arg(c.surface_alt.name());
+                 "  width: 34px; height: 20px; border-radius: 10px;"
+                 "  border: 1px solid %1;"
+                 "  background: qradialgradient(cx:0.18, cy:0.5, radius:0.75,"
+                 "   fx:0.18, fy:0.5,"
+                 "   stop:0 %2, stop:0.34 %2, stop:0.42 %3, stop:1 %3);"
+                 "  subcontrol-position: left center;"
+                 "  subcontrol-origin: padding;"
+                 "  left: 2px; top: 1px;}"
+                 "QCheckBox#PageCheck::indicator:hover { border-color: %4; }")
+            .arg(hex(c.toggle_border_off), hex(c.toggle_knob_off),
+                 hex(c.toggle_track_off), hex(c.accent2));
+    // ON: gradient track with the navy knob painted as a radial stop cluster
+    // hugging the right end of the pill. OFF keeps the slate look above.
     s += QString("QCheckBox#PageCheck::indicator:checked {"
-                 "  background: %1; border-color: %1; }").arg(c.accent.name());
-    s += QString("QCheckBox#PageCheck::indicator:disabled { border-color: %1; }")
-            .arg(c.text_faint.name());
+                 "  background: qradialgradient(cx:0.82, cy:0.5, radius:0.75,"
+                 "   fx:0.82, fy:0.5,"
+                 "   stop:0 %1, stop:0.34 %1, stop:0.42 %2, stop:1 %3);"
+                 "  border-color: %2;"
+                 "  subcontrol-position: right center; right: 2px;}")
+            .arg(hex(c.toggle_knob_on), hex(c.accent2), hex(c.accent3));
+    s += QString("QCheckBox#PageCheck::indicator:disabled {"
+                 "  border-color: %1; background: %2;}")
+            .arg(hex(c.border_subtle), hex(c.surface));
+
+    // Numeric rows (tab suspension minutes): a recessed field with quiet
+    // pill arrows, matching the page inputs.
+    s += QString("QSpinBox#TabSuspendMinutes {"
+                 "  background: %1; color: %2;"
+                 "  border: 1px solid %3; border-radius: %4px;"
+                 "  padding: 4px 6px; min-height: 22px;"
+                 "  selection-background-color: %5; selection-color: %2;}"
+                 "QSpinBox#TabSuspendMinutes:focus { border-color: %6; }"
+                 "QSpinBox#TabSuspendMinutes::up-button, "
+                 "QSpinBox#TabSuspendMinutes::down-button {"
+                 "  width: 16px; border: none; background: transparent;}"
+                 "QSpinBox#TabSuspendMinutes::up-button:hover, "
+                 "QSpinBox#TabSuspendMinutes::down-button:hover {"
+                 "  background: %7;}")
+            .arg(c.surface_alt.name()).arg(c.text.name())
+            .arg(c.border.name())
+            .arg(Radius::md)
+            .arg(rgba(c.accent, 60))
+            .arg(c.accent.name())
+            .arg(accent_wash);
 
     s += QString("QComboBox#PageCombo {"
                  "  background: %1; color: %2; border: 1px solid %3;"
@@ -1358,6 +1591,56 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  border: 1px solid %3; border-radius: %4px; padding: 5px 8px; }")
             .arg(c.surface_alt.name()).arg(c.text.name()).arg(c.border.name())
             .arg(Radius::sm);
+
+    // =======================================================================
+    // Left dock (slim vertical launcher rail)
+    //
+    // Transparent over the window glass; icon-only app shortcuts in square
+    // tiles, and the gear pinned at the bottom with a persistent aurora glow
+    // ring (cyan→purple gradient border over a soft purple wash).
+    // =======================================================================
+    // The rail is separated from the content column by a whisper of the
+    // purple glow, like the mockup's chrome hairlines.
+    s += QString("QWidget#LeftDock {"
+                 "  background: transparent; border: none;"
+                 "  border-right: %1px solid %2; padding: %3px 0px; }")
+            .arg(Metrics::hairline).arg(glow_edge_soft).arg(Spacing::xs);
+    s += QString("QToolButton#DockItem {"
+                 "  background: transparent; border: %1px solid transparent; color: %2;"
+                 "  border-radius: %3px; padding: 0px; margin: 0px;"
+                 "  min-width: 34px; max-width: 34px;"
+                 "  min-height: 34px; max-height: 34px; }")
+            .arg(Metrics::hairline).arg(c.text_muted.name()).arg(Radius::lg);
+    s += QString("QToolButton#DockItem:hover {"
+                 "  background: %1; color: %2; }")
+            .arg(accent_wash).arg(c.text.name());
+    s += QString("QToolButton#DockItem:checked {"
+                 "  background: %1; color: %2; border: %3px solid %4; }")
+            .arg(rgba(c.accent2, 40)).arg(c.accent.name())
+            .arg(Metrics::hairline).arg(hex(c.accent2));
+
+    // The aurora dot at the top of the rail: a tiny gradient bead marking
+    // the dock, painted by the sheet so it re-tints with the theme.
+    s += QString("QLabel#DockHomeDot {"
+                 "  background: %1; border: none; border-radius: 5px;"
+                 "  min-width: 10px; max-width: 10px;"
+                 "  min-height: 10px; max-height: 10px; }")
+            .arg(qss_gradient(c.accent, c.accent2));
+
+    // The bottom-pinned glowing Settings gear.
+    s += QString("QToolButton#DockSettingsGlow {"
+                 "  background: %1; color: %2;"
+                 "  border: %3px solid %4; border-radius: %5px;"
+                 "  padding: 0px; margin: 0px;"
+                 "  min-width: 34px; max-width: 34px;"
+                 "  min-height: 34px; max-height: 34px; }")
+            .arg(rgba(c.accent2, 46)).arg(c.accent.name())
+            .arg(Metrics::hairline).arg(hex(c.accent2))
+            .arg(Radius::lg);
+    s += QString("QToolButton#DockSettingsGlow:hover { background: %1; }")
+            .arg(rgba(c.accent2, 76));
+    s += QString("QToolButton#DockSettingsGlow:pressed { background: %1; }")
+            .arg(rgba(c.accent2, 100));
     return s;
 }
 
