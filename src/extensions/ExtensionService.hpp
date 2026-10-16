@@ -131,8 +131,9 @@ public:
     // call from all().
     std::vector<Extension> all_detailed() const;
 
-    // Enabled extensions' directories, in registry order. This is the list
-    // handed to the engine at startup.
+    // Enabled extensions' directories, in registry order. At startup this is
+    // filtered by extensions::build_load_list() (ExtensionLoadList.hpp: drops
+    // folders that no longer exist) and handed to the engine.
     std::vector<std::string> enabled_paths() const;
 
     bool set_enabled(int64_t id, bool enabled);

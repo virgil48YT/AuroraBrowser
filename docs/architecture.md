@@ -29,7 +29,8 @@ subprocesses are spawned by CEF itself.
 ```
 Browser process (this codebase)
   ├─ Qt UI thread: MainWindow, TabBar, Omnibox, TabManager
-  ├─ Worker thread(s): HistoryService, BookmarkService, SessionService, Downloads
+  ├─ Worker thread(s): HistoryService, BookmarkService, SessionService, Downloads,
+  │                    SearchEngineService (own thread + own Database connection)
   └─ CEF message loop (pumped from the Qt event loop)
 
 CEF subprocesses (spawned by CEF, not us)
@@ -84,7 +85,9 @@ src/
   session/     SessionService — crash-safe tab persistence
                SessionRestore — bulk-restore sequencing (Qt-free, unit-tested)
   downloads/   DownloadService — download accounting and persistence
-  extensions/  ExtensionService — CRX unpacking, manifest parsing, registry
+  extensions/  ExtensionService — CRX unpacking, manifest parsing, registry;
+               ExtensionLoadList — the engine's --load-extension list (pure,
+               unit-tested)
   adblock/     AdblockEngine (Rust, brave/adblock-rust via third_party/adblock)
                + AdblockService — Aurora Shields
   privacy/     CertificateAudit (trust-on-first-use certificate fingerprint
@@ -92,6 +95,8 @@ src/
   permissions/ PermissionStore — per-origin permission decisions
   storage/     Database (RAII SQLite), Migrator (versioned schema)
   settings/    Settings — typed key-value preferences
+  searchengines/ Search engine model + validation (pure) and SearchEngineService
+               (worker thread, own connection, in-memory snapshot for the UI)
   core/        Value types (Url, TabId, TabState, NavigationEntry),
                IncognitoPolicy (what a private window may persist),
                ChromeNav (HTTPS-only navigation, Referer trimming),
@@ -109,7 +114,9 @@ depend on nothing below `core`/`util`/`storage`.
 A single SQLite database per profile (`profile.db`), WAL mode, schema versioned
 via `PRAGMA user_version` and the `Migrator`. Tables: `history` (+ FTS5
 mirror), `bookmarks` (self-referential tree with a deferred FK and a root
-anchor at id=0), `downloads`, `sessions`, `session_tabs`, `preferences`.
+anchor at id=0), `downloads`, `sessions`, `session_tabs`, `preferences`,
+`extensions`, `adblock_exceptions`, `certificate_audit`, and (schema v7)
+`search_engines` — see [search-engines.md](search-engines.md).
 
 ## Session restore: one visible host, always
 
@@ -178,8 +185,17 @@ Also built since the first draft of this document: Aurora Shields ad/tracker
 blocking (Rust engine, per-site exceptions, shield button), HTTPS-only
 navigation with no insecure fallback, Referer trimming, per-origin
 certificate-fingerprint auditing with change warnings, bookmark import/export,
-PiP windows, permission prompts with per-origin persistence, and favicon
-caching.
+PiP windows, permission prompts with per-origin persistence, favicon
+caching, and custom search engines — the four built-ins plus user-defined
+`https://` templates with exactly one `%s`, managed in Settings and used by
+the omnibox (see [search-engines.md](search-engines.md)).
+
+**Extensions** are Chromium's own: enabled unpacked extensions from the
+profile registry are handed to the engine at startup via `--load-extension`
+(CEF builds only; restart to apply; never in incognito windows). There are no
+Chrome Web Store installs, no CRX signature verification, and extension APIs
+are limited to what stock Chromium provides for Alloy-style CEF browsers. See
+[extensions.md](extensions.md).
 
 **Known gaps** (honest, not fake — kept accurate rather than marketed):
 
@@ -191,5 +207,3 @@ caching.
 - **Release artifacts are Windows-only.** CI covers Linux for core tests only;
   there are no Linux or macOS installers.
 - **`profile.db` is not encrypted at rest** — see [security.md](security.md).
-- **Search engine choice is a fixed list** (DuckDuckGo, Google, Bing,
-  Startpage); custom engines are not yet supported.

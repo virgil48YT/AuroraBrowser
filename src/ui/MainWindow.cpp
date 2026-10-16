@@ -192,6 +192,8 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "history/HistoryService.hpp"
 #include "privacy/BrowsingData.hpp"
 #include "session/SessionRestore.hpp"
+#include "searchengines/SearchEngine.hpp"
+#include "searchengines/SearchEngineService.hpp"
 #include "session/SessionService.hpp"
 #include "settings/Settings.hpp"
 #include "ui/BookmarkBar.hpp"
@@ -287,10 +289,16 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
         services_.history = nullptr;
         services_.downloads = nullptr;
         services_.session = nullptr;
-        services_.extensions = nullptr;
         services_.adblock = nullptr;
         services_.bookmarks = nullptr;
     }
+    // Extensions are loaded process-wide by the engine at startup (the
+    // --load-extension switch, see cef/CefLifecycle.cpp), but a private window
+    // never exposes them: no extensions button, popups, options pages or .crx
+    // install path. The engine side is covered by the private window's
+    // in-memory ("incognito mode") request context, where Chromium does not
+    // run extensions that were not allowed in incognito.
+    if (!policy_.enable_extensions()) services_.extensions = nullptr;
     if (services_.prefs &&
         (incognito_ || services_.prefs->is_read_only())) {
         // Never mark the shared Settings read-only: that would also block
@@ -906,7 +914,15 @@ std::string MainWindow::new_tab_url() const {
     // The home page IS the user's search engine (google.com, bing.com, ...).
     // There is no separate "startup homepage" setting — picking a search
     // engine decides both the omnibox search target and the home/new-tab page.
-    return core::search_engine_home(search_engine_);
+    return resolved_search_engine().home;
+}
+
+searchengines::ResolvedEngine MainWindow::resolved_search_engine() const {
+    // In-memory only: the service's snapshot, never SQLite. A preference that
+    // names a deleted custom engine resolves to DuckDuckGo.
+    return services_.search_engines
+        ? services_.search_engines->resolve(search_engine_)
+        : searchengines::resolve_default_engine(search_engine_, {});
 }
 
 void MainWindow::open_site_initiated_tab(std::string url) {
@@ -2258,7 +2274,7 @@ void MainWindow::navigate_active_tab(const core::Url& url) {
                                     settings::PrefDefaults::kHttpsOnly)
         : settings::PrefDefaults::kHttpsOnly;
     const core::Url target(core::resolve_navigation(
-        url, core::search_engine_template(search_engine_), https_only));
+        url, resolved_search_engine().url_template, https_only));
 
     // Leaving an internal page: the tab shows web content again.
     tab_pages_.erase(active);
@@ -2393,7 +2409,7 @@ InternalPageWidget* MainWindow::page_widget(core::InternalPage page) {
             break;
         }
         case core::InternalPage::Settings: {
-            auto* settings_page = new SettingsPage(services_.prefs, this);
+            auto* settings_page = new SettingsPage(services_.prefs, services_.search_engines, this);
             connect(settings_page, &SettingsPage::theme_preference_changed, this,
                     [this](const QString& pref) {
                         // Persist immediately so the choice survives restart
@@ -2468,7 +2484,7 @@ void MainWindow::open_url_in_new_tab(const core::Url& url) {
                                     settings::PrefDefaults::kHttpsOnly)
         : settings::PrefDefaults::kHttpsOnly;
     const core::Url target(core::resolve_navigation(
-        url, core::search_engine_template(search_engine_), https_only));
+        url, resolved_search_engine().url_template, https_only));
     tabs_.open(target.raw());
 }
 

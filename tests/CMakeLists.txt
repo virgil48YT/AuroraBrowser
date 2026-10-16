@@ -20,6 +20,8 @@ add_executable(aurora_tests
     test_incognito.cpp
     test_privacy.cpp
     test_extensions.cpp
+    test_extension_load_list.cpp
+    test_search_engines.cpp
     test_sha256.cpp
     test_build_id.cpp
     test_cef_layout.cpp
