@@ -112,16 +112,23 @@ target_sources(aurora_core
         src/bookmarks/BookmarkIo.cpp
         src/downloads/DownloadService.cpp
         src/extensions/ExtensionService.cpp
+        src/extensions/ExtensionLoadList.cpp
         src/extensions/ZipExtractor.cpp
         src/session/SessionService.cpp
         src/session/SessionRestore.cpp
         src/settings/Settings.cpp
+        src/searchengines/SearchEngine.cpp
+        src/searchengines/SearchEngineService.cpp
         src/privacy/CertificateAudit.cpp
         src/adblock/AdblockEngine.cpp
         src/adblock/AdblockService.cpp
 )
 target_include_directories(aurora_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_features(aurora_core PUBLIC cxx_std_20)
+# SearchEngineService owns a worker thread (std::thread), which needs the
+# platform threads library on Linux/macOS toolchains.
+find_package(Threads REQUIRED)
+target_link_libraries(aurora_core PUBLIC Threads::Threads)
 
 # --- Aurora Shields: the Rust adblock engine (brave/adblock-rust) ----------
 # Built from third_party/adblock into a static library and linked into

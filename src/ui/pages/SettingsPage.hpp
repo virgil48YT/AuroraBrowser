@@ -11,7 +11,16 @@
 // a scrolling column of rounded cards, and rows with the title plus an
 // explanatory subtitle on the left and the control on the right. The filter
 // only shows/hides rows and cards — it never touches the preferences.
+//
+// Custom search engines (name + https:// template with one %s) are managed in
+// the Search card: one SettingsRow per engine (Edit / Delete), plus an "Add"
+// row. The page never touches SQLite for them: it reads SearchEngineService's
+// in-memory snapshot and posts add/edit/delete to the service's worker
+// thread, then rebuilds the rows when the result is marshalled back to the UI
+// thread.
 #pragma once
+
+#include <cstdint>
 
 #include <QList>
 #include <QPointer>
@@ -34,6 +43,10 @@ class QToolButton;
 class QVBoxLayout;
 
 namespace aurora::settings { class Settings; }
+namespace aurora::searchengines {
+class SearchEngineService;
+struct MutationResult;
+} // namespace aurora::searchengines
 
 namespace aurora::ui {
 
@@ -42,7 +55,11 @@ class SettingsRow;
 class SettingsPage : public InternalPageWidget {
     Q_OBJECT
 public:
-    explicit SettingsPage(settings::Settings* prefs, QWidget* parent = nullptr);
+    // `engines` may be null (no profile); custom-engine management is then
+    // disabled and only the built-in engines are offered.
+    explicit SettingsPage(settings::Settings* prefs,
+                          searchengines::SearchEngineService* engines = nullptr,
+                          QWidget* parent = nullptr);
     ~SettingsPage() override;
 
     // Reload every control from the store (values may have changed elsewhere).
@@ -70,6 +87,19 @@ private:
 
     void report_change(const QString& message);
 
+    // Custom search engines. reload_search_engines() rebuilds the default-
+    // engine picker and the per-engine rows of the Search card from the
+    // service's in-memory snapshot (no SQLite), re-selects the stored
+    // preference and re-applies the filter.
+    void reload_search_engines();
+    bool search_engines_editable() const;
+    // Add (id == 0) or edit an engine through a validating dialog.
+    void edit_search_engine(int64_t id);
+    void delete_search_engine(int64_t id, const QString& name);
+    // Runs on the UI thread once the worker reports a mutation's result.
+    void on_search_engine_saved(const searchengines::MutationResult& result,
+                                const QString& success_message, bool removed);
+
     // Adds a Chrome-style card (header above a rounded group of rows) and
     // appends its nav entry. Returns the vbox rows are added to.
     QVBoxLayout* add_section(const QString& title, icons::Name icon);
@@ -94,6 +124,7 @@ private:
     bool loading_ = false;
 
     settings::Settings* prefs_ = nullptr;
+    searchengines::SearchEngineService* engines_ = nullptr;
 
     // Chrome-like chrome: left section rail, live filter, scrolling cards.
     QWidget* sidebar_ = nullptr;
@@ -111,6 +142,11 @@ private:
     // Settings controls. Identical set, keys and write-behind behaviour as
     // before the restyle; only their presentation changed.
     QComboBox* search_engine_ = nullptr;
+    // Search card body, the "Add search engine" button, and the rows (plus
+    // their dividers) rebuilt for each custom engine on reload.
+    QVBoxLayout* search_body_ = nullptr;
+    QPushButton* engine_add_ = nullptr;
+    QList<QWidget*> engine_rows_;
     QComboBox* theme_ = nullptr;
     QCheckBox* restore_session_ = nullptr;
     QSpinBox* suspend_minutes_ = nullptr;

@@ -93,6 +93,17 @@ std::string upgrade_http_url(std::string_view url, bool https_only = true);
 std::string resolve_navigation(const Url& url, bool https_only = true);
 std::string resolve_navigation(const Url& url, std::string_view engine_template,
                                bool https_only = true);
+// The search-terms placeholder of a custom engine template
+// ("https://example.com/search?q=%s"). See searchengines/SearchEngine.hpp for
+// template validation (https only, exactly one placeholder).
+inline constexpr std::string_view kSearchTermsPlaceholder = "%s";
+// Percent-encode search terms for a query string (space becomes '+').
+std::string encode_search_terms(std::string_view terms);
+// Substitute the encoded terms into `engine_template`. A template containing
+// "%s" has its first placeholder replaced; a legacy prefix template without
+// one (the built-in "...?q=" form) gets the terms appended.
+std::string expand_search_template(std::string_view engine_template,
+                                   std::string_view terms);
 // Keep string-literal engine templates from selecting the bool overload.
 inline std::string resolve_navigation(const Url& url, const char* engine_template,
                                       bool https_only = true) {

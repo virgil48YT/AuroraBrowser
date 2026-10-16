@@ -245,10 +245,14 @@ std::string resolve_navigation(const Url& url, std::string_view engine_template,
         return url.display();
     }
     // Route a bare search query to a search engine, percent-encoding the text.
-    const std::string kEngine(engine_template);
+    return upgrade_http_url(expand_search_template(engine_template, url.raw()),
+                            https_only);
+}
+
+std::string encode_search_terms(std::string_view terms) {
     std::string encoded;
-    encoded.reserve(url.raw().size() * 3);
-    for (char c : url.raw()) {
+    encoded.reserve(terms.size() * 3);
+    for (char c : terms) {
         auto uc = static_cast<unsigned char>(c);
         if (std::isalnum(uc) || c == '-' || c == '_' || c == '.' || c == '~') {
             encoded.push_back(c);
@@ -260,7 +264,21 @@ std::string resolve_navigation(const Url& url, std::string_view engine_template,
             encoded.append(buf);
         }
     }
-    return upgrade_http_url(kEngine + encoded, https_only);
+    return encoded;
+}
+
+std::string expand_search_template(std::string_view engine_template,
+                                   std::string_view terms) {
+    const std::string encoded = encode_search_terms(terms);
+    const auto placeholder = engine_template.find(kSearchTermsPlaceholder);
+    if (placeholder == std::string_view::npos) {
+        // Legacy prefix template ("https://duckduckgo.com/?q="): append.
+        return std::string(engine_template) + encoded;
+    }
+    std::string out(engine_template.substr(0, placeholder));
+    out += encoded;
+    out += engine_template.substr(placeholder + kSearchTermsPlaceholder.size());
+    return out;
 }
 
 } // namespace aurora::core

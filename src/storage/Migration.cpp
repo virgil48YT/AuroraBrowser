@@ -148,6 +148,26 @@ DbError create_certificate_audit(Database& db) {
     )SQL");
 }
 
+// V6 -> V7: user-defined search engines. The built-in engines are not rows:
+// they live in code (core::search_engine_template), and the default engine is
+// still the `search.engine` preference ("duckduckgo", ..., or "custom:<id>"
+// for a row here). Names are unique case-insensitively; the CHECKs mirror
+// searchengines::validate_template() as a backstop (https only, a "%s"
+// placeholder) so a bad row cannot be written even by a buggy caller.
+DbError create_search_engines(Database& db) {
+    return db.execute(R"SQL(
+        CREATE TABLE IF NOT EXISTS search_engines (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            name         TEXT NOT NULL UNIQUE COLLATE NOCASE
+                         CHECK(length(name) BETWEEN 1 AND 64),
+            url_template TEXT NOT NULL
+                         CHECK(lower(substr(url_template, 1, 8)) = 'https://'
+                               AND instr(url_template, '%s') > 0),
+            created_at   INTEGER NOT NULL
+        );
+    )SQL");
+}
+
 } // namespace
 
 std::vector<Migration> Migrator::builtin_migrations() {
@@ -158,6 +178,7 @@ std::vector<Migration> Migrator::builtin_migrations() {
         {3, "create extensions", create_extensions},
         {4, "create adblock exceptions", create_adblock_exceptions},
         {5, "create certificate fingerprint audit", create_certificate_audit},
+        {6, "create search engines", create_search_engines},
     };
 }
 

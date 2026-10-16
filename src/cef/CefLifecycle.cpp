@@ -3,6 +3,7 @@
 #include "cef/CefAdapter.hpp"
 #include "cef/GpuPolicy.hpp"
 #include "cef/MediaPolicy.hpp"
+#include "extensions/ExtensionLoadList.hpp"
 #include "util/Log.hpp"
 
 // CEF headers. These come from the CEF binary distribution pointed to by
@@ -28,6 +29,16 @@ std::vector<std::string> g_extension_dirs;
 // Alloy CefExtension/CefExtensionHandler/RequestContext::LoadExtension API in
 // M128, so CEF 152 embedders using Alloy-style child browsers have no runtime
 // load/unload handle. The Chrome bootstrap still consumes this startup switch.
+// (Chrome-branded release builds ignore it since M137; CEF is not
+// Chrome-branded, so the switch is honoured.)
+//
+// Incognito: the switch is process-wide and loads into the regular profile.
+// A private window browses through a request context with an empty
+// cache_path, which CEF documents as "incognito mode"; Chromium does not run
+// extensions there unless the user grants "Allow in Incognito", and Aurora
+// exposes no such toggle. On the chrome side every private window also drops
+// its ExtensionService (core::IncognitoPolicy::enable_extensions()), so it
+// shows no extensions button, popups or install path.
 constexpr char kLoadExtensionSwitch[] = "load-extension";
 
 // CefApp implementation shared by the browser process and all subprocesses.
@@ -143,20 +154,22 @@ public:
         }
 
         // Extensions are loaded by the browser process only; the switch is
-        // inherited by the child processes that need it.
+        // inherited by the child processes that need it. The value is built
+        // by extensions::build_load_list() (core, unit-tested in
+        // tests/test_extension_load_list.cpp): a comma is the switch's
+        // separator, so a path containing one cannot be expressed and is
+        // skipped rather than corrupting the list. main.cpp has already
+        // dropped directories that no longer exist; this pass is the
+        // filesystem-free safety net.
         if (!g_extension_dirs.empty() && process_type.empty()) {
-            std::string joined;
-            for (const auto& dir : g_extension_dirs) {
-                // A comma is the switch's separator, so a path containing one
-                // cannot be expressed; skip it rather than corrupt the list.
-                if (dir.find(',') != std::string::npos) {
-                    AURORA_LOG(LogLevel::Warn, "cef")
-                        << "skipping extension path with a comma: " << dir;
-                    continue;
-                }
-                if (!joined.empty()) joined.push_back(',');
-                joined += dir;
+            const auto list =
+                extensions::build_load_list(g_extension_dirs, nullptr);
+            for (const auto& skipped : list.skipped) {
+                AURORA_LOG(LogLevel::Warn, "cef")
+                    << "not loading extension " << skipped.path << ": "
+                    << extensions::load_skip_reason_name(skipped.reason);
             }
+            const std::string joined = list.switch_value();
             if (!joined.empty()) {
                 command_line->AppendSwitchWithValue(kLoadExtensionSwitch, joined);
                 AURORA_LOG(LogLevel::Info, "cef")

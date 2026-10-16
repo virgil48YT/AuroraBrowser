@@ -21,6 +21,7 @@ namespace extensions { class ExtensionService; }
 namespace settings { class Settings; }
 namespace session { class SessionService; }
 namespace adblock { class AdblockService; }
+namespace searchengines { class SearchEngineService; }
 } // namespace aurora
 
 namespace aurora::ui {
@@ -38,6 +39,12 @@ struct ServiceBundle {
     // webview controller, which rebuilds its engine from it.
     adblock::AdblockService* adblock = nullptr;
     std::string adblock_rules;
+    // Custom search engines. Owns its own worker thread and database
+    // connection; windows only read its in-memory snapshot to resolve the
+    // default engine. Kept in incognito windows (read-only use: a private
+    // window searches with the profile's default engine but cannot edit the
+    // list — the settings page disables management there).
+    searchengines::SearchEngineService* search_engines = nullptr;
 };
 
 } // namespace aurora::ui
