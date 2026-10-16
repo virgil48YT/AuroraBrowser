@@ -2482,26 +2482,31 @@ QWidget* MainWindow::page_widget(core::InternalPage page) {
     }
 
     // Pages report with one shared (QString url) / (QString message) signal
-    // contract; HomePage re-states it on QWidget, so bind the slot by name
-    // instead of by base-class member pointer. The home page's submissions
-    // keep the tab (the pill IS the tab's content); the tool pages still open
-    // links in a new tab so the tool stays put.
-    if (page == core::InternalPage::Home) {
-        connect(widget, SIGNAL(open_url_requested(QString)), this,
+    // contract, but HomePage re-states it on plain QWidget rather than on the
+    // InternalPageWidget skeleton, so connect through each page's own typed
+    // signal — the SIGNAL() macro form cannot pair with a lambda slot. The
+    // home page's submissions keep the tab (the pill IS the tab's content);
+    // the tool pages still open links in a new tab so the tool stays put.
+    if (auto* home = qobject_cast<HomePage*>(widget)) {
+        connect(home, &HomePage::open_url_requested, this,
                 [this](const QString& url) {
                     navigate_active_tab(
                         core::parse_omnibox_input(url.toStdString()));
                 });
+        // Internal-page confirmations are one-shot messages: flash, not stick.
+        connect(home, &HomePage::status_message, this,
+                [this](const QString& msg) { flash_status(msg); });
     } else {
-        connect(widget, SIGNAL(open_url_requested(QString)), this,
+        auto* skeleton = static_cast<InternalPageWidget*>(widget);
+        connect(skeleton, &InternalPageWidget::open_url_requested, this,
                 [this](const QString& url) {
                     open_url_in_new_tab(
                         core::parse_omnibox_input(url.toStdString()));
                 });
+        // Internal-page confirmations are one-shot messages: flash, not stick.
+        connect(skeleton, &InternalPageWidget::status_message, this,
+                [this](const QString& msg) { flash_status(msg); });
     }
-    // Internal-page confirmations are one-shot messages: flash, not stick.
-    connect(widget, SIGNAL(status_message(QString)), this,
-            [this](const QString& msg) { flash_status(msg); });
 
     content_stack_->addWidget(widget);
     pages_[page] = widget;
