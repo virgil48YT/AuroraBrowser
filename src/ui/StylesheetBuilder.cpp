@@ -1140,32 +1140,46 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  letter-spacing: 0.2px; }")
             .arg(c.text_muted.name()).arg(t.body_font_px);
 
-    // Settings form: each group is a card, its title a small caps-ish label
-    // sitting on the card's top edge rather than a heavy bold heading.
-    s += QString("QGroupBox#SettingsGroup {"
-                 "  background: %1; border: %2px solid %3; border-radius: %4px;"
-                 "  color: %5; font-size: %6px; font-weight: 600;"
-                 "  letter-spacing: 0.3px; margin-top: %7px;"
-                 "  padding-top: %8px; }")
+    // Settings page, chrome://settings style: a fixed section rail, then a
+    // section header above each rounded card. Rows are transparent on the
+    // card and separated by hairlines; the title leads, the subtitle explains
+    // in muted text, and the control rides the right edge (8px rhythm).
+    s += QString("QWidget#SettingsSidebar, QWidget#SettingsSection,"
+                 "QWidget#SettingsRow, QScrollArea#SettingsScroll,"
+                 "QWidget#SettingsContainer {"
+                 "  background: transparent; border: none; }");
+    s += QString("QWidget#SettingsSidebar { min-width: 200px; max-width: 240px; }");
+    s += QString("QToolButton#SettingsNavButton {"
+                 "  background: transparent; border: none; color: %1;"
+                 "  font-size: %2px; font-weight: 500; text-align: left;"
+                 "  padding: %3px %4px; border-radius: %5px; }")
+            .arg(c.text_muted.name()).arg(t.body_font_px)
+            .arg(Spacing::sm).arg(Spacing::md).arg(Radius::md);
+    s += QString("QToolButton#SettingsNavButton:hover { background: %1; color: %2; }")
+            .arg(c.surface_hover.name()).arg(c.text.name());
+    s += QString("QToolButton#SettingsNavButton:checked {"
+                 "  background: %1; color: %2; font-weight: 600; }")
+            .arg(c.surface_selected.name()).arg(c.accent.name());
+    s += QString("QLabel#SettingsSectionHeader {"
+                 "  color: %1; font-size: %2px; font-weight: 600;"
+                 "  letter-spacing: 0.2px; padding-left: %3px; background: transparent; }")
+            .arg(c.text.name()).arg(t.title_font_px).arg(Spacing::sm);
+    s += QString("QWidget#SettingsCard {"
+                 "  background: %1; border: %2px solid %3;"
+                 "  border-radius: %4px; }")
             .arg(c.surface.name()).arg(Metrics::hairline)
-            .arg(c.border_subtle.name()).arg(Radius::lg)
-            .arg(c.text_muted.name()).arg(t.small_font_px + 1)
-            .arg(Spacing::sm).arg(Spacing::sm);
-    s += QString("QGroupBox#SettingsGroup::title {"
-                 "  subcontrol-origin: margin; subcontrol-position: top left;"
-                 "  left: %1px; padding: 0 %2px; color: %3; }")
-            .arg(Spacing::md).arg(Spacing::xs).arg(c.text_muted.name());
-    s += QString("QScrollArea#SettingsScroll, QWidget#SettingsContainer {"
-                 "  background: %1; border: none; }").arg(c.background.name());
-    // The group box carries a small, letter-spaced, semibold font for its
-    // TITLE; its children must not inherit that or every field label would
-    // shrink with it.
-    s += QString("QGroupBox#SettingsGroup QLabel, QGroupBox#SettingsGroup QCheckBox {"
-                 "  color: %1; font-weight: 400; font-size: %2px;"
-                 "  letter-spacing: 0px; }")
-            .arg(c.text.name()).arg(t.body_font_px);
-    s += QString("QGroupBox#SettingsGroup QLabel#PageHint { color: %1; font-size: %2px; }")
+            .arg(c.border_subtle.name()).arg(Radius::xl);
+    s += QString("QWidget#SettingsCard QLabel { color: %1; background: transparent; }")
+            .arg(c.text.name());
+    s += QString("QLabel#SettingsRowTitle { color: %1; font-size: %2px; }")
+            .arg(c.text.name()).arg(t.body_font_px + 1);
+    s += QString("QLabel#SettingsRowSubtitle, QLabel#SettingsRowHint {"
+                 "  color: %1; font-size: %2px; background: transparent; }")
             .arg(c.text_muted.name()).arg(t.small_font_px + 1);
+    s += QString("QFrame#SettingsRowDivider {"
+                 "  background: %1; border: none;"
+                 "  margin-left: %2px; margin-right: %3px; }")
+            .arg(c.divider.name()).arg(Spacing::lg).arg(Spacing::lg);
 
     // --- Extension cards (aurora://extensions) ------------------------------
     // One card per extension: artwork, the manifest's name + version, its
