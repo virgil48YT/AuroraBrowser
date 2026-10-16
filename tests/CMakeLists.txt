@@ -10,6 +10,7 @@ add_executable(aurora_tests
     test_session_restore.cpp
     test_bulk_restore.cpp
     test_settings.cpp
+    test_settings_presentation.cpp
     test_internal_url.cpp
     test_chrome_nav.cpp
     test_downloads.cpp

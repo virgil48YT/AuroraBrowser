@@ -14,7 +14,9 @@ deleted.
 ## Custom engines
 
 Settings → Search → *Custom search engines* lets you **add**, **edit** and
-**delete** engines. Each one has:
+**delete** engines. In the Chrome-style settings layout each custom engine is
+its own row in the Search card (name, search URL, *Edit…* and *Delete*), so
+the "Search settings" filter finds engines by name or URL. Each one has:
 
 - **Name.** 1–64 bytes, no control characters, and unique ignoring case. The
   names of the built-in engines are reserved.
@@ -50,7 +52,7 @@ saved, which is how every preference behaves there.
 | `search_engines` table | `src/storage/Migration.cpp`, schema **v7** | `id`, `name` (UNIQUE NOCASE), `url_template`, `created_at` |
 | `SearchEngineStore` | `src/searchengines/SearchEngineService.cpp` | Synchronous CRUD over a borrowed `Database` (what the tests drive) |
 | `SearchEngineService` | same file | Owns a **worker thread** with its **own** `Database` connection; the UI reads only an in-memory snapshot |
-| Settings UI | `src/ui/pages/SettingsPage.cpp` | Posts mutations to the worker; results are marshalled back to the UI thread |
+| Settings UI | `src/ui/pages/SettingsPage.cpp` (`SettingsRow` per engine) | Posts mutations to the worker; results are marshalled back to the UI thread, then the engine rows are rebuilt from the snapshot |
 | Omnibox resolution | `MainWindow::resolved_search_engine()` → `core::resolve_navigation` | Substitutes `%s`; built-in prefix templates still append |
 
 The default engine is still stored in the `search.engine` preference. Its

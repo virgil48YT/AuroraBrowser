@@ -1,5 +1,9 @@
 #include "ui/pages/SettingsPage.hpp"
 
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
@@ -8,25 +12,29 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
-#include <QGroupBox>
+#include <QFrame>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QMetaObject>
-#include <QPointer>
+#include <QPropertyAnimation>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QScreen>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSpinBox>
 #include <QStandardPaths>
-#include <QTreeWidget>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include "searchengines/SearchEngine.hpp"
 #include "searchengines/SearchEngineService.hpp"
 #include "settings/Settings.hpp"
 #include "ui/Theme.hpp"
+#include "ui/ThemeState.hpp"
+#include "ui/pages/SettingsRow.hpp"
 
 namespace aurora::ui {
 
@@ -42,6 +50,42 @@ constexpr Choice kThemes[] = {
     {"system", "Match system"},
     {"light", "Light"},
     {"dark", "Dark"},
+};
+
+// Window width (px) below which the section rail collapses from icon + label
+// to icon-only, like Chrome's settings sidebar in narrow windows.
+constexpr int kSidebarCompactBelow = 720;
+constexpr int kSidebarIconPx = 16;
+
+// Build version baked in by CMake (PROJECT_VERSION). Settings.cpp/.hpp live
+// in a Qt-free module, so the macro is consumed here on the UI side; the
+// fallback matches the version in CMakeLists.txt.
+#ifdef AURORA_VERSION_STRING
+constexpr const char* kVersion = AURORA_VERSION_STRING;
+#else
+constexpr const char* kVersion = "0.1.0";
+#endif
+
+// Shown on the About Aurora card. Display-only mirror of the bindings in
+// MainWindow::bind_shortcuts(); update both together when a binding changes.
+// History intentionally absent: the browser menu shows "Ctrl+H" as a hint,
+// but no window shortcut actually owns it.
+struct ShortcutLine { const char* keys; const char* action; };
+constexpr ShortcutLine kShortcuts[] = {
+    {"Ctrl+T", "Open a new tab"},
+    {"Ctrl+W", "Close the current tab"},
+    {"Ctrl+Shift+T", "Reopen the last closed tab"},
+    {"Ctrl+Tab", "Switch to the next tab"},
+    {"Ctrl+Shift+Tab", "Switch to the previous tab"},
+    {"Ctrl+L", "Focus the address bar"},
+    {"Ctrl+R", "Reload the page"},
+    {"F5", "Reload the page (alternative)"},
+    {"Ctrl+F", "Find on the page"},
+    {"Ctrl+D", "Bookmark this page"},
+    {"Ctrl+J", "Open Downloads"},
+    {"Ctrl+Shift+I", "Open developer tools"},
+    {"F11", "Toggle fullscreen"},
+    {"Ctrl+Shift+N", "Open an incognito window"},
 };
 
 void fill(QComboBox* box, const Choice* choices, size_t n) {
@@ -75,17 +119,6 @@ bool name_in_use(const QString& name, int64_t self_id,
     return false;
 }
 
-QGroupBox* make_group(const QString& title, QFormLayout*& form) {
-    auto* group = new QGroupBox(title);
-    group->setObjectName("SettingsGroup");
-    form = new QFormLayout(group);
-    form->setContentsMargins(Spacing::lg, Spacing::lg, Spacing::lg, Spacing::lg);
-    form->setSpacing(Spacing::md);
-    form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
-    return group;
-}
-
 } // namespace
 
 SettingsPage::SettingsPage(settings::Settings* prefs,
@@ -98,215 +131,282 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         "Preferences are saved as you change them and apply to every window "
         "on this profile."));
 
-    // The form scrolls: the window can be short and settings only grow.
-    auto* scroll = new QScrollArea(this);
-    scroll->setObjectName("SettingsScroll");
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
+    // Live filter box in the page's actions row; like chrome://settings it
+    // only narrows what is visible, it never changes stored preferences.
+    filter_ = new QLineEdit(this);
+    filter_->setObjectName(QStringLiteral("PageSearch"));
+    filter_->setPlaceholderText(QStringLiteral("Search settings"));
+    filter_->setClearButtonEnabled(true);
+    toolbar_row()->addWidget(filter_, 1);
 
-    auto* container = new QWidget(scroll);
-    container->setObjectName("SettingsContainer");
-    auto* column = new QVBoxLayout(container);
-    column->setContentsMargins(0, 0, 0, 0);
-    column->setSpacing(Spacing::lg);
+    // --- Body: fixed section rail on the left, scrolling cards on the right.
+    auto* body = new QWidget(this);
+    auto* body_row = new QHBoxLayout(body);
+    body_row->setContentsMargins(0, 0, 0, 0);
+    body_row->setSpacing(Spacing::xl);
+
+    sidebar_ = new QWidget(body);
+    sidebar_->setObjectName(QStringLiteral("SettingsSidebar"));
+    sidebar_layout_ = new QVBoxLayout(sidebar_);
+    sidebar_layout_->setContentsMargins(0, 0, 0, 0);
+    sidebar_layout_->setSpacing(Spacing::xxs);
+    body_row->addWidget(sidebar_, 0);
+
+    // Centered placeholder shown when the filter matches nothing; the cards
+    // and sidebar collapse around it instead of leaving a blank area.
+    no_results_ = new QLabel(
+        QStringLiteral("No settings match your search"), body);
+    no_results_->setObjectName(QStringLiteral("PageEmptyState"));
+    no_results_->setAlignment(Qt::AlignCenter);
+    no_results_->setWordWrap(true);
+    no_results_->hide();
+    body_row->addWidget(no_results_, 1);
+
+    scroll_ = new QScrollArea(body);
+    scroll_->setObjectName(QStringLiteral("SettingsScroll"));
+    scroll_->setWidgetResizable(true);
+    scroll_->setFrameShape(QFrame::NoFrame);
+    body_row->addWidget(scroll_, 1);
+
+    auto* container = new QWidget(scroll_);
+    container->setObjectName(QStringLiteral("SettingsContainer"));
+    cards_column_ = new QVBoxLayout(container);
+    cards_column_->setContentsMargins(0, 0, Spacing::md, 0);
+    cards_column_->setSpacing(Spacing::xl);
 
     if (prefs_ && prefs_->is_read_only()) {
         auto* warning = new QLabel(
             QStringLiteral("This is an incognito window - changes are not saved"),
             container);
-        warning->setObjectName("PageWarning");
+        warning->setObjectName(QStringLiteral("PageWarning"));
         warning->setWordWrap(true);
-        column->addWidget(warning);
+        cards_column_->addWidget(warning);
     }
 
-    QFormLayout* startup_form = nullptr;
-    auto* startup = make_group(QStringLiteral("Startup"), startup_form);
-    auto* home_note = new QLabel(
-        QStringLiteral("New tabs and the Home button open your search "
-                       "engine's home page."),
-        startup);
-    home_note->setObjectName("PageHint");
-    home_note->setWordWrap(true);
-    startup_form->addRow(QString(), home_note);
-    restore_session_ = new QCheckBox(
-        QStringLiteral("Reopen the tabs from my last session on startup"), startup);
-    restore_session_->setObjectName("PageCheck");
-    startup_form->addRow(QString(), restore_session_);
-    column->addWidget(startup);
-
-    QFormLayout* tabs_form = nullptr;
-    auto* tabs_group = make_group(QStringLiteral("Tabs"), tabs_form);
-    suspend_minutes_ = new QSpinBox(tabs_group);
-    suspend_minutes_->setObjectName("TabSuspendMinutes");
-    suspend_minutes_->setRange(settings::PrefDefaults::kTabSuspendMinMinutes,
-                               settings::PrefDefaults::kTabSuspendMaxMinutes);
-    suspend_minutes_->setSuffix(QStringLiteral(" minutes"));
-    suspend_minutes_->setSpecialValueText(QStringLiteral("Off"));
-    tabs_form->addRow(QStringLiteral("Suspend inactive tabs after"),
-                      suspend_minutes_);
-    column->addWidget(tabs_group);
-
-    QFormLayout* search_form = nullptr;
-    auto* search = make_group(QStringLiteral("Search"), search_form);
-    search_engine_ = new QComboBox(search);
-    search_engine_->setObjectName("PageCombo");
+    // === Search =============================================================
+    QVBoxLayout* search_body = add_section(QStringLiteral("Search"),
+                                           icons::Name::Search);
+    search_body_ = search_body;
+    search_engine_ = new QComboBox(container);
+    search_engine_->setObjectName(QStringLiteral("PageCombo"));
     // Filled by reload_search_engines(): built-ins, then custom engines.
-    search_form->addRow(QStringLiteral("Search engine used in the omnibox"),
-                        search_engine_);
-
-    engine_list_ = new QTreeWidget(search);
-    engine_list_->setObjectName("PageList");
-    engine_list_->setColumnCount(2);
-    engine_list_->setHeaderLabels(
-        {QStringLiteral("Custom engine"), QStringLiteral("Search URL")});
-    engine_list_->setRootIsDecorated(false);
-    engine_list_->setUniformRowHeights(true);
-    engine_list_->setSelectionMode(QAbstractItemView::SingleSelection);
-    engine_list_->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    engine_list_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
-    engine_list_->setMinimumHeight(120);
-    search_form->addRow(QStringLiteral("Custom search engines"), engine_list_);
-
-    auto* engine_buttons = new QWidget(search);
-    auto* engine_buttons_layout = new QHBoxLayout(engine_buttons);
-    engine_buttons_layout->setContentsMargins(0, 0, 0, 0);
-    engine_buttons_layout->setSpacing(Spacing::sm);
-    engine_add_ = new QPushButton(QStringLiteral("Add…"), engine_buttons);
-    engine_add_->setObjectName("PageButton");
-    engine_edit_ = new QPushButton(QStringLiteral("Edit…"), engine_buttons);
-    engine_edit_->setObjectName("PageButton");
-    engine_delete_ = new QPushButton(QStringLiteral("Delete"), engine_buttons);
-    engine_delete_->setObjectName("PageDangerButton");
-    engine_buttons_layout->addWidget(engine_add_);
-    engine_buttons_layout->addWidget(engine_edit_);
-    engine_buttons_layout->addWidget(engine_delete_);
-    engine_buttons_layout->addStretch(1);
-    search_form->addRow(QString(), engine_buttons);
-
-    engine_note_ = new QLabel(search);
-    engine_note_->setObjectName("PageHint");
-    engine_note_->setWordWrap(true);
-    search_form->addRow(QString(), engine_note_);
-    if (!engines_ || !prefs_) {
-        engine_note_->setText(QStringLiteral(
-            "Custom search engines need a profile; only the built-in engines "
-            "are available in this window."));
-    } else if (prefs_->is_read_only()) {
-        engine_note_->setText(QStringLiteral(
-            "Custom search engines can be used here but only managed from a "
-            "normal (non-incognito) window."));
-    } else if (!engines_->storage_available()) {
-        engine_note_->setText(QStringLiteral(
-            "Custom search engines could not be loaded from the profile, so "
-            "they cannot be changed right now."));
-    } else {
-        engine_note_->setText(QStringLiteral(
-            "A custom engine needs an https:// search URL with %s where the "
-            "search terms go, e.g. https://example.com/search?q=%s. Its home "
-            "page (for new tabs and Home) is the site's root."));
+    SettingsRow* engine_row =
+        add_row(search_body,
+                QStringLiteral("Search engine"),
+                QStringLiteral("Used in the omnibox; new tabs and the Home "
+                               "button open its home page"),
+                search_engine_);
+    // Let the filter find the engine names themselves, not just the row.
+    // Custom engines are findable through their own rows below.
+    for (const auto& builtin : searchengines::builtin_engines()) {
+        engine_row->add_search_text(qs(builtin.name));
     }
-    column->addWidget(search);
+    add_divider(container, search_body);
+    // Custom engines: an "Add" row whose subtitle states the template rule
+    // (or why management is unavailable here), followed by one row per
+    // engine, rebuilt by reload_search_engines().
+    engine_add_ = new QPushButton(QStringLiteral("Add…"), container);
+    engine_add_->setObjectName(QStringLiteral("PageButton"));
+    QString engines_subtitle;
+    if (!engines_ || !prefs_) {
+        engines_subtitle = QStringLiteral(
+            "Custom search engines need a profile; only the built-in engines "
+            "are available in this window");
+    } else if (prefs_->is_read_only()) {
+        engines_subtitle = QStringLiteral(
+            "Custom search engines can be used here but only managed from a "
+            "normal (non-incognito) window");
+    } else if (!engines_->storage_available()) {
+        engines_subtitle = QStringLiteral(
+            "Custom search engines could not be loaded from the profile, so "
+            "they cannot be changed right now");
+    } else {
+        engines_subtitle = QStringLiteral(
+            "Any https:// search URL with %s where the search terms go, e.g. "
+            "https://example.com/search?q=%s. Its home page is the site's root");
+    }
+    SettingsRow* add_engine_row =
+        add_row(search_body, QStringLiteral("Custom search engines"),
+                engines_subtitle, engine_add_);
+    add_engine_row->add_search_text(
+        QStringLiteral("add search engine custom template url %s"));
+    engine_add_->setEnabled(search_engines_editable());
 
-    QFormLayout* appearance_form = nullptr;
-    auto* appearance = make_group(QStringLiteral("Appearance"), appearance_form);
-    theme_ = new QComboBox(appearance);
-    theme_->setObjectName("PageCombo");
-    fill(theme_, kThemes, std::size(kThemes));
-    appearance_form->addRow(QStringLiteral("Theme"), theme_);
-    reduced_motion_ = new QCheckBox(QStringLiteral("Reduce interface animation"),
-                                    appearance);
-    reduced_motion_->setObjectName("PageCheck");
-    appearance_form->addRow(QString(), reduced_motion_);
-    column->addWidget(appearance);
-
-    QFormLayout* downloads_form = nullptr;
-    auto* downloads = make_group(QStringLiteral("Downloads"), downloads_form);
-    auto* downloads_location = new QWidget(downloads);
-    auto* downloads_location_layout = new QHBoxLayout(downloads_location);
-    downloads_location_layout->setContentsMargins(0, 0, 0, 0);
-    downloads_location_layout->setSpacing(Spacing::sm);
-    downloads_path_ = new QLineEdit(downloads_location);
-    downloads_path_->setObjectName("PageInput");
-    downloads_path_->setPlaceholderText(QStringLiteral("System download folder"));
-    downloads_browse_ =
-        new QPushButton(QStringLiteral("Choose…"), downloads_location);
-    downloads_browse_->setObjectName("PageButton");
-    downloads_location_layout->addWidget(downloads_path_, 1);
-    downloads_location_layout->addWidget(downloads_browse_);
-    downloads_form->addRow(QStringLiteral("Save files to"), downloads_location);
-    downloads_ask_where_ = new QCheckBox(
-        QStringLiteral("Ask where to save each file before downloading"),
-        downloads);
-    downloads_ask_where_->setObjectName("PageCheck");
-    downloads_form->addRow(QString(), downloads_ask_where_);
-    column->addWidget(downloads);
-
-    QFormLayout* privacy_form = nullptr;
-    auto* privacy = make_group(QStringLiteral("Privacy"), privacy_form);
-    block_third_party_cookies_ =
-        new QCheckBox(QStringLiteral("Block third-party cookies"), privacy);
-    block_third_party_cookies_->setObjectName("PageCheck");
-    privacy_form->addRow(QString(), block_third_party_cookies_);
-    send_dnt_ = new QCheckBox(QStringLiteral("Send a “Do Not Track” request"),
-                              privacy);
-    send_dnt_->setObjectName("PageCheck");
-    privacy_form->addRow(QString(), send_dnt_);
-    // The global switch for Aurora Shields. Per-site exceptions are made from
-    // the shield in the toolbar; this one turns the whole feature off (it
-    // takes effect on the next page load).
-    adblock_enabled_ = new QCheckBox(
-        QStringLiteral("Block ads and trackers (Aurora Shields)"), privacy);
-    adblock_enabled_->setObjectName("PageCheck");
-    privacy_form->addRow(QString(), adblock_enabled_);
+    // === Privacy and security ===============================================
+    QVBoxLayout* privacy_body =
+        add_section(QStringLiteral("Privacy and security"), icons::Name::Lock);
+    adblock_enabled_ = new QCheckBox(container);
+    adblock_enabled_->setObjectName(QStringLiteral("PageCheck"));
+    add_row(privacy_body,
+            QStringLiteral("Aurora Shields"),
+            QStringLiteral("Block ads and trackers. Per-site exceptions are "
+                           "made from the shield in the toolbar; this switch "
+                           "turns the whole feature off"),
+            adblock_enabled_);
+    add_divider(container, privacy_body);
+    block_third_party_cookies_ = new QCheckBox(container);
+    block_third_party_cookies_->setObjectName(QStringLiteral("PageCheck"));
+    add_row(privacy_body,
+            QStringLiteral("Block third-party cookies"),
+            QStringLiteral("Sites you visit directly can still use cookies"),
+            block_third_party_cookies_);
+    add_divider(container, privacy_body);
+    send_dnt_ = new QCheckBox(container);
+    send_dnt_->setObjectName(QStringLiteral("PageCheck"));
+    add_row(privacy_body,
+            QStringLiteral("Send a “Do Not Track” request"),
+            QStringLiteral("Websites may ignore the request"),
+            send_dnt_);
     // Additional privacy rows use properties so refresh() can update them
     // without changing the existing controls or their write/read-only policy.
     struct PrivacyRow {
         const char* label;
+        const char* subtitle;
         std::string_view key;
         bool fallback;
     };
     const PrivacyRow privacy_rows[] = {
         {"Use HTTPS-only mode (no insecure fallback)",
+         "Refuse to load pages that are not encrypted",
          settings::PrefKeys::kHttpsOnly, settings::PrefDefaults::kHttpsOnly},
         {"Clear cookies when closing this window",
+         "Stored cookies are removed when every window closes",
          settings::PrefKeys::kClearOnExitCookies,
          settings::PrefDefaults::kClearOnExitCookies},
         {"Clear browsing history when closing this window",
+         "Visited pages are not kept between sessions",
          settings::PrefKeys::kClearOnExitHistory,
          settings::PrefDefaults::kClearOnExitHistory},
         {"Clear the download list when closing this window (keep files)",
+         "The downloads page starts empty next time; files stay on disk",
          settings::PrefKeys::kClearOnExitDownloads,
          settings::PrefDefaults::kClearOnExitDownloads},
         {"Warn when a site's certificate fingerprint changes",
+         "Alerts you when a previously seen site presents a new certificate",
          settings::PrefKeys::kCertAudit, settings::PrefDefaults::kCertAudit},
         {"Trim Referer headers to the referring origin",
+         "Other sites see where you came from, not the exact page",
          settings::PrefKeys::kRefererTrim, settings::PrefDefaults::kRefererTrim},
     };
     for (const auto& row : privacy_rows) {
-        auto* box = new QCheckBox(QString::fromUtf8(row.label), privacy);
-        box->setObjectName("PageCheck");
+        add_divider(container, privacy_body);
+        auto* box = new QCheckBox(container);
+        box->setObjectName(QStringLiteral("PageCheck"));
         box->setProperty("auroraPrivacyKey",
                          QString::fromStdString(std::string(row.key)));
         box->setProperty("auroraPrivacyDefault", row.fallback);
         box->setEnabled(prefs_ != nullptr);
         box->setChecked(prefs_ ? prefs_->get_bool(row.key, row.fallback)
                                : row.fallback);
-        privacy_form->addRow(QString(), box);
-        connect(box, &QCheckBox::toggled, this, [this, box, key = row.key](bool on) {
+        add_row(privacy_body, QString::fromUtf8(row.label),
+                QString::fromUtf8(row.subtitle), box);
+        connect(box, &QCheckBox::toggled, this,
+                [this, box, key = row.key](bool on) {
             if (loading_ || !prefs_ || !box->isEnabled()) return;
             prefs_->set_bool(key, on);
         });
     }
-    column->addWidget(privacy);
+
+    // === Appearance =========================================================
+    QVBoxLayout* appearance_body = add_section(QStringLiteral("Appearance"),
+                                               icons::Name::Sun);
+    theme_ = new QComboBox(container);
+    theme_->setObjectName(QStringLiteral("PageCombo"));
+    fill(theme_, kThemes, std::size(kThemes));
+    SettingsRow* theme_row =
+        add_row(appearance_body,
+                QStringLiteral("Theme"),
+                QStringLiteral("Aurora can follow the system light or dark "
+                               "appearance"),
+                theme_);
+    for (const auto& theme_choice : kThemes) {
+        theme_row->add_search_text(QString::fromUtf8(theme_choice.label));
+    }
+    add_divider(container, appearance_body);
+    reduced_motion_ = new QCheckBox(container);
+    reduced_motion_->setObjectName(QStringLiteral("PageCheck"));
+    add_row(appearance_body,
+            QStringLiteral("Reduce interface animation"),
+            QStringLiteral("Turns off animated transitions across the browser, "
+                           "including this page's scrolling"),
+            reduced_motion_);
+
+    // === Downloads ==========================================================
+    QVBoxLayout* downloads_body = add_section(QStringLiteral("Downloads"),
+                                              icons::Name::Downloads);
+    auto* downloads_location = new QWidget(container);
+    auto* downloads_location_layout = new QHBoxLayout(downloads_location);
+    downloads_location_layout->setContentsMargins(0, 0, 0, 0);
+    downloads_location_layout->setSpacing(Spacing::sm);
+    downloads_path_ = new QLineEdit(downloads_location);
+    downloads_path_->setObjectName(QStringLiteral("PageInput"));
+    downloads_path_->setPlaceholderText(QStringLiteral("System download folder"));
+    downloads_browse_ =
+        new QPushButton(QStringLiteral("Choose…"), downloads_location);
+    downloads_browse_->setObjectName(QStringLiteral("PageButton"));
+    downloads_location_layout->addWidget(downloads_path_, 1);
+    downloads_location_layout->addWidget(downloads_browse_);
+    add_row(downloads_body,
+            QStringLiteral("Location"),
+            QStringLiteral("Folder files are saved to"),
+            downloads_location);
+    add_divider(container, downloads_body);
+    downloads_ask_where_ = new QCheckBox(container);
+    downloads_ask_where_->setObjectName(QStringLiteral("PageCheck"));
+    add_row(downloads_body,
+            QStringLiteral("Ask where to save each file before downloading"),
+            QString(), downloads_ask_where_);
+
+    // === Tabs and performance ===============================================
+    QVBoxLayout* tabs_body =
+        add_section(QStringLiteral("Tabs and performance"), icons::Name::NewTab);
+    suspend_minutes_ = new QSpinBox(container);
+    suspend_minutes_->setObjectName(QStringLiteral("TabSuspendMinutes"));
+    suspend_minutes_->setRange(settings::PrefDefaults::kTabSuspendMinMinutes,
+                               settings::PrefDefaults::kTabSuspendMaxMinutes);
+    suspend_minutes_->setSuffix(QStringLiteral(" minutes"));
+    suspend_minutes_->setSpecialValueText(QStringLiteral("Off"));
+    add_row(tabs_body,
+            QStringLiteral("Suspend inactive tabs after"),
+            QStringLiteral("Suspended tabs free memory and reload when you "
+                           "return to them"),
+            suspend_minutes_);
+    add_divider(container, tabs_body);
+    restore_session_ = new QCheckBox(container);
+    restore_session_->setObjectName(QStringLiteral("PageCheck"));
+    add_row(tabs_body,
+            QStringLiteral("Reopen the tabs from my last session on startup"),
+            QString(), restore_session_);
+
+    // === About Aurora =======================================================
+    // No preference controls here: version info plus the keyboard shortcuts
+    // (read-only, so it stays accurate and useful in incognito windows).
+    QVBoxLayout* about_body = add_section(QStringLiteral("About Aurora"),
+                                          icons::Name::Info);
+    add_row(about_body,
+            QStringLiteral("Aurora Browser"),
+            QStringLiteral("Version %1 — built on the Chromium Embedded "
+                           "Framework").arg(QString::fromUtf8(kVersion)),
+            nullptr);
+    for (const auto& shortcut : kShortcuts) {
+        add_divider(container, about_body);
+        auto* row = add_row(about_body, QString::fromUtf8(shortcut.action),
+                            QString(), nullptr);
+        const QString keys = QString::fromUtf8(shortcut.keys);
+        auto* hint = new QLabel(keys, row);
+        hint->setObjectName(QStringLiteral("SettingsRowHint"));
+        row->add_accessory(hint);
+        row->add_search_text(keys + QStringLiteral(" keyboard shortcut"));
+    }
 
     if (!prefs_) {
         auto* warning = new QLabel(
             QStringLiteral("No profile is attached to this window, so changes "
                            "cannot be saved."),
             container);
-        warning->setObjectName("PageWarning");
+        warning->setObjectName(QStringLiteral("PageWarning"));
         warning->setWordWrap(true);
-        column->addWidget(warning);
+        cards_column_->addWidget(warning);
         for (QWidget* w : {static_cast<QWidget*>(search_engine_),
                            static_cast<QWidget*>(theme_),
                            static_cast<QWidget*>(restore_session_),
@@ -322,26 +422,39 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         }
     }
 
-    column->addStretch(1);
-    scroll->setWidget(container);
-    set_body(scroll);
+    cards_column_->addStretch(1);
+    scroll_->setWidget(container);
+    set_body(body);
+
+    // Sidebar entries, one per section, now that every card exists.
+    for (int i = 0; i < sections_.size(); ++i) {
+        Section& section = sections_[i];
+        auto* button = new QToolButton(sidebar_);
+        button->setObjectName(QStringLiteral("SettingsNavButton"));
+        button->setText(section.title);
+        button->setCheckable(true);
+        button->setAutoExclusive(true);
+        button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        button->setToolTip(section.title);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        section.button = button;
+        sidebar_layout_->addWidget(button);
+        connect(button, &QToolButton::clicked, this,
+                [this, i] { select_section(i, /*scroll_to=*/true); });
+    }
+    sidebar_layout_->addStretch(1);
+    select_section(0, /*scroll_to=*/false);
+    // Sidebar icons are stamped from the live palette, so re-render them on
+    // every theme change — MainWindow re-publishes current_theme() before
+    // notifying observers (same mechanism TabSpinner/PipWindow use).
+    theme_observer_ = add_theme_observer(
+        [this](const Theme&) { apply_sidebar_icons(); });
+    apply_sidebar_icons();
 
     // Persist on change. `loading_` suppresses writes while refresh() is
     // populating the controls.
     connect(engine_add_, &QPushButton::clicked, this,
             [this] { edit_search_engine(0); });
-    connect(engine_edit_, &QPushButton::clicked, this, [this] {
-        if (const auto id = selected_search_engine()) edit_search_engine(id);
-    });
-    connect(engine_delete_, &QPushButton::clicked, this,
-            &SettingsPage::delete_selected_search_engine);
-    connect(engine_list_, &QTreeWidget::itemSelectionChanged, this,
-            &SettingsPage::update_engine_buttons);
-    connect(engine_list_, &QTreeWidget::itemDoubleClicked, this,
-            [this](QTreeWidgetItem*, int) {
-                if (!search_engines_editable()) return;
-                if (const auto id = selected_search_engine()) edit_search_engine(id);
-            });
     connect(search_engine_, &QComboBox::currentIndexChanged, this, [this](int) {
         if (loading_ || !prefs_) return;
         const auto id = search_engine_->currentData().toString();
@@ -424,7 +537,183 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         prefs_->set_bool(settings::PrefKeys::kReducedMotion, on);
     });
 
+    connect(filter_, &QLineEdit::textChanged, this,
+            [this](const QString&) { apply_filter(); });
+
     refresh();
+}
+
+SettingsPage::~SettingsPage() { remove_theme_observer(theme_observer_); }
+
+QVBoxLayout* SettingsPage::add_section(const QString& title, icons::Name icon) {
+    auto* wrapper = new QWidget(scroll_);
+    wrapper->setObjectName(QStringLiteral("SettingsSection"));
+    auto* wrapper_layout = new QVBoxLayout(wrapper);
+    wrapper_layout->setContentsMargins(0, 0, 0, 0);
+    wrapper_layout->setSpacing(Spacing::sm);
+
+    auto* header = new QLabel(title, wrapper);
+    header->setObjectName(QStringLiteral("SettingsSectionHeader"));
+    wrapper_layout->addWidget(header);
+
+    auto* card = new QWidget(wrapper);
+    card->setObjectName(QStringLiteral("SettingsCard"));
+    auto* card_body = new QVBoxLayout(card);
+    card_body->setContentsMargins(0, Spacing::xs, 0, Spacing::xs);
+    card_body->setSpacing(0);
+    wrapper_layout->addWidget(card);
+
+    cards_column_->addWidget(wrapper);
+    sections_.append(Section{wrapper, card, card_body, title, icon, nullptr});
+    return card_body;
+}
+
+SettingsRow* SettingsPage::add_row(QVBoxLayout* body, const QString& title,
+                                   const QString& subtitle, QWidget* control) {
+    auto* row = new SettingsRow(title, subtitle, control, body->parentWidget());
+    body->addWidget(row);
+    return row;
+}
+
+void SettingsPage::add_divider(QWidget* parent, QVBoxLayout* into) {
+    auto* divider = new QFrame(parent);
+    divider->setObjectName(QStringLiteral("SettingsRowDivider"));
+    divider->setFrameShape(QFrame::NoFrame);
+    divider->setFixedHeight(Metrics::hairline);
+    into->addWidget(divider);
+}
+
+void SettingsPage::apply_filter() {
+    const QString needle = filter_->text().trimmed().toLower();
+    const bool filtering = !needle.isEmpty();
+
+    bool any_visible = false;
+    bool active_still_visible = false;
+    int first_visible = -1;
+    for (int i = 0; i < sections_.size(); ++i) {
+        Section& section = sections_[i];
+        const bool section_name_matches =
+            filtering && section.title.toLower().contains(needle);
+
+        int visible_rows = 0;
+        for (int j = 0; j < section.body->count(); ++j) {
+            QLayoutItem* item = section.body->itemAt(j);
+            QWidget* widget = item ? item->widget() : nullptr;
+            if (!widget) continue;
+            if (qobject_cast<QFrame*>(widget)) {
+                // Hide separators while filtering: matching rows are sparse
+                // and hairlines between hidden neighbours read as strays.
+                widget->setVisible(!filtering);
+                continue;
+            }
+            auto* row = qobject_cast<SettingsRow*>(widget);
+            bool match = true;
+            if (filtering && row) {
+                match = section_name_matches ||
+                        row->search_terms().contains(needle);
+            }
+            widget->setVisible(match);
+            if (match && row) ++visible_rows;
+        }
+
+        const bool section_visible = !filtering || visible_rows > 0;
+        section.wrapper->setVisible(section_visible);
+        if (section.button) section.button->setVisible(section_visible);
+        if (section_visible) {
+            any_visible = true;
+            if (first_visible < 0) first_visible = i;
+            if (i == active_section_) active_still_visible = true;
+        }
+    }
+
+    // Highlight the first visible section unless the active one survived.
+    if (any_visible && !active_still_visible && first_visible >= 0) {
+        active_section_ = first_visible;
+        if (sections_[first_visible].button) {
+            sections_[first_visible].button->setChecked(true);
+        }
+        apply_sidebar_icons();
+    }
+
+    // Nothing matched: reuse the skeleton's inline empty state rather than
+    // leaving a blank scroll area. Unlike the list pages the scroll area
+    // always hosts the cards, so instead of replacing the body we show the
+    // empty state text and collapse the section column.
+    set_empty_state(false);
+    sidebar_->setVisible(!filtering || any_visible);
+    scroll_->setVisible(!filtering || any_visible);
+    no_results_->setVisible(filtering && !any_visible);
+}
+
+void SettingsPage::select_section(int index, bool scroll_to) {
+    if (index < 0 || index >= sections_.size()) return;
+    active_section_ = index;
+    Section& section = sections_[index];
+    if (section.button && !section.button->isChecked()) {
+        section.button->setChecked(true);
+    }
+    // Checked state drove the icon tint: restamp so the active entry uses
+    // the accent color and the previous one falls back to muted.
+    apply_sidebar_icons();
+    if (scroll_to && scroll_ && section.wrapper->isVisible())
+        scroll_to_section(section);
+}
+
+void SettingsPage::scroll_to_section(const Section& section) {
+    // Chrome eases the content column to the tapped section. Honor the
+    // "Reduce interface animation" preference exactly like the omnibox/tab
+    // bar do: reduced-motion profiles get an instant jump.
+    const bool reduce_motion =
+        prefs_ && prefs_->get_bool(settings::PrefKeys::kReducedMotion, false);
+    int target = section.wrapper->y();  // wrapper is a child of the scrolled widget
+    target = qBound(0, target, scroll_->verticalScrollBar()->maximum());
+
+    if (scroll_anim_) scroll_anim_->stop();
+    if (reduce_motion) {
+        scroll_->verticalScrollBar()->setValue(target);
+        return;
+    }
+    auto* anim = new QPropertyAnimation(scroll_->verticalScrollBar(), "value",
+                                        this);
+    anim->setDuration(Motion::base);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+    anim->setStartValue(scroll_->verticalScrollBar()->value());
+    anim->setEndValue(target);
+    scroll_anim_ = anim;
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void SettingsPage::update_sidebar_mode() {
+    const bool compact = width() < kSidebarCompactBelow;
+    if (compact == sidebar_compact_) return;
+    sidebar_compact_ = compact;
+    for (Section& section : sections_) {
+        if (!section.button) continue;
+        section.button->setToolButtonStyle(
+            compact ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
+    }
+}
+
+void SettingsPage::apply_sidebar_icons() {
+    // QIcon does not follow palette changes, so the nav icons are stamped
+    // from the live theme: muted at rest, accent on the active section. The
+    // stylesheet supplies the button fill/hover; only the glyph is stateful
+    // here.
+    const Theme& theme = current_theme();
+    const qreal dpr = screen() ? screen()->devicePixelRatio() : 1.0;
+    for (const Section& section : sections_) {
+        if (!section.button) continue;
+        const QColor color = section.button->isChecked()
+            ? theme.colors.accent
+            : theme.colors.text_muted;
+        section.button->setIcon(
+            icons::icon(section.icon, color, kSidebarIconPx, dpr));
+    }
+}
+
+void SettingsPage::resizeEvent(QResizeEvent* event) {
+    InternalPageWidget::resizeEvent(event);
+    update_sidebar_mode();
 }
 
 void SettingsPage::report_change(const QString& message) {
@@ -437,27 +726,13 @@ bool SettingsPage::search_engines_editable() const {
            engines_->storage_available();
 }
 
-int64_t SettingsPage::selected_search_engine() const {
-    const auto items = engine_list_->selectedItems();
-    if (items.isEmpty()) return 0;
-    return items.front()->data(0, Qt::UserRole).toLongLong();
-}
-
-void SettingsPage::update_engine_buttons() {
-    const bool editable = search_engines_editable();
-    const bool selected = selected_search_engine() != 0;
-    engine_add_->setEnabled(editable);
-    engine_edit_->setEnabled(editable && selected);
-    engine_delete_->setEnabled(editable && selected);
-}
-
 void SettingsPage::reload_search_engines() {
     const bool was_loading = loading_;
     loading_ = true;  // rebuilding the combo must not write the preference
 
     const auto custom = engines_ ? engines_->snapshot()
                                  : std::vector<searchengines::SearchEngine>{};
-    const int64_t keep_selected = selected_search_engine();
+    const bool editable = search_engines_editable();
 
     search_engine_->clear();
     for (const auto& builtin : searchengines::builtin_engines()) {
@@ -469,18 +744,62 @@ void SettingsPage::reload_search_engines() {
             QString::fromStdString(searchengines::custom_engine_key(engine.id)));
     }
 
-    engine_list_->clear();
+    // Rebuild the per-engine rows at the end of the Search card. deleteLater
+    // (not delete): a reload can run while one of these rows is on the stack.
+    for (QWidget* widget : engine_rows_) {
+        search_body_->removeWidget(widget);
+        widget->hide();
+        widget->deleteLater();
+    }
+    engine_rows_.clear();
+    QWidget* card = search_body_->parentWidget();
+    const auto add_engine_divider = [&] {
+        add_divider(card, search_body_);
+        engine_rows_.append(
+            search_body_->itemAt(search_body_->count() - 1)->widget());
+    };
     for (const auto& engine : custom) {
-        auto* item = new QTreeWidgetItem(engine_list_);
-        item->setText(0, QString::fromStdString(engine.name));
-        item->setText(1, QString::fromStdString(engine.url_template));
-        item->setData(0, Qt::UserRole, QVariant::fromValue<qlonglong>(engine.id));
-        if (engine.id == keep_selected) item->setSelected(true);
+        const auto id = engine.id;
+        const QString name = QString::fromStdString(engine.name);
+        auto* controls = new QWidget(card);
+        auto* controls_layout = new QHBoxLayout(controls);
+        controls_layout->setContentsMargins(0, 0, 0, 0);
+        controls_layout->setSpacing(Spacing::sm);
+        auto* edit = new QPushButton(QStringLiteral("Edit…"), controls);
+        edit->setObjectName(QStringLiteral("PageButton"));
+        edit->setEnabled(editable);
+        auto* remove = new QPushButton(QStringLiteral("Delete"), controls);
+        remove->setObjectName(QStringLiteral("PageDangerButton"));
+        remove->setEnabled(editable);
+        controls_layout->addWidget(edit);
+        controls_layout->addWidget(remove);
+        // Queued: the dialog's nested event loop must not run inside the
+        // clicked() emission of a button that a reload may delete.
+        connect(edit, &QPushButton::clicked, this, [this, id] {
+            QMetaObject::invokeMethod(
+                this, [this, id] { edit_search_engine(id); },
+                Qt::QueuedConnection);
+        });
+        connect(remove, &QPushButton::clicked, this, [this, id, name] {
+            QMetaObject::invokeMethod(
+                this, [this, id, name] { delete_search_engine(id, name); },
+                Qt::QueuedConnection);
+        });
+
+        add_engine_divider();
+        SettingsRow* row = add_row(search_body_, name,
+                                   QString::fromStdString(engine.url_template),
+                                   controls);
+        row->add_search_text(QStringLiteral("custom search engine"));
+        engine_rows_.append(row);
     }
     if (custom.empty()) {
-        auto* item = new QTreeWidgetItem(engine_list_);
-        item->setText(0, QStringLiteral("No custom engines yet"));
-        item->setFlags(Qt::NoItemFlags);
+        add_engine_divider();
+        SettingsRow* row = add_row(
+            search_body_, QStringLiteral("No custom search engines yet"),
+            QString(), nullptr);
+        row->add_search_text(QStringLiteral("custom search engine"));
+        engine_rows_.append(row);
     }
 
     // A preference naming a deleted (or not yet loaded) custom engine shows
@@ -493,8 +812,9 @@ void SettingsPage::reload_search_engines() {
               QString::fromStdString(
                   searchengines::resolve_default_engine(pref, custom).key));
 
-    update_engine_buttons();
+    engine_add_->setEnabled(editable);
     loading_ = was_loading;
+    apply_filter();
 }
 
 void SettingsPage::edit_search_engine(int64_t id) {
@@ -521,15 +841,15 @@ void SettingsPage::edit_search_engine(int64_t id) {
                                   : QStringLiteral("Edit search engine"));
     auto* form = new QFormLayout(&dialog);
     auto* name = new QLineEdit(QString::fromStdString(current.name), &dialog);
-    name->setObjectName("PageInput");
+    name->setObjectName(QStringLiteral("PageInput"));
     name->setPlaceholderText(QStringLiteral("e.g. Kagi"));
     name->setMaxLength(static_cast<int>(searchengines::kMaxNameLength));
     auto* url = new QLineEdit(QString::fromStdString(current.url_template), &dialog);
-    url->setObjectName("PageInput");
+    url->setObjectName(QStringLiteral("PageInput"));
     url->setPlaceholderText(QStringLiteral("https://example.com/search?q=%s"));
     url->setMinimumWidth(360);
     auto* error = new QLabel(&dialog);
-    error->setObjectName("PageWarning");
+    error->setObjectName(QStringLiteral("PageWarning"));
     error->setWordWrap(true);
     auto* buttons = new QDialogButtonBox(
         QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
@@ -595,21 +915,16 @@ void SettingsPage::edit_search_engine(int64_t id) {
     }
 }
 
-void SettingsPage::delete_selected_search_engine() {
-    if (!search_engines_editable()) return;
-    const auto items = engine_list_->selectedItems();
-    if (items.isEmpty()) return;
-    const int64_t id = items.front()->data(0, Qt::UserRole).toLongLong();
-    if (id == 0) return;
-    const QString label = items.front()->text(0);
+void SettingsPage::delete_search_engine(int64_t id, const QString& name) {
+    if (!search_engines_editable() || id == 0) return;
     const auto answer = QMessageBox::question(
         this, QStringLiteral("Delete search engine"),
-        QStringLiteral("Delete the search engine \"%1\"?").arg(label),
+        QStringLiteral("Delete the search engine \"%1\"?").arg(name),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (answer != QMessageBox::Yes || !search_engines_editable()) return;
 
     QPointer<SettingsPage> self(this);
-    const QString success = QStringLiteral("Deleted search engine %1").arg(label);
+    const QString success = QStringLiteral("Deleted search engine %1").arg(name);
     engines_->remove(id, [self, success](const searchengines::MutationResult& result) {
         QMetaObject::invokeMethod(
             QCoreApplication::instance(),
@@ -650,11 +965,13 @@ void SettingsPage::on_search_engine_saved(
 
 void SettingsPage::refresh() {
     if (!prefs_) {
+        // No profile: still offer the built-in engines (disabled).
         reload_search_engines();
         return;
     }
     loading_ = true;
 
+    // Fills the engine picker and selects the stored kSearchEngine value.
     reload_search_engines();
     select_id(theme_, QString::fromStdString(prefs_->get_string(
                           settings::PrefKeys::kTheme,
@@ -686,6 +1003,7 @@ void SettingsPage::refresh() {
     }
 
     loading_ = false;
+    apply_filter();
 }
 
 } // namespace aurora::ui
