@@ -90,7 +90,8 @@ src/
                unit-tested)
   adblock/     AdblockEngine (Rust, brave/adblock-rust via third_party/adblock)
                + AdblockService — Aurora Shields
-  privacy/     CertificateAudit (per-origin SHA-256 fingerprint pinning)
+  privacy/     CertificateAudit (trust-on-first-use certificate fingerprint
+               auditing; change warnings, never bypassing TLS validation)
   permissions/ PermissionStore — per-origin permission decisions
   storage/     Database (RAII SQLite), Migrator (versioned schema)
   settings/    Settings — typed key-value preferences
@@ -200,10 +201,9 @@ are limited to what stock Chromium provides for Alloy-style CEF browsers. See
 
 - **No update mechanism.** Nothing checks for or applies new builds. CEF
   security updates are a manual rebuild and re-release; there is no updater.
-- **Extension runtime is registry-only end-to-end.** Extensions are unpacked
-  and registered, but runtime behavior is limited to what stock Chromium's
-  `--load-extension` path provides: no Chrome Web Store installs, no CRX
-  signature verification, and no Aurora-side WebExtension API surface.
+- **Extension runtime is limited to stock Chromium's `--load-extension`
+  path.** No Chrome Web Store installs, no CRX signature verification, and no
+  Aurora-side WebExtension API surface; changes require a restart.
 - **Release artifacts are Windows-only.** CI covers Linux for core tests only;
   there are no Linux or macOS installers.
 - **`profile.db` is not encrypted at rest** — see [security.md](security.md).
