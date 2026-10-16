@@ -71,22 +71,36 @@ all CEF callbacks on a single, predictable thread.
 ```
 src/
   app/         Application entry, profile bootstrap, CEF subprocess dispatch
-  ui/          Qt chrome: MainWindow, TabBar, Omnibox, theme, stylesheets
-  cef/         CEF integration: lifecycle, CefAdapter (implements WebViewController)
+  ui/          Qt chrome: MainWindow, TabBar, Omnibox, FindBar, BookmarkBar,
+               ShieldButton, DownloadsPopover, PiPWindow, theme, stylesheets;
+               internal aurora:// pages live in ui/pages/ (Settings, History,
+               Bookmarks, Downloads, Extensions)
+  cef/         CEF integration: lifecycle, CefAdapter (implements
+               WebViewController), GpuPolicy, MediaPolicy
   webview/     WebViewController — the abstract engine interface (no CEF)
   tabs/        TabManager — pure tab semantics, no rendering
   history/     HistoryService — SQLite-backed, FTS5 search
-  bookmarks/   BookmarkService — tree model, positional reordering
+  bookmarks/   BookmarkService — tree model, positional reordering;
+               BookmarkIo — import/export
   session/     SessionService — crash-safe tab persistence
                SessionRestore — bulk-restore sequencing (Qt-free, unit-tested)
+  downloads/   DownloadService — download accounting and persistence
+  extensions/  ExtensionService — CRX unpacking, manifest parsing, registry;
+               ExtensionLoadList — the engine's --load-extension list (pure,
+               unit-tested)
+  adblock/     AdblockEngine (Rust, brave/adblock-rust via third_party/adblock)
+               + AdblockService — Aurora Shields
+  privacy/     CertificateAudit (per-origin SHA-256 fingerprint pinning)
+  permissions/ PermissionStore — per-origin permission decisions
   storage/     Database (RAII SQLite), Migrator (versioned schema)
   settings/    Settings — typed key-value preferences
   searchengines/ Search engine model + validation (pure) and SearchEngineService
                (worker thread, own connection, in-memory snapshot for the UI)
-  extensions/  ExtensionService — unpacked-extension registry; ExtensionLoadList
-               — the engine's --load-extension list (pure, unit-tested)
-  core/        Value types: Url, TabId, TabState, NavigationEntry
-  util/        Log, Perf (startup milestones + scoped timers)
+  core/        Value types (Url, TabId, TabState, NavigationEntry),
+               IncognitoPolicy (what a private window may persist),
+               ChromeNav (HTTPS-only navigation, Referer trimming),
+               InternalUrl (aurora:// routing)
+  util/        Log, Perf (startup milestones + scoped timers), Sha256
 ```
 
 Dependency direction is strictly downward: `app` may depend on anything;
@@ -139,12 +153,41 @@ migrations, HistoryService (FTS5 search, upsert, prune, clear), BookmarkService
 (tree, move, renumber), SessionService (atomic save, prune, restore),
 Settings (typed prefs, cache), logging, perf instrumentation.
 
-**Implemented, not compiled in CI** (require Qt6/CEF on a desktop): Qt chrome
-(MainWindow, TabBar with context menus, Omnibox, FindBar, BrowserMenu,
-theme system, stylesheets), CEF lifecycle and
-the `CefAdapter` WebViewController. UI features include fullscreen mode,
-find-in-page, tab context menus, reload/stop toggle, status bar, dark/light
-theme toggle, session restore, and 20+ keyboard shortcuts.
+**Implemented and shipped in CI.** The Qt6 chrome compiles and its unit tests
+run on every push to `main` (the Windows `qt-shell` job in
+`.github/workflows/build-windows.yml` is a guaranteed build + test + artifact;
+the CEF-enabled job alongside it is best-effort). Linux CI
+(`linux-core.yml`) runs the core suite with the real Rust ad-block engine.
+Tag pushes matching `v*` trigger `release.yml`: a full Windows CEF build, unit
+tests, build-ID manifest verification, the single-exe SFX installer
+(`aurora_setup.exe`), and a published GitHub release.
+
+**Recently completed** — all of these were previously listed here as deferred:
+
+- **Tab suspension** — configurable "suspend inactive tabs after N minutes"
+  in Settings, with core unit tests (`tests/test_tab_suspension.cpp`).
+- **Downloads UI** — `DownloadService` plus the downloads popover and the
+  `aurora://downloads` page.
+- **Extensions** — `ExtensionService` registers unpacked directories and CRX2/
+  CRX3 packages (structural checks, idempotent install, enable/disable,
+  options pages, localized manifests). Extensions load through Chromium's own
+  `--load-extension` support and are disabled in incognito windows per
+  `IncognitoPolicy`.
+- **Incognito windows** — in-memory CEF request contexts (empty `cache_path`),
+  rejection of cross-privacy-mode tab transfers, read-only internal pages in
+  private windows, and opt-in clear-on-exit for cookies, history, and download
+  metadata.
+- **Installer/packaging** — the Windows SFX installer is wired into the
+  tag-triggered release workflow.
+
+Also built since the first draft of this document: Aurora Shields ad/tracker
+blocking (Rust engine, per-site exceptions, shield button), HTTPS-only
+navigation with no insecure fallback, Referer trimming, per-origin
+certificate-fingerprint auditing with change warnings, bookmark import/export,
+PiP windows, permission prompts with per-origin persistence, favicon
+caching, and custom search engines — the four built-ins plus user-defined
+`https://` templates with exactly one `%s`, managed in Settings and used by
+the omnibox (see [search-engines.md](search-engines.md)).
 
 **Extensions** are Chromium's own: enabled unpacked extensions from the
 profile registry are handed to the engine at startup via `--load-extension`
@@ -153,11 +196,14 @@ Chrome Web Store installs, no CRX signature verification, and extension APIs
 are limited to what stock Chromium provides for Alloy-style CEF browsers. See
 [extensions.md](extensions.md).
 
-**Search engines**: the four built-ins plus user-defined `https://` templates
-with exactly one `%s`, managed in Settings and used by the omnibox. See
-[search-engines.md](search-engines.md).
+**Known gaps** (honest, not fake — kept accurate rather than marketed):
 
-**Intentionally deferred** (architecture-ready, not built): tab suspension /
-background throttling policy, downloads UI, incognito profile isolation,
-installer/packaging. These are called out in the relevant source as future
-work rather than stubbed with fake UI.
+- **No update mechanism.** Nothing checks for or applies new builds. CEF
+  security updates are a manual rebuild and re-release; there is no updater.
+- **Extension runtime is registry-only end-to-end.** Extensions are unpacked
+  and registered, but runtime behavior is limited to what stock Chromium's
+  `--load-extension` path provides: no Chrome Web Store installs, no CRX
+  signature verification, and no Aurora-side WebExtension API surface.
+- **Release artifacts are Windows-only.** CI covers Linux for core tests only;
+  there are no Linux or macOS installers.
+- **`profile.db` is not encrypted at rest** — see [security.md](security.md).
