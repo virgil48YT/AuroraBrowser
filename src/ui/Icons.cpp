@@ -244,7 +244,7 @@ QString svg_markup(Name n) {
             return doc("<path d=\"M10 3c.7 4.5 2.5 6.3 7 7-4.5.7-6.3 2.5-7 7-.7-4.5-2.5-6.3-7-7 4.5-.7 6.3-2.5 7-7z\"/>", true)
                 .replace(QStringLiteral("</svg>"),
                          "<path d=\"M18.5 15c.3 1.7 1 2.4 2.7 2.7-1.7.3-2.4 1-2.7 2.7"
-                         "-.3-1.7-1-2.4-2.7-2.7 1.7-.3 2.4-1 2.7-2.7z\"
+                         "-.3-1.7-1-2.4-2.7-2.7 1.7-.3 2.4-1 2.7-2.7z\""
                          " fill=\"__C__\" stroke=\"none\"/></svg>");
         case Name::CloudSun:
             return doc("<path d=\"M17 4v2\"/><path d=\"M21 6.5l1-1\"/><path d=\"M13 6.5l-1-1\"/>"
