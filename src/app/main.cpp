@@ -20,6 +20,7 @@
 #include <functional>
 #include <chrono>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -32,9 +33,11 @@
 #include "adblock/AdblockEngine.hpp"
 #include "adblock/AdblockService.hpp"
 #include "downloads/DownloadService.hpp"
+#include "extensions/ExtensionLoadList.hpp"
 #include "extensions/ExtensionService.hpp"
 #include "history/HistoryService.hpp"
 #include "privacy/CertificateAudit.hpp"
+#include "searchengines/SearchEngineService.hpp"
 #include "core/CefLayout.hpp"
 #include "core/InternalUrl.hpp"
 #include "core/Url.hpp"
@@ -210,13 +213,31 @@ std::vector<std::string> enabled_extension_dirs(const QString& profile,
     for (const auto& dir : extension_dirs_from_argv(argc, argv)) {
         // add_unpacked validates the manifest and is idempotent per path, so
         // passing the same directory on every launch is harmless.
-        if (svc.add_unpacked(dir) < 0) {
+        if (svc.add_unpacked(dir) <= 0) {
             util::Logger::instance().log(
                 util::LogLevel::Warn, "app",
                 "--load-extension: not a valid unpacked extension: " + dir);
         }
     }
-    return svc.enabled_paths();
+    // A registry row can outlive its folder (the user deleted or moved a
+    // "Load unpacked" source tree). Handing Chromium a directory without a
+    // manifest only produces a load error, so such rows are left out here —
+    // still registered and still listed on aurora://extensions, just not
+    // loaded. This runs before any window exists (the same pre-UI startup
+    // window as the database open above), never on a live UI thread.
+    const auto list = extensions::build_load_list(
+        svc.enabled_paths(), extensions::is_loadable_extension_dir);
+    for (const auto& skipped : list.skipped) {
+        util::Logger::instance().log(
+            util::LogLevel::Warn, "app",
+            "not loading extension " + skipped.path + ": " +
+                std::string(extensions::load_skip_reason_name(skipped.reason)));
+    }
+    util::Logger::instance().log(
+        util::LogLevel::Info, "app",
+        std::to_string(list.dirs.size()) +
+            " enabled extension(s) handed to the engine");
+    return list.dirs;
 }
 #endif
 
@@ -422,6 +443,24 @@ int main(int argc, char** argv) {
     adblock::AdblockService adblock_svc(db);
     privacy::CertificateAudit certificate_audit(db);
 
+    // Custom search engines run on their own worker thread with their own
+    // connection to the (already migrated) profile database, so neither the
+    // omnibox nor the settings page ever touches SQLite for them on the UI
+    // thread. The one bounded wait below happens before any window exists so
+    // a custom default engine is honoured by the very first navigation; if
+    // the worker is slower than that, resolution falls back to DuckDuckGo
+    // until it has loaded rather than blocking startup.
+    std::unique_ptr<searchengines::SearchEngineService> search_engine_svc;
+    if (db.is_open()) {
+        search_engine_svc = std::make_unique<searchengines::SearchEngineService>(
+            (profile + "/profile.db").toStdString());
+        if (!search_engine_svc->wait_until_loaded(std::chrono::milliseconds(500))) {
+            util::Logger::instance().log(
+                util::LogLevel::Warn, "app",
+                "search engines still loading; custom default applies once loaded");
+        }
+    }
+
 #if defined(AURORA_HAS_CEF)
     cef::configure_privacy_preferences(db.is_open() ? &prefs : nullptr,
                                       db.is_open() ? &certificate_audit : nullptr);
@@ -448,6 +487,7 @@ int main(int argc, char** argv) {
         services.prefs = &prefs;
         services.session = &session_svc;
         services.adblock = &adblock_svc;
+        services.search_engines = search_engine_svc.get();
         // Filter list from the profile directory, combined with the built-in
         // starter rules (see adblock::load_rules). The file is refreshed out
         // of band (scripts/fetch_filter_lists.sh) — nothing here downloads

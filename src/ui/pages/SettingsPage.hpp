@@ -5,24 +5,42 @@
 // engine (which is also the home / new-tab page — there is no separate startup
 // URL option), theme, restore-session toggle, downloads directory and the two
 // privacy switches the engine reads.
+//
+// Custom search engines (name + https:// template with one %s) are listed and
+// managed here too. The page never touches SQLite for them: it reads
+// SearchEngineService's in-memory snapshot and posts add/edit/delete to the
+// service's worker thread, then refreshes when the result is marshalled back
+// to the UI thread.
 #pragma once
+
+#include <cstdint>
 
 #include "ui/pages/InternalPageWidget.hpp"
 
 class QCheckBox;
 class QComboBox;
+class QLabel;
 class QLineEdit;
 class QPushButton;
 class QSpinBox;
+class QTreeWidget;
 
 namespace aurora::settings { class Settings; }
+namespace aurora::searchengines {
+class SearchEngineService;
+struct MutationResult;
+} // namespace aurora::searchengines
 
 namespace aurora::ui {
 
 class SettingsPage : public InternalPageWidget {
     Q_OBJECT
 public:
-    explicit SettingsPage(settings::Settings* prefs, QWidget* parent = nullptr);
+    // `engines` may be null (no profile); custom-engine management is then
+    // disabled and only the built-in engines are offered.
+    explicit SettingsPage(settings::Settings* prefs,
+                          searchengines::SearchEngineService* engines = nullptr,
+                          QWidget* parent = nullptr);
 
     // Reload every control from the store (values may have changed elsewhere).
     void refresh() override;
@@ -39,11 +57,31 @@ signals:
 private:
     void report_change(const QString& message);
 
+    // Custom search engines. reload_search_engines() rebuilds the default-
+    // engine picker and the custom-engine list from the service's in-memory
+    // snapshot (no SQLite) and re-selects the stored preference.
+    void reload_search_engines();
+    bool search_engines_editable() const;
+    void update_engine_buttons();
+    // Add (id == 0) or edit an engine through a validating dialog.
+    void edit_search_engine(int64_t id);
+    void delete_selected_search_engine();
+    int64_t selected_search_engine() const;
+    // Runs on the UI thread once the worker reports a mutation's result.
+    void on_search_engine_saved(const searchengines::MutationResult& result,
+                                const QString& success_message, bool removed);
+
     // Guard so programmatic control updates in refresh() do not write back.
     bool loading_ = false;
 
     settings::Settings* prefs_ = nullptr;
+    searchengines::SearchEngineService* engines_ = nullptr;
     QComboBox* search_engine_ = nullptr;
+    QTreeWidget* engine_list_ = nullptr;
+    QPushButton* engine_add_ = nullptr;
+    QPushButton* engine_edit_ = nullptr;
+    QPushButton* engine_delete_ = nullptr;
+    QLabel* engine_note_ = nullptr;
     QComboBox* theme_ = nullptr;
     QCheckBox* restore_session_ = nullptr;
     QSpinBox* suspend_minutes_ = nullptr;

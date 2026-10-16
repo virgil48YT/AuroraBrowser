@@ -29,7 +29,8 @@ subprocesses are spawned by CEF itself.
 ```
 Browser process (this codebase)
   ├─ Qt UI thread: MainWindow, TabBar, Omnibox, TabManager
-  ├─ Worker thread(s): HistoryService, BookmarkService, SessionService, Downloads
+  ├─ Worker thread(s): HistoryService, BookmarkService, SessionService, Downloads,
+  │                    SearchEngineService (own thread + own Database connection)
   └─ CEF message loop (pumped from the Qt event loop)
 
 CEF subprocesses (spawned by CEF, not us)
@@ -80,6 +81,10 @@ src/
                SessionRestore — bulk-restore sequencing (Qt-free, unit-tested)
   storage/     Database (RAII SQLite), Migrator (versioned schema)
   settings/    Settings — typed key-value preferences
+  searchengines/ Search engine model + validation (pure) and SearchEngineService
+               (worker thread, own connection, in-memory snapshot for the UI)
+  extensions/  ExtensionService — unpacked-extension registry; ExtensionLoadList
+               — the engine's --load-extension list (pure, unit-tested)
   core/        Value types: Url, TabId, TabState, NavigationEntry
   util/        Log, Perf (startup milestones + scoped timers)
 ```
@@ -94,7 +99,9 @@ depend on nothing below `core`/`util`/`storage`.
 A single SQLite database per profile (`profile.db`), WAL mode, schema versioned
 via `PRAGMA user_version` and the `Migrator`. Tables: `history` (+ FTS5
 mirror), `bookmarks` (self-referential tree with a deferred FK and a root
-anchor at id=0), `downloads`, `sessions`, `session_tabs`, `preferences`.
+anchor at id=0), `downloads`, `sessions`, `session_tabs`, `preferences`,
+`extensions`, `adblock_exceptions`, `certificate_audit`, and (schema v7)
+`search_engines` — see [search-engines.md](search-engines.md).
 
 ## Session restore: one visible host, always
 
@@ -139,7 +146,18 @@ the `CefAdapter` WebViewController. UI features include fullscreen mode,
 find-in-page, tab context menus, reload/stop toggle, status bar, dark/light
 theme toggle, session restore, and 20+ keyboard shortcuts.
 
+**Extensions** are Chromium's own: enabled unpacked extensions from the
+profile registry are handed to the engine at startup via `--load-extension`
+(CEF builds only; restart to apply; never in incognito windows). There are no
+Chrome Web Store installs, no CRX signature verification, and extension APIs
+are limited to what stock Chromium provides for Alloy-style CEF browsers. See
+[extensions.md](extensions.md).
+
+**Search engines**: the four built-ins plus user-defined `https://` templates
+with exactly one `%s`, managed in Settings and used by the omnibox. See
+[search-engines.md](search-engines.md).
+
 **Intentionally deferred** (architecture-ready, not built): tab suspension /
-background throttling policy, downloads UI, extensions, incognito profile
-isolation, installer/packaging. These are called out in the relevant source as
-future work rather than stubbed with fake UI.
+background throttling policy, downloads UI, incognito profile isolation,
+installer/packaging. These are called out in the relevant source as future
+work rather than stubbed with fake UI.

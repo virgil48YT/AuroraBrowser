@@ -2,19 +2,29 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCoreApplication>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
+#include <QMetaObject>
+#include <QPointer>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QStandardPaths>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "searchengines/SearchEngine.hpp"
+#include "searchengines/SearchEngineService.hpp"
 #include "settings/Settings.hpp"
 #include "ui/Theme.hpp"
 
@@ -26,13 +36,6 @@ namespace {
 struct Choice {
     const char* id;
     const char* label;
-};
-
-constexpr Choice kEngines[] = {
-    {"duckduckgo", "DuckDuckGo"},
-    {"google", "Google"},
-    {"bing", "Bing"},
-    {"startpage", "Startpage"},
 };
 
 constexpr Choice kThemes[] = {
@@ -53,6 +56,25 @@ void select_id(QComboBox* box, const QString& id) {
     box->setCurrentIndex(index >= 0 ? index : 0);
 }
 
+QString qs(std::string_view text) {
+    return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
+}
+
+// Case-insensitive name clash against the built-in labels and the other
+// custom engines, for instant feedback in the dialog. The worker re-checks.
+bool name_in_use(const QString& name, int64_t self_id,
+                 const std::vector<searchengines::SearchEngine>& engines) {
+    for (const auto& builtin : searchengines::builtin_engines()) {
+        if (qs(builtin.name).compare(name, Qt::CaseInsensitive) == 0) return true;
+    }
+    for (const auto& engine : engines) {
+        if (engine.id != self_id &&
+            QString::fromStdString(engine.name).compare(name, Qt::CaseInsensitive) == 0)
+            return true;
+    }
+    return false;
+}
+
 QGroupBox* make_group(const QString& title, QFormLayout*& form) {
     auto* group = new QGroupBox(title);
     group->setObjectName("SettingsGroup");
@@ -66,8 +88,12 @@ QGroupBox* make_group(const QString& title, QFormLayout*& form) {
 
 } // namespace
 
-SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
-    : InternalPageWidget(QStringLiteral("Settings"), parent), prefs_(prefs) {
+SettingsPage::SettingsPage(settings::Settings* prefs,
+                           searchengines::SearchEngineService* engines,
+                           QWidget* parent)
+    : InternalPageWidget(QStringLiteral("Settings"), parent),
+      prefs_(prefs),
+      engines_(engines) {
     set_subtitle(QStringLiteral(
         "Preferences are saved as you change them and apply to every window "
         "on this profile."));
@@ -124,9 +150,61 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
     auto* search = make_group(QStringLiteral("Search"), search_form);
     search_engine_ = new QComboBox(search);
     search_engine_->setObjectName("PageCombo");
-    fill(search_engine_, kEngines, std::size(kEngines));
+    // Filled by reload_search_engines(): built-ins, then custom engines.
     search_form->addRow(QStringLiteral("Search engine used in the omnibox"),
                         search_engine_);
+
+    engine_list_ = new QTreeWidget(search);
+    engine_list_->setObjectName("PageList");
+    engine_list_->setColumnCount(2);
+    engine_list_->setHeaderLabels(
+        {QStringLiteral("Custom engine"), QStringLiteral("Search URL")});
+    engine_list_->setRootIsDecorated(false);
+    engine_list_->setUniformRowHeights(true);
+    engine_list_->setSelectionMode(QAbstractItemView::SingleSelection);
+    engine_list_->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    engine_list_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    engine_list_->setMinimumHeight(120);
+    search_form->addRow(QStringLiteral("Custom search engines"), engine_list_);
+
+    auto* engine_buttons = new QWidget(search);
+    auto* engine_buttons_layout = new QHBoxLayout(engine_buttons);
+    engine_buttons_layout->setContentsMargins(0, 0, 0, 0);
+    engine_buttons_layout->setSpacing(Spacing::sm);
+    engine_add_ = new QPushButton(QStringLiteral("Add…"), engine_buttons);
+    engine_add_->setObjectName("PageButton");
+    engine_edit_ = new QPushButton(QStringLiteral("Edit…"), engine_buttons);
+    engine_edit_->setObjectName("PageButton");
+    engine_delete_ = new QPushButton(QStringLiteral("Delete"), engine_buttons);
+    engine_delete_->setObjectName("PageDangerButton");
+    engine_buttons_layout->addWidget(engine_add_);
+    engine_buttons_layout->addWidget(engine_edit_);
+    engine_buttons_layout->addWidget(engine_delete_);
+    engine_buttons_layout->addStretch(1);
+    search_form->addRow(QString(), engine_buttons);
+
+    engine_note_ = new QLabel(search);
+    engine_note_->setObjectName("PageHint");
+    engine_note_->setWordWrap(true);
+    search_form->addRow(QString(), engine_note_);
+    if (!engines_ || !prefs_) {
+        engine_note_->setText(QStringLiteral(
+            "Custom search engines need a profile; only the built-in engines "
+            "are available in this window."));
+    } else if (prefs_->is_read_only()) {
+        engine_note_->setText(QStringLiteral(
+            "Custom search engines can be used here but only managed from a "
+            "normal (non-incognito) window."));
+    } else if (!engines_->storage_available()) {
+        engine_note_->setText(QStringLiteral(
+            "Custom search engines could not be loaded from the profile, so "
+            "they cannot be changed right now."));
+    } else {
+        engine_note_->setText(QStringLiteral(
+            "A custom engine needs an https:// search URL with %s where the "
+            "search terms go, e.g. https://example.com/search?q=%s. Its home "
+            "page (for new tabs and Home) is the site's root."));
+    }
     column->addWidget(search);
 
     QFormLayout* appearance_form = nullptr;
@@ -250,6 +328,20 @@ SettingsPage::SettingsPage(settings::Settings* prefs, QWidget* parent)
 
     // Persist on change. `loading_` suppresses writes while refresh() is
     // populating the controls.
+    connect(engine_add_, &QPushButton::clicked, this,
+            [this] { edit_search_engine(0); });
+    connect(engine_edit_, &QPushButton::clicked, this, [this] {
+        if (const auto id = selected_search_engine()) edit_search_engine(id);
+    });
+    connect(engine_delete_, &QPushButton::clicked, this,
+            &SettingsPage::delete_selected_search_engine);
+    connect(engine_list_, &QTreeWidget::itemSelectionChanged, this,
+            &SettingsPage::update_engine_buttons);
+    connect(engine_list_, &QTreeWidget::itemDoubleClicked, this,
+            [this](QTreeWidgetItem*, int) {
+                if (!search_engines_editable()) return;
+                if (const auto id = selected_search_engine()) edit_search_engine(id);
+            });
     connect(search_engine_, &QComboBox::currentIndexChanged, this, [this](int) {
         if (loading_ || !prefs_) return;
         const auto id = search_engine_->currentData().toString();
@@ -340,14 +432,230 @@ void SettingsPage::report_change(const QString& message) {
         ? QStringLiteral("Incognito changes are not saved") : message);
 }
 
+bool SettingsPage::search_engines_editable() const {
+    return engines_ && prefs_ && !prefs_->is_read_only() &&
+           engines_->storage_available();
+}
+
+int64_t SettingsPage::selected_search_engine() const {
+    const auto items = engine_list_->selectedItems();
+    if (items.isEmpty()) return 0;
+    return items.front()->data(0, Qt::UserRole).toLongLong();
+}
+
+void SettingsPage::update_engine_buttons() {
+    const bool editable = search_engines_editable();
+    const bool selected = selected_search_engine() != 0;
+    engine_add_->setEnabled(editable);
+    engine_edit_->setEnabled(editable && selected);
+    engine_delete_->setEnabled(editable && selected);
+}
+
+void SettingsPage::reload_search_engines() {
+    const bool was_loading = loading_;
+    loading_ = true;  // rebuilding the combo must not write the preference
+
+    const auto custom = engines_ ? engines_->snapshot()
+                                 : std::vector<searchengines::SearchEngine>{};
+    const int64_t keep_selected = selected_search_engine();
+
+    search_engine_->clear();
+    for (const auto& builtin : searchengines::builtin_engines()) {
+        search_engine_->addItem(qs(builtin.name), qs(builtin.key));
+    }
+    for (const auto& engine : custom) {
+        search_engine_->addItem(
+            QString::fromStdString(engine.name),
+            QString::fromStdString(searchengines::custom_engine_key(engine.id)));
+    }
+
+    engine_list_->clear();
+    for (const auto& engine : custom) {
+        auto* item = new QTreeWidgetItem(engine_list_);
+        item->setText(0, QString::fromStdString(engine.name));
+        item->setText(1, QString::fromStdString(engine.url_template));
+        item->setData(0, Qt::UserRole, QVariant::fromValue<qlonglong>(engine.id));
+        if (engine.id == keep_selected) item->setSelected(true);
+    }
+    if (custom.empty()) {
+        auto* item = new QTreeWidgetItem(engine_list_);
+        item->setText(0, QStringLiteral("No custom engines yet"));
+        item->setFlags(Qt::NoItemFlags);
+    }
+
+    // A preference naming a deleted (or not yet loaded) custom engine shows
+    // as DuckDuckGo, which is exactly what the omnibox falls back to.
+    const std::string pref = prefs_
+        ? prefs_->get_string(settings::PrefKeys::kSearchEngine,
+                             settings::PrefDefaults::kSearchEngine)
+        : std::string(settings::PrefDefaults::kSearchEngine);
+    select_id(search_engine_,
+              QString::fromStdString(
+                  searchengines::resolve_default_engine(pref, custom).key));
+
+    update_engine_buttons();
+    loading_ = was_loading;
+}
+
+void SettingsPage::edit_search_engine(int64_t id) {
+    if (!search_engines_editable()) return;
+    const auto engines = engines_->snapshot();
+    searchengines::SearchEngine current;
+    if (id != 0) {
+        bool found = false;
+        for (const auto& engine : engines) {
+            if (engine.id == id) {
+                current = engine;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            reload_search_engines();
+            return;
+        }
+    }
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(id == 0 ? QStringLiteral("Add search engine")
+                                  : QStringLiteral("Edit search engine"));
+    auto* form = new QFormLayout(&dialog);
+    auto* name = new QLineEdit(QString::fromStdString(current.name), &dialog);
+    name->setObjectName("PageInput");
+    name->setPlaceholderText(QStringLiteral("e.g. Kagi"));
+    name->setMaxLength(static_cast<int>(searchengines::kMaxNameLength));
+    auto* url = new QLineEdit(QString::fromStdString(current.url_template), &dialog);
+    url->setObjectName("PageInput");
+    url->setPlaceholderText(QStringLiteral("https://example.com/search?q=%s"));
+    url->setMinimumWidth(360);
+    auto* error = new QLabel(&dialog);
+    error->setObjectName("PageWarning");
+    error->setWordWrap(true);
+    auto* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+    form->addRow(QStringLiteral("Name"), name);
+    form->addRow(QStringLiteral("Search URL"), url);
+    form->addRow(QString(), error);
+    form->addRow(buttons);
+
+    // Live validation with the same pure checks the worker applies.
+    const auto validate = [&] {
+        const QString n = QString::fromStdString(
+            searchengines::normalize_input(name->text().toStdString()));
+        const std::string t =
+            searchengines::normalize_input(url->text().toStdString());
+        QString message;
+        if (const auto ne = searchengines::validate_name(n.toStdString());
+            ne != searchengines::NameError::Ok) {
+            message = qs(searchengines::describe(ne));
+        } else if (name_in_use(n, id, engines)) {
+            message = QStringLiteral("A search engine with that name already exists.");
+        } else if (const auto te = searchengines::validate_template(t);
+                   te != searchengines::TemplateError::Ok) {
+            message = qs(searchengines::describe(te));
+        }
+        // Do not shout at an untouched, empty form.
+        const bool pristine = name->text().isEmpty() && url->text().isEmpty();
+        error->setText(pristine ? QString() : message);
+        buttons->button(QDialogButtonBox::Save)->setEnabled(message.isEmpty());
+    };
+    connect(name, &QLineEdit::textChanged, &dialog, validate);
+    connect(url, &QLineEdit::textChanged, &dialog, validate);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    validate();
+    if (dialog.exec() != QDialog::Accepted) return;
+    // The dialog's local event loop may have outlived the profile's
+    // writability (or this page's service); re-check before posting.
+    if (!search_engines_editable()) return;
+
+    const std::string new_name = name->text().toStdString();
+    const std::string new_template = url->text().toStdString();
+    const QString label = QString::fromStdString(
+        searchengines::normalize_input(new_name));
+
+    // The callback runs on the service's worker thread: hop to the UI thread
+    // through the application object, and drop the result if this page has
+    // been destroyed in the meantime.
+    QPointer<SettingsPage> self(this);
+    const QString success = id == 0 ? QStringLiteral("Added search engine %1").arg(label)
+                                    : QStringLiteral("Saved search engine %1").arg(label);
+    auto done = [self, success](const searchengines::MutationResult& result) {
+        QMetaObject::invokeMethod(
+            QCoreApplication::instance(),
+            [self, success, result] {
+                if (self) self->on_search_engine_saved(result, success, false);
+            },
+            Qt::QueuedConnection);
+    };
+    if (id == 0) {
+        engines_->add(new_name, new_template, std::move(done));
+    } else {
+        engines_->update(id, new_name, new_template, std::move(done));
+    }
+}
+
+void SettingsPage::delete_selected_search_engine() {
+    if (!search_engines_editable()) return;
+    const auto items = engine_list_->selectedItems();
+    if (items.isEmpty()) return;
+    const int64_t id = items.front()->data(0, Qt::UserRole).toLongLong();
+    if (id == 0) return;
+    const QString label = items.front()->text(0);
+    const auto answer = QMessageBox::question(
+        this, QStringLiteral("Delete search engine"),
+        QStringLiteral("Delete the search engine \"%1\"?").arg(label),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes || !search_engines_editable()) return;
+
+    QPointer<SettingsPage> self(this);
+    const QString success = QStringLiteral("Deleted search engine %1").arg(label);
+    engines_->remove(id, [self, success](const searchengines::MutationResult& result) {
+        QMetaObject::invokeMethod(
+            QCoreApplication::instance(),
+            [self, success, result] {
+                if (self) self->on_search_engine_saved(result, success, true);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void SettingsPage::on_search_engine_saved(
+    const searchengines::MutationResult& result, const QString& success_message,
+    bool removed) {
+    if (!result.ok()) {
+        emit status_message(QString::fromStdString(result.message()));
+        reload_search_engines();
+        return;
+    }
+    QString message = success_message;
+    // Deleting the default engine: reset the preference explicitly instead of
+    // leaving a dangling "custom:<id>" that silently means DuckDuckGo.
+    if (removed && prefs_ && !prefs_->is_read_only() &&
+        prefs_->get_string(settings::PrefKeys::kSearchEngine,
+                           settings::PrefDefaults::kSearchEngine) ==
+            searchengines::custom_engine_key(result.id)) {
+        const QString fallback = qs(settings::PrefDefaults::kSearchEngine);
+        prefs_->set_string(settings::PrefKeys::kSearchEngine,
+                           settings::PrefDefaults::kSearchEngine);
+        emit search_engine_changed(fallback);
+        message += QStringLiteral(" — the omnibox now uses %1")
+                       .arg(qs(searchengines::resolve_default_engine(
+                                   settings::PrefDefaults::kSearchEngine, {})
+                                   .name));
+    }
+    reload_search_engines();
+    report_change(message);
+}
+
 void SettingsPage::refresh() {
-    if (!prefs_) return;
+    if (!prefs_) {
+        reload_search_engines();
+        return;
+    }
     loading_ = true;
 
-    select_id(search_engine_,
-              QString::fromStdString(prefs_->get_string(
-                  settings::PrefKeys::kSearchEngine,
-                  settings::PrefDefaults::kSearchEngine)));
+    reload_search_engines();
     select_id(theme_, QString::fromStdString(prefs_->get_string(
                           settings::PrefKeys::kTheme,
                           settings::PrefDefaults::kTheme)));

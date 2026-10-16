@@ -49,6 +49,7 @@
 #include "ui/IconButton.hpp"
 #include "ui/Omnibox.hpp"
 #include "core/IncognitoPolicy.hpp"
+#include "searchengines/SearchEngine.hpp"
 #include "ui/ServiceBundle.hpp"
 #include "ui/ShieldButton.hpp"
 #include "ui/TabBar.hpp"
@@ -472,6 +473,9 @@ private:
     InternalPageWidget* page_widget(core::InternalPage page);
     // The URL a fresh tab and the Home button should open.
     std::string new_tab_url() const;
+    // The default search engine (built-in or custom) for omnibox queries and
+    // the home/new-tab page. Reads the SearchEngineService snapshot only.
+    searchengines::ResolvedEngine resolved_search_engine() const;
     // Complete a site-initiated popup handoff after the CEF callback unwinds.
     // An empty target means JavaScript called window.open() with no URL and
     // must produce a genuinely blank page, not the configured new-tab page.
@@ -626,6 +630,7 @@ private:
     // One shared widget per page, created on first use.
     std::map<core::InternalPage, InternalPageWidget*> pages_;
 
+    // The default search engine preference: a built-in id or "custom:<id>".
     std::string search_engine_;
     bool dark_mode_ = false;
     // The user's bookmarks-bar preference. Distinct from the widget's own

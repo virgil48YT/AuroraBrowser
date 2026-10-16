@@ -14,6 +14,11 @@ accounts.
 - Incognito windows (Ctrl+Shift+N) that leave no trace on disk
 - Chrome-style layout: tabs, address bar, downloads
 - History, bookmarks, downloads and settings pages
+- Custom search engines (any `https://` search URL with `%s`), selectable as
+  the omnibox default
+- Unpacked Chrome extensions, loaded by the engine at startup (restart to
+  apply changes; no Chrome Web Store installs, no CRX signature
+  verification — see [docs/extensions.md](docs/extensions.md))
 - Find in page (Ctrl+F), fullscreen (F11)
 - Dark and light theme
 - Session restore — tabs come back after a restart
