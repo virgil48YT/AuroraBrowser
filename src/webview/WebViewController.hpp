@@ -53,6 +53,9 @@ struct PageInfo {
     bool renderer_out_of_memory = false;
     // -1 means no download-count update (including in title/progress events).
     int pending_downloads = -1;
+    // Memory the tab's renderer process currently uses, in bytes, as answered
+    // to request_memory(). -1 means this callback carries no memory figure.
+    int64_t memory_bytes = -1;
 };
 
 // A raw key event observed by the engine BEFORE the page sees it, forwarded
@@ -181,6 +184,11 @@ public:
     // CefBrowserHost::SetAudioMuted. The default no-op keeps non-CEF / test
     // doubles unaffected.
     virtual void set_muted(core::TabId tab, bool muted) { (void)tab; (void)muted; }
+
+    // Ask the tab's renderer how much memory it is using. The answer arrives
+    // later through the page-info callback (PageInfo::memory_bytes). Engines
+    // that cannot measure it simply never answer.
+    virtual void request_memory(core::TabId tab) { (void)tab; }
 
     // Called when a page asks to open a URL in a new window (target=_blank,
     // window.open, etc.). `url` is owned because the host normally queues the

@@ -1,10 +1,11 @@
 // Aurora — a tiny animated loading spinner painted on the tab strip.
 //
-// Draws a 270° arc and rotates it on a ~16ms timer while loading. Uses the
+// Draws a fading comet-tail ring whose rotation follows the wall clock (60fps timer). Uses the
 // theme accent so it reads as a navigation state, not decoration. Self-stopping
 // when not visible to keep the chrome idle and CPU-free.
 #pragma once
 
+#include <QElapsedTimer>
 #include <QWidget>
 
 class QHideEvent;
@@ -34,7 +35,7 @@ protected:
 private:
     void tick();
     QColor accent_;
-    int angle_ = 0;
+    QElapsedTimer clock_;   // drives the rotation (time-based, not stepped)
     class QTimer* timer_ = nullptr;
     // Visibility is not loading state. QTabBar may show/hide its button slots
     // while laying out or scrolling tabs, so remember the authoritative state

@@ -55,6 +55,7 @@
 #include "ui/ShieldButton.hpp"
 #include "ui/ShortcutList.hpp"
 #include "ui/TabBar.hpp"
+#include "ui/TabHoverCard.hpp"
 #include "webview/WebViewController.hpp"
 
 class QStackedWidget;
@@ -340,6 +341,11 @@ private slots:
     void update_window_control_icons();
     void on_duplicate_tab(int index);
     void on_close_tab_at(int index);
+    void on_close_other_tabs(int index);
+    // Hover card under a tab (title, address, renderer memory), shown after
+    // the pointer rests on it.
+    void show_tab_hover_card(int index);
+    void hide_tab_hover_card();
     void on_pin_tab(int index);
     void on_mute_tab(int index);
     void on_reload_tab(int index);
@@ -421,6 +427,9 @@ private:
     void reload_bookmark_bar();
     // The URL the active tab currently shows, or empty when there is none.
     std::string active_tab_url() const;
+    // Load `url` in tab `id`'s engine, or queue it as the start page when the
+    // tab's browser has not been created yet.
+    void load_url_in_tab(core::TabId id, const core::Url& url);
     // True when the active tab shows a native aurora:// page. Those are not
     // bookmarkable, so the star must be clear and inert.
     bool active_tab_is_internal() const;
@@ -632,6 +641,10 @@ private:
     bool was_maximized_ = false;
     // Which tabs are showing an internal page instead of web content.
     std::map<core::TabId, core::InternalPage> tab_pages_;
+    TabHoverCard* tab_hover_card_ = nullptr;
+    core::TabId hover_card_tab_;                      // tab the card describes
+    std::map<core::TabId, std::int64_t> tab_memory_;  // last renderer memory
+
     // Per-tab chrome-level history (internal pages + the web URLs around
     // them). See record_internal_nav / chrome_go_back.
     std::map<core::TabId, core::ChromeNavStack> nav_stacks_;

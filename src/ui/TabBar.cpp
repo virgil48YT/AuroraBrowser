@@ -327,6 +327,15 @@ TabBar::TabBar(core::TabManager* manager, QWidget* parent)
     setAcceptDrops(true);
     // 16 ms ≈ one frame: the detached window's follow and the snap-back
     // target detection both run off this single timer (see poll_detached_drag).
+    // Hover card: shown once the pointer has rested on a tab for ~2 seconds.
+    hover_card_timer_.setSingleShot(true);
+    hover_card_timer_.setInterval(2000);
+    connect(&hover_card_timer_, &QTimer::timeout, this, [this] {
+        if (hovered_tab_ >= 0 && drag_state_ == DragState::Idle &&
+            QApplication::mouseButtons() == Qt::NoButton) {
+            emit hover_dwell(hovered_tab_);
+        }
+    });
     snap_back_timer_.setInterval(16);
     snap_back_timer_.setTimerType(Qt::PreciseTimer);
     connect(&snap_back_timer_, &QTimer::timeout, this,
@@ -424,6 +433,12 @@ int TabBar::strip_available_width() const {
     return qMax(avail, Metrics::tab_min_width);
 }
 
+QSize TabBar::sizeHint() const {
+    int width = 0;
+    for (int i = 0; i < count(); ++i) width += tabSizeHint(i).width();
+    return {width, Metrics::tab_height};
+}
+
 QSize TabBar::tabSizeHint(int index) const {
     if (tab_pinned(index)) {
         // Compact pinned tab: favicon/spinner only, no text or close button.
@@ -497,6 +512,15 @@ void TabBar::mouseMoveEvent(QMouseEvent* event) {
         hovered_tab_ = idx;
         update_close_visibility();
         update();
+        // A new tab under the pointer: hide the old card and start the wait.
+        hover_card_timer_.stop();
+        if (idx >= 0 && drag_state_ == DragState::Idle &&
+            event->buttons() == Qt::NoButton) {
+            if (hover_card_visible_) emit hover_dwell(idx);
+            else hover_card_timer_.start();
+        } else {
+            emit hover_dwell_cancelled();
+        }
     }
 }
 
@@ -967,6 +991,8 @@ void TabBar::dropEvent(QDropEvent* event) {
 
 void TabBar::leaveEvent(QEvent* event) {
     QTabBar::leaveEvent(event);
+    hover_card_timer_.stop();
+    emit hover_dwell_cancelled();
     if (hovered_tab_ != -1) {
         hovered_tab_ = -1;
         update_close_visibility();
@@ -1176,6 +1202,9 @@ bool TabBar::is_interactive_at(const QPoint& pos) const {
 }
 
 void TabBar::mousePressEvent(QMouseEvent* event) {
+    // Any press (click, drag start, right-click menu) dismisses the hover card.
+    hover_card_timer_.stop();
+    emit hover_dwell_cancelled();
     if (event->button() == Qt::MiddleButton) {
         int index = tabAt(event->pos());
         if (index >= 0 && static_cast<size_t>(index) < manager_->count()) {
@@ -1213,6 +1242,8 @@ void TabBar::show_context_menu(const QPoint& pos, int index) {
     TabContextMenu menu(manager_, index, this);
     connect(&menu, &TabContextMenu::duplicate_tab, this, &TabBar::context_menu_duplicate);
     connect(&menu, &TabContextMenu::close_tab, this, &TabBar::context_menu_close);
+    connect(&menu, &TabContextMenu::close_other_tabs, this,
+            &TabBar::context_menu_close_others);
     connect(&menu, &TabContextMenu::pin_tab, this, &TabBar::context_menu_pin);
     connect(&menu, &TabContextMenu::mute_tab, this, &TabBar::context_menu_mute);
     connect(&menu, &TabContextMenu::reload_tab, this, &TabBar::context_menu_reload);

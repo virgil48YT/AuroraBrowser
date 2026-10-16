@@ -1907,6 +1907,22 @@ public:
         if (emit_) emit_(id_, info);
     }
 
+    // The renderer's answer to CefAdapter::request_memory().
+    bool OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,
+                                  CefRefPtr<CefFrame> /*frame*/,
+                                  CefProcessId /*source_process*/,
+                                  CefRefPtr<CefProcessMessage> message) override {
+        if (!message.get() || message->GetName() != "aurora.memory.reply") {
+            return false;
+        }
+        CefRefPtr<CefListValue> args = message->GetArgumentList();
+        if (!args.get() || args->GetSize() < 1) return true;
+        webview::PageInfo info;
+        info.memory_bytes = static_cast<int64_t>(args->GetDouble(0));
+        if (emit_) emit_(id_, info);
+        return true;
+    }
+
     // A video's fullscreen button, or any Fullscreen API call, lands here.
     // The engine will size the content to our host surface; making the window
     // itself fullscreen and hiding the tab strip / toolbar is our job.
@@ -3373,6 +3389,18 @@ void CefAdapter::set_muted(TabId tab, bool muted) {
     if (auto b = browser_for(tab); b.get()) {
         b->GetHost()->SetAudioMuted(muted);
     }
+}
+
+void CefAdapter::request_memory(TabId tab) {
+    // The renderer answers with "aurora.memory.reply" (see AuroraApp in
+    // CefLifecycle.cpp); TabClient::OnProcessMessageReceived turns that into
+    // PageInfo::memory_bytes.
+    auto b = browser_for(tab);
+    if (!b.get()) return;
+    CefRefPtr<CefFrame> frame = b->GetMainFrame();
+    if (!frame.get()) return;
+    frame->SendProcessMessage(PID_RENDERER,
+                              CefProcessMessage::Create("aurora.memory.request"));
 }
 
 void CefAdapter::set_new_tab_callback(NewTabCallback cb) {

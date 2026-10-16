@@ -80,6 +80,14 @@ public:
     bool is_interactive_at(const QPoint& pos) const;
 
     QSize tabSizeHint(int index) const override;
+    // Recomputed from the live tab widths on every call (QTabBar caches its
+    // own hint and only refreshes it when a tab changes, which left the tabs
+    // stuck at a small width after the window grew).
+    QSize sizeHint() const override;
+
+    // Tell the bar whether the hover card is on screen: while it is, moving
+    // to another tab swaps the card immediately instead of waiting again.
+    void set_hover_card_visible(bool visible) { hover_card_visible_ = visible; }
 
     // Un-maximize and clamp to the work-area so the follow window never reads
     // as maximized (Chrome un-maximizes the source on tear-off and never
@@ -90,6 +98,11 @@ public:
     static void prepare_detached_follow_window(QWidget* detached_window);
 
 signals:
+    // The pointer rested on tab `index` long enough to show its hover card.
+    void hover_dwell(int index);
+    // The pointer left the tab, pressed, or started a drag: hide the card.
+    void hover_dwell_cancelled();
+    void context_menu_close_others(int index);
     void context_menu_duplicate(int index);
     void context_menu_close(int index);
     void context_menu_pin(int index);
@@ -203,6 +216,8 @@ private:
     // A value member has exactly the TabBar's lifetime: it cannot leak or
     // leave a heap timer queued after this bar is destroyed.
     QTimer snap_back_timer_;
+    QTimer hover_card_timer_;          // fires once the pointer has rested
+    bool hover_card_visible_ = false;
     core::TabId detached_tab_{0};
     // Cursor position relative to the detached top-level window's framed
     // position. The polling loop preserves it while manually moving the

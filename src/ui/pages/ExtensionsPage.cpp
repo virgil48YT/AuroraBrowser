@@ -26,6 +26,7 @@
 #include "extensions/ExtensionService.hpp"
 #include "ui/Theme.hpp"
 #include "ui/ThemeState.hpp"
+#include "ui/ToggleSwitch.hpp"
 
 namespace aurora::ui {
 
@@ -367,7 +368,7 @@ void ExtensionsPage::add_card(const extensions::Extension& e) {
     auto* controls = new QVBoxLayout();
     controls->setContentsMargins(0, 0, 0, 0);
     controls->setSpacing(Spacing::sm);
-    auto* enabled = new QCheckBox(QStringLiteral("Enabled"), card);
+    auto* enabled = new ToggleSwitch(QStringLiteral("Enabled"), card);
     enabled->setObjectName("PageCheck");
     enabled->setChecked(e.enabled);
     name_label->set_checked(e.enabled);

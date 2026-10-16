@@ -216,6 +216,17 @@ void TabContextMenu::build() {
     close->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     connect(close, &QAction::triggered, this, [this] { emit close_tab(index_); });
 
+    // Chrome keeps pinned tabs when closing the others, so only count the
+    // unpinned tabs that would actually close.
+    int closable_others = 0;
+    for (const auto& other : tabs) {
+        if (other.id != tab.id && !other.pinned) ++closable_others;
+    }
+    auto* close_others = add(this, "Close Other Tabs", icons::Name::Close);
+    close_others->setEnabled(closable_others > 0);
+    connect(close_others, &QAction::triggered, this,
+            [this] { emit close_other_tabs(index_); });
+
     addSeparator();
 
     auto* reopen = add(this, "Reopen Closed Tab", icons::Name::Plus);
