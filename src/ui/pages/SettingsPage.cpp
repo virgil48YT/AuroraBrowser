@@ -20,6 +20,7 @@
 #include <QMetaObject>
 #include <QPropertyAnimation>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QScrollArea>
@@ -88,13 +89,6 @@ constexpr ShortcutLine kShortcuts[] = {
     {"Ctrl+Shift+N", "Open an incognito window"},
 };
 
-void fill(QComboBox* box, const Choice* choices, size_t n) {
-    for (size_t i = 0; i < n; ++i) {
-        box->addItem(QString::fromUtf8(choices[i].label),
-                     QString::fromUtf8(choices[i].id));
-    }
-}
-
 void select_id(QComboBox* box, const QString& id) {
     const int index = box->findData(id);
     box->setCurrentIndex(index >= 0 ? index : 0);
@@ -127,9 +121,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
     : InternalPageWidget(QStringLiteral("Settings"), parent),
       prefs_(prefs),
       engines_(engines) {
-    set_subtitle(QStringLiteral(
-        "Preferences are saved as you change them and apply to every window "
-        "on this profile."));
+    set_subtitle(QStringLiteral("Customize your browsing experience."));
 
     // Live filter box in the page's actions row; like chrome://settings it
     // only narrows what is visible, it never changes stored preferences.
@@ -183,8 +175,60 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         cards_column_->addWidget(warning);
     }
 
-    // === Search =============================================================
-    QVBoxLayout* search_body = add_section(QStringLiteral("Search"),
+    // === Startup ============================================================
+    // The radio group maps directly onto the existing preferences: the first
+    // two options are the kRestoreSession boolean; the third enables typing a
+    // specific home URL, kept in prefs under "startup.home_url". Picking an
+    // option persists immediately like every other control on the page.
+    QVBoxLayout* startup_body = add_section(QStringLiteral("Startup"),
+                                            icons::Name::Globe);
+    const auto add_startup_row = [this, startup_body, container](
+                                     QWidget* widget, const QString& terms) {
+        // Radio options read as full-width rows of the card, not as
+        // title/control pairs, so they are laid out directly (padded like a
+        // SettingsRow) instead of through add_row(). A SettingsRow still
+        // indexes the text for the filter.
+        auto* row = new SettingsRow(QString(), QString(), nullptr,
+                                    startup_body->parentWidget());
+        row->prepend_leading(widget);
+        row->add_search_text(terms);
+        startup_body->addWidget(row);
+        return row;
+    };
+    startup_open_home_ = new QRadioButton(
+        QStringLiteral("Open the home page"), container);
+    startup_open_home_->setObjectName(QStringLiteral("PageRadio"));
+    add_startup_row(startup_open_home_,
+                    QStringLiteral("startup open home page"));
+    startup_continue_ = new QRadioButton(
+        QStringLiteral("Continue where you left off"), container);
+    startup_continue_->setObjectName(QStringLiteral("PageRadio"));
+    add_startup_row(startup_continue_,
+                    QStringLiteral("startup continue session restore"));
+    startup_specific_ = new QRadioButton(
+        QStringLiteral("Open a specific page"), container);
+    startup_specific_->setObjectName(QStringLiteral("PageRadio"));
+    add_startup_row(startup_specific_,
+                    QStringLiteral("startup specific page"));
+
+    startup_url_ = new QLineEdit(container);
+    startup_url_->setObjectName(QStringLiteral("PageInputInline"));
+    startup_url_->setPlaceholderText(
+        QStringLiteral("https://aurora.start"));
+    startup_set_page_ = new QPushButton(QStringLiteral("Set page"),
+                                        container);
+    startup_set_page_->setObjectName(QStringLiteral("PageOutlineButton"));
+    auto* specific_row = new QWidget(container);
+    auto* specific_layout = new QHBoxLayout(specific_row);
+    specific_layout->setContentsMargins(Spacing::xl + Spacing::xs, 0, 0, 0);
+    specific_layout->setSpacing(Spacing::sm);
+    specific_layout->addWidget(startup_url_, 1);
+    specific_layout->addWidget(startup_set_page_, 0);
+    add_startup_row(specific_row,
+                    QStringLiteral("startup specific page url set"));
+
+    // === Search engine ======================================================
+    QVBoxLayout* search_body = add_section(QStringLiteral("Search engine"),
                                            icons::Name::Search);
     search_body_ = search_body;
     search_engine_ = new QComboBox(container);
@@ -232,9 +276,80 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         QStringLiteral("add search engine custom template url %s"));
     engine_add_->setEnabled(search_engines_editable());
 
-    // === Privacy and security ===============================================
+    // === Appearance =========================================================
+    // The mockup presents Dark / Light / Auto as preview chips rather than a
+    // dropdown; the chips write the same kTheme preference the combo did
+    // ("dark" / "light" / "system").
+    QVBoxLayout* appearance_body = add_section(QStringLiteral("Appearance"),
+                                               icons::Name::Sun);
+    auto* chips_row = new QWidget(container);
+    auto* chips_layout = new QHBoxLayout(chips_row);
+    chips_layout->setContentsMargins(0, 0, 0, 0);
+    chips_layout->setSpacing(Spacing::sm);
+    const struct { const char* id; const char* label; } kChips[] = {
+        {"dark", "Dark"}, {"light", "Light"}, {"system", "Auto"},
+    };
+    for (const auto& chip : kChips) {
+        auto* button = new QToolButton(chips_row);
+        button->setObjectName(QStringLiteral("ThemeChip"));
+        button->setText(QString::fromUtf8(chip.label));
+        button->setCheckable(true);
+        button->setAutoExclusive(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setProperty("auroraThemeId", QString::fromUtf8(chip.id));
+        chips_layout->addWidget(button);
+        connect(button, &QToolButton::clicked, this, [this, id = chip.id] {
+            if (loading_ || !prefs_) return;
+            const QString pref = QString::fromUtf8(id);
+            prefs_->set_string(settings::PrefKeys::kTheme,
+                               pref.toStdString());
+            emit theme_preference_changed(pref);
+        });
+        theme_chips_.append(button);
+    }
+    chips_layout->addStretch(1);
+    SettingsRow* theme_row =
+        add_row(appearance_body,
+                QStringLiteral("Theme"),
+                QStringLiteral("Choose how Aurora looks"),
+                chips_row);
+    for (const auto& theme_choice : kThemes) {
+        theme_row->add_search_text(QString::fromUtf8(theme_choice.label));
+    }
+    theme_row->add_search_text(QStringLiteral("dark light auto"));
+    add_divider(container, appearance_body);
+    reduced_motion_ = new QCheckBox(container);
+    reduced_motion_->setObjectName(QStringLiteral("PageCheck"));
+    add_row(appearance_body,
+            QStringLiteral("Reduce interface animation"),
+            QStringLiteral("Turns off animated transitions across the browser, "
+                           "including this page's scrolling"),
+            reduced_motion_);
+
+    // === Tabs & Performance ================================================
+    QVBoxLayout* tabs_body =
+        add_section(QStringLiteral("Tabs & Performance"), icons::Name::Gauge);
+    suspend_minutes_ = new QSpinBox(container);
+    suspend_minutes_->setObjectName(QStringLiteral("TabSuspendMinutes"));
+    suspend_minutes_->setRange(settings::PrefDefaults::kTabSuspendMinMinutes,
+                               settings::PrefDefaults::kTabSuspendMaxMinutes);
+    suspend_minutes_->setSuffix(QStringLiteral(" minutes"));
+    suspend_minutes_->setSpecialValueText(QStringLiteral("Off"));
+    add_row(tabs_body,
+            QStringLiteral("Suspend inactive tabs after"),
+            QStringLiteral("Suspended tabs free memory and reload when you "
+                           "return to them"),
+            suspend_minutes_);
+    add_divider(container, tabs_body);
+    restore_session_ = new QCheckBox(container);
+    restore_session_->setObjectName(QStringLiteral("PageCheck"));
+    add_row(tabs_body,
+            QStringLiteral("Reopen the tabs from my last session on startup"),
+            QString(), restore_session_);
+
+    // === Privacy & Security =================================================
     QVBoxLayout* privacy_body =
-        add_section(QStringLiteral("Privacy and security"), icons::Name::Lock);
+        add_section(QStringLiteral("Privacy & Security"), icons::Name::Lock);
     adblock_enabled_ = new QCheckBox(container);
     adblock_enabled_->setObjectName(QStringLiteral("PageCheck"));
     add_row(privacy_body,
@@ -307,30 +422,6 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         });
     }
 
-    // === Appearance =========================================================
-    QVBoxLayout* appearance_body = add_section(QStringLiteral("Appearance"),
-                                               icons::Name::Sun);
-    theme_ = new QComboBox(container);
-    theme_->setObjectName(QStringLiteral("PageCombo"));
-    fill(theme_, kThemes, std::size(kThemes));
-    SettingsRow* theme_row =
-        add_row(appearance_body,
-                QStringLiteral("Theme"),
-                QStringLiteral("Aurora can follow the system light or dark "
-                               "appearance"),
-                theme_);
-    for (const auto& theme_choice : kThemes) {
-        theme_row->add_search_text(QString::fromUtf8(theme_choice.label));
-    }
-    add_divider(container, appearance_body);
-    reduced_motion_ = new QCheckBox(container);
-    reduced_motion_->setObjectName(QStringLiteral("PageCheck"));
-    add_row(appearance_body,
-            QStringLiteral("Reduce interface animation"),
-            QStringLiteral("Turns off animated transitions across the browser, "
-                           "including this page's scrolling"),
-            reduced_motion_);
-
     // === Downloads ==========================================================
     QVBoxLayout* downloads_body = add_section(QStringLiteral("Downloads"),
                                               icons::Name::Downloads);
@@ -356,27 +447,6 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
     add_row(downloads_body,
             QStringLiteral("Ask where to save each file before downloading"),
             QString(), downloads_ask_where_);
-
-    // === Tabs and performance ===============================================
-    QVBoxLayout* tabs_body =
-        add_section(QStringLiteral("Tabs and performance"), icons::Name::NewTab);
-    suspend_minutes_ = new QSpinBox(container);
-    suspend_minutes_->setObjectName(QStringLiteral("TabSuspendMinutes"));
-    suspend_minutes_->setRange(settings::PrefDefaults::kTabSuspendMinMinutes,
-                               settings::PrefDefaults::kTabSuspendMaxMinutes);
-    suspend_minutes_->setSuffix(QStringLiteral(" minutes"));
-    suspend_minutes_->setSpecialValueText(QStringLiteral("Off"));
-    add_row(tabs_body,
-            QStringLiteral("Suspend inactive tabs after"),
-            QStringLiteral("Suspended tabs free memory and reload when you "
-                           "return to them"),
-            suspend_minutes_);
-    add_divider(container, tabs_body);
-    restore_session_ = new QCheckBox(container);
-    restore_session_->setObjectName(QStringLiteral("PageCheck"));
-    add_row(tabs_body,
-            QStringLiteral("Reopen the tabs from my last session on startup"),
-            QString(), restore_session_);
 
     // === About Aurora =======================================================
     // No preference controls here: version info plus the keyboard shortcuts
@@ -408,7 +478,11 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         warning->setWordWrap(true);
         cards_column_->addWidget(warning);
         for (QWidget* w : {static_cast<QWidget*>(search_engine_),
-                           static_cast<QWidget*>(theme_),
+                           static_cast<QWidget*>(startup_open_home_),
+                           static_cast<QWidget*>(startup_continue_),
+                           static_cast<QWidget*>(startup_specific_),
+                           static_cast<QWidget*>(startup_url_),
+                           static_cast<QWidget*>(startup_set_page_),
                            static_cast<QWidget*>(restore_session_),
                            static_cast<QWidget*>(suspend_minutes_),
                            static_cast<QWidget*>(downloads_path_),
@@ -463,12 +537,35 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         report_change(QStringLiteral("Search engine set to %1")
                                 .arg(search_engine_->currentText()));
     });
-    connect(theme_, &QComboBox::currentIndexChanged, this, [this](int) {
-        if (loading_ || !prefs_) return;
-        const auto id = theme_->currentData().toString();
-        prefs_->set_string(settings::PrefKeys::kTheme, id.toStdString());
-        emit theme_preference_changed(id);
+    // Startup radio group: home / restore-session map onto kRestoreSession;
+    // "specific page" stores its URL under startup.home_url.
+    connect(startup_open_home_, &QRadioButton::toggled, this, [this](bool on) {
+        if (loading_ || !prefs_ || !on) return;
+        prefs_->set_bool(settings::PrefKeys::kRestoreSession, false);
+        prefs_->set_string("startup.mode", "home");
+        report_change(QStringLiteral("Startup will open the home page"));
     });
+    connect(startup_continue_, &QRadioButton::toggled, this, [this](bool on) {
+        if (loading_ || !prefs_ || !on) return;
+        prefs_->set_bool(settings::PrefKeys::kRestoreSession, true);
+        prefs_->set_string("startup.mode", "continue");
+        report_change(QStringLiteral("Session will be restored on startup"));
+    });
+    connect(startup_specific_, &QRadioButton::toggled, this, [this](bool on) {
+        if (loading_ || !prefs_ || !on) return;
+        prefs_->set_string("startup.mode", "specific");
+        if (startup_url_) startup_url_->setFocus(Qt::ShortcutFocusReason);
+        report_change(QStringLiteral("Startup opens a specific page"));
+    });
+    const auto save_startup_url = [this] {
+        if (loading_ || !prefs_) return;
+        prefs_->set_string("startup.home_url",
+                           startup_url_->text().trimmed().toStdString());
+        report_change(QStringLiteral("Startup page saved"));
+    };
+    connect(startup_set_page_, &QPushButton::clicked, this, save_startup_url);
+    connect(startup_url_, &QLineEdit::editingFinished, this,
+            save_startup_url);
     connect(restore_session_, &QCheckBox::toggled, this, [this](bool on) {
         if (loading_ || !prefs_) return;
         prefs_->set_bool(settings::PrefKeys::kRestoreSession, on);
@@ -552,9 +649,19 @@ QVBoxLayout* SettingsPage::add_section(const QString& title, icons::Name icon) {
     wrapper_layout->setContentsMargins(0, 0, 0, 0);
     wrapper_layout->setSpacing(Spacing::sm);
 
+    // Card header: section icon + bold title (the aurora mockups lead every
+    // card with a glyph), stamped from the live palette alongside the rail.
+    auto* header_row = new QHBoxLayout;
+    header_row->setContentsMargins(Spacing::sm, 0, 0, 0);
+    header_row->setSpacing(Spacing::sm);
+    auto* icon_label = new QLabel(wrapper);
+    icon_label->setObjectName(QStringLiteral("SettingsSectionIcon"));
+    icon_label->setFixedSize(kSidebarIconPx + 2, kSidebarIconPx + 2);
+    header_row->addWidget(icon_label, 0, Qt::AlignVCenter);
     auto* header = new QLabel(title, wrapper);
     header->setObjectName(QStringLiteral("SettingsSectionHeader"));
-    wrapper_layout->addWidget(header);
+    header_row->addWidget(header, 1);
+    wrapper_layout->addLayout(header_row);
 
     auto* card = new QWidget(wrapper);
     card->setObjectName(QStringLiteral("SettingsCard"));
@@ -701,13 +808,26 @@ void SettingsPage::apply_sidebar_icons() {
     // here.
     const Theme& theme = current_theme();
     const qreal dpr = screen() ? screen()->devicePixelRatio() : 1.0;
-    for (const Section& section : sections_) {
-        if (!section.button) continue;
-        const QColor color = section.button->isChecked()
-            ? theme.colors.accent
-            : theme.colors.text_muted;
-        section.button->setIcon(
-            icons::icon(section.icon, color, kSidebarIconPx, dpr));
+    for (int i = 0; i < sections_.size(); ++i) {
+        const Section& section = sections_[i];
+        if (section.button) {
+            // The checked rail entry glows purple (the mockup's active item),
+            // everything else stays muted slate.
+            const QColor color = section.button->isChecked()
+                ? theme.colors.accent2
+                : theme.colors.text_muted;
+            section.button->setIcon(
+                icons::icon(section.icon, color, kSidebarIconPx, dpr));
+        }
+        // The card header glyph: always the muted color (it is a label,
+        // not an affordance), re-stamped with the rail.
+        const QString icon_name = QStringLiteral("SettingsSectionIcon");
+        const auto labels = section.wrapper
+            ? section.wrapper->findChildren<QLabel*>(icon_name) : QList<QLabel*>{};
+        for (QLabel* label : labels) {
+            label->setPixmap(icons::pixmap(
+                section.icon, kSidebarIconPx + 2, theme.colors.accent2, dpr));
+        }
     }
 }
 
@@ -973,9 +1093,29 @@ void SettingsPage::refresh() {
 
     // Fills the engine picker and selects the stored kSearchEngine value.
     reload_search_engines();
-    select_id(theme_, QString::fromStdString(prefs_->get_string(
-                          settings::PrefKeys::kTheme,
-                          settings::PrefDefaults::kTheme)));
+    // Theme chips: check whichever of Dark / Light / Auto matches the
+    // stored preference (system maps to Auto).
+    const QString theme_pref = QString::fromStdString(prefs_->get_string(
+        settings::PrefKeys::kTheme, settings::PrefDefaults::kTheme));
+    for (QToolButton* chip : theme_chips_) {
+        chip->setChecked(chip->property("auroraThemeId").toString() ==
+                         theme_pref);
+    }
+    // Startup mode: continue / specific / home (default).
+    const QString startup_mode = QString::fromStdString(
+        prefs_->get_string("startup.mode",
+                           prefs_->get_bool(
+                               settings::PrefKeys::kRestoreSession,
+                               settings::PrefDefaults::kRestoreSession)
+                               ? std::string("continue")
+                               : std::string("home")));
+    startup_open_home_->setChecked(startup_mode == QStringLiteral("home"));
+    startup_continue_->setChecked(
+        startup_mode == QStringLiteral("continue"));
+    startup_specific_->setChecked(
+        startup_mode == QStringLiteral("specific"));
+    startup_url_->setText(QString::fromStdString(
+        prefs_->get_string("startup.home_url", std::string())));
     restore_session_->setChecked(
         prefs_->get_bool(settings::PrefKeys::kRestoreSession,
                          settings::PrefDefaults::kRestoreSession));

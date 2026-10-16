@@ -89,6 +89,7 @@ class BookmarkBar;
 class CefHostWidget;
 class DownloadsPopover;
 class InternalPageWidget;
+class LeftDock;
 class PermissionPrompt; // header-only widget, included from the .cpp
 
 class MainWindow : public QMainWindow, public core::TabObserver {
@@ -357,6 +358,9 @@ private:
 
     // Builds the whole chrome plate: tab strip row + toolbar row.
     void setup_chrome(QVBoxLayout* root);
+    // Slim vertical launcher dock pinned to the window's far-left edge,
+    // inserted before the main column in the outer horizontal layout.
+    void setup_left_dock(QHBoxLayout* outer);
     void setup_window_controls(QHBoxLayout* tab_row);
     void setup_status_bubble();
     void setup_menu_button();
@@ -589,6 +593,11 @@ private:
     IconButton* fwd_btn_ = nullptr;
     IconButton* reload_stop_btn_ = nullptr;
     IconButton* home_btn_ = nullptr;
+    // Rounded user-avatar button between the extensions puzzle and the
+    // hamburger menu (the aurora chrome's profile affordance).
+    IconButton* profile_btn_ = nullptr;
+    // Slim far-left launcher dock (icon rail + glowing settings gear).
+    LeftDock* left_dock_ = nullptr;
 
     // Frameless window: the draggable caption (the tab strip row) and the
     // custom minimize/maximize/close buttons that fill the top-right corner.

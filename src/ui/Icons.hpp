@@ -88,6 +88,11 @@ enum class Name {
     // --- Aurora Shields (ad blocking) ---
     ShieldOff,   // shields down for this site (slashed shield)
     Block,       // blocked-item glyph for the shields popup rows
+    // --- Aurora neon homepage + settings rail ---
+    Sparkle,   // four-point star (homepage search bar trailing glyph)
+    CloudSun,  // weather widget (cloud with a partial sun)
+    User,      // rounded-corner avatar silhouette
+    Gauge,     // performance / memory-saver dial
 };
 
 // Paint an icon centered within `rect` using `color`. The pixmap is cached.

@@ -60,7 +60,13 @@ Theme light_theme() {
     // members breaking this hand-authored ladder.
     c.accent2          = QColor("#7C3AED");         // deep violet (light bg)
     c.accent2_soft     = QColor(124, 58, 237, 22);
+    c.accent3          = QColor("#A21CAF");         // deep fuchsia
     c.card_bg          = QColor("#FFFFFF");
+    c.card_raised      = QColor("#FFFFFF");
+    c.toggle_track_off = QColor("#D7D3CA");
+    c.toggle_border_off= QColor("#C6C1B7");
+    c.toggle_knob_on   = QColor("#FFFFFF");
+    c.toggle_knob_off  = QColor("#FFFFFF");
 
     // Semantic
     c.danger           = QColor("#B3261E");
@@ -98,61 +104,68 @@ Theme dark_theme() {
 
     ThemeColors c;
 
-    // Aurora glass: a deep transparent-black window (#0D0D14), a slightly
-    // lighter floating content card (#16161D), and the teal → purple nebula
-    // accent pair. Never pure black: black kills the sense of elevation and
-    // hides hairlines, and the glow colors need a hue to shine against.
-    c.background       = QColor("#0D0D14"); // window / content backdrop
-    c.surface          = QColor("#17171F"); // chrome plate (toolbar + active tab)
-    c.surface_alt      = QColor("#131318"); // recessed fill (omnibox at rest)
-    c.surface_raised   = QColor("#1E1E28"); // menus, tooltips, status bubble
-    c.surface_hover    = QColor("#23232E");
-    c.surface_selected = QColor("#1C2F33"); // teal-tinted charcoal
-    c.card_bg          = QColor("#16161D"); // floating content card
+    // Aurora neon: an ultra-dark navy window (#050811 → #0B1120), dark-blue
+    // card containers (#0E1626 / #111C30), hairline slate borders (#1E293B),
+    // and the electric-cyan (#00E5FF) / neon-purple (#A855F7 → #D946EF)
+    // accent pair that glows over the navy. Never pure black: the glow
+    // colors need a hue to shine against.
+    c.background       = QColor("#050811"); // window / content backdrop
+    c.surface          = QColor("#0B1220"); // chrome plate (toolbar + active tab)
+    c.surface_alt      = QColor("#0A1120"); // recessed fill (inputs at rest)
+    c.surface_raised   = QColor("#101A2E"); // menus, tooltips, status bubble
+    c.surface_hover    = QColor("#16233B");
+    c.surface_selected = QColor("#15264A"); // navy-tinted selection wash
+    c.card_bg          = QColor("#0E1626"); // dark-blue content card
+    c.card_raised      = QColor("#111C30"); // one step lighter (home tiles)
 
-    // Lines — dark mode needs a slightly brighter border to survive on
-    // charcoal, and a much softer subtle border to avoid a boxy look.
-    c.border           = QColor("#2E2E3A");
-    c.border_subtle    = QColor("#24242E");
-    c.divider          = QColor("#282832");
+    // Lines — the slate hairline ladder the mockup's cards are drawn with.
+    c.border           = QColor("#1E293B");
+    c.border_subtle    = QColor("#1A2438");
+    c.divider          = QColor("#1E293B");
 
-    // Text — cool off-white, not #FFF, to cut glare in long sessions.
-    c.text             = QColor("#EDEEF4");
-    c.text_muted       = QColor("#9CA0AE");
-    c.text_faint       = QColor("#676B78");
+    // Text — cool slate ladder, muted #94A3B8, never harsh #FFF at rest.
+    c.text             = QColor("#F1F5F9");
+    c.text_muted       = QColor("#94A3B8");
+    c.text_faint       = QColor("#64748B");
 
-    // Accent pair — a glassy teal that pops off transparent-black, and the
-    // violet half of the nebula gradient used for glow edges and the
-    // homepage background.
-    c.accent           = QColor("#3DD6C4");
-    c.accent_hover     = QColor("#6FE6D8");
-    c.accent_soft      = QColor(61, 214, 196, 36); // ~14% wash for hovers
-    c.accent2          = QColor("#8B5CF6");
-    c.accent2_soft     = QColor(139, 92, 246, 34);
+    // Accent pair — electric cyan and the neon purple → magenta nebula.
+    c.accent           = QColor("#00E5FF");
+    c.accent_hover     = QColor("#67F0FF");
+    c.accent_soft      = QColor(0, 229, 255, 34);  // ~13% wash for hovers
+    c.accent2          = QColor("#A855F7");
+    c.accent2_soft     = QColor(168, 85, 247, 36);
+    c.accent3          = QColor("#D946EF");
 
-    // Semantic — desaturated slightly so they don't vibrate on dark.
-    c.danger           = QColor("#E4695C");
-    c.warning          = QColor("#D59A4C");
-    c.success          = QColor("#6FC06C");
+    // Toggle switch: on = cyan→magenta gradient track (StylesheetBuilder)
+    // with a navy core dot; off = slate track with a slate dot.
+    c.toggle_track_off = QColor("#1E293B");
+    c.toggle_border_off= QColor("#33415C");
+    c.toggle_knob_on   = QColor("#0B1120");
+    c.toggle_knob_off  = QColor("#94A3B8");
+
+    // Semantic — desaturated slightly so they don't vibrate on navy.
+    c.danger           = QColor("#F87171");
+    c.warning          = QColor("#E0A253");
+    c.success          = QColor("#4ADE80");
     c.error            = c.danger; // legacy alias
 
     // Chrome roles. The tab strip is the darkest layer of the window glass;
     // inactive tabs are TRANSPARENT over it (the strip shows through), so
     // tab_inactive_bg is kept only as a documented reference equal to the
     // strip color.
-    c.tab_strip_bg     = QColor("#0A0A10");
+    c.tab_strip_bg     = QColor("#04060E");
     c.toolbar_bg       = c.surface;
     c.tab_inactive_bg  = c.tab_strip_bg; // inactives let the strip show through
     c.tab_active_bg    = c.surface; // fuses with the toolbar below
-    c.tab_hover_bg     = QColor("#1B1B24"); // subtle lift over the strip
+    c.tab_hover_bg     = QColor("#131D33"); // subtle lift over the strip
 
-    c.omnibox_bg           = QColor("#15151D"); // darker than the toolbar
-    c.omnibox_border       = QColor("#2A2A36");
+    c.omnibox_bg           = QColor("#070D1A"); // darker than the toolbar
+    c.omnibox_border       = QColor("#1E293B");
     c.omnibox_focus_border = c.accent;
 
-    // Elevation — near-black at higher alpha; on dark surfaces a shadow only
+    // Elevation — near-black at higher alpha; on navy surfaces a shadow only
     // reads if it is darker than the darkest surface.
-    c.shadow_color     = QColor(0, 0, 0, 120);
+    c.shadow_color     = QColor(0, 0, 0, 140);
 
     t.colors = c;
     t.body_font_px = 13;

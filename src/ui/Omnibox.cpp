@@ -389,31 +389,36 @@ void Omnibox::paintEvent(QPaintEvent*) {
     }
     if (property("incognito").toBool()) bg = incognito_tint(bg);
 
-    QColor border = interp(c.omnibox_border, c.omnibox_focus_border,
-                           focus_progress_ * 0.8);
-
-    // Gentle outer glow while focused: two soft washes, no hard ring. At
-    // focus_progress_ == 0 nothing of it remains — the idle state has NO
-    // accent anywhere.
-    if (focus_progress_ > 0.02) {
-        QColor halo = c.accent;
-        halo.setAlphaF(static_cast<float>(0.07 * focus_progress_));
-        QPainterPath outer;
-        outer.addRoundedRect(r.adjusted(-2.5, -2.5, 2.5, 2.5), rad + 2.5, rad + 2.5);
-        p.setPen(Qt::NoPen);
-        p.setBrush(halo);
-        p.drawPath(outer);
-
-        halo.setAlphaF(static_cast<float>(0.10 * focus_progress_));
-        QPainterPath inner_halo;
-        inner_halo.addRoundedRect(r.adjusted(-1.0, -1.0, 1.0, 1.0), rad + 1.0, rad + 1.0);
-        p.setBrush(halo);
-        p.drawPath(inner_halo);
-    }
+    // Aurora neon: a soft outer aura ALWAYS hugs the pill (the mockup's
+    // glow), and focusing deepens it. The halo is the same gradient family
+    // as the edge, painted twice at growing spread so it fades like light.
+    const qreal aura = 0.05 + 0.07 * focus_progress_;
+    QColor halo = c.accent2;
+    halo.setAlphaF(static_cast<float>(aura));
+    QPainterPath outer;
+    outer.addRoundedRect(r.adjusted(-3.0, -3.0, 3.0, 3.0), rad + 3.0, rad + 3.0);
+    p.setPen(Qt::NoPen);
+    p.setBrush(halo);
+    p.drawPath(outer);
+    QColor halo2 = c.accent;
+    halo2.setAlphaF(static_cast<float>(aura * 0.8));
+    QPainterPath outer2;
+    outer2.addRoundedRect(r.adjusted(-1.5, -1.5, 1.5, 1.5), rad + 1.5, rad + 1.5);
+    p.setBrush(halo2);
+    p.drawPath(outer2);
 
     QPainterPath path;
     path.addRoundedRect(r, rad, rad);
-    p.setPen(QPen(border, 1.0));
+    // Aurora neon: the capsule's edge is the cyan → purple gradient, not a
+    // flat slate. The focus animation still lifts it toward full accent; the
+    // gradient simply rides along underneath.
+    QLinearGradient edge_grad(r.topLeft(), r.bottomRight());
+    QColor edge_start = interp(c.accent, c.accent_hover, focus_progress_ * 0.2);
+    QColor edge_end = interp(c.accent2, c.accent3, focus_progress_ * 0.2);
+    edge_grad.setColorAt(0.0, edge_start);
+    edge_grad.setColorAt(1.0, edge_end);
+    QPen edge_pen(QBrush(edge_grad), 1.2);
+    p.setPen(edge_pen);
     p.setBrush(bg);
     p.drawPath(path);
 

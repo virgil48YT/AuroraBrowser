@@ -30,6 +30,11 @@ public:
     // for the shortcut key hints on the About card).
     void add_accessory(QWidget* widget);
 
+    // Insert a full-width leading widget into the row, before the title
+    // column (used by the Startup card's radio options, which read as
+    // whole rows rather than as title/control pairs).
+    void prepend_leading(QWidget* widget);
+
 private:
     QLabel* title_ = nullptr;
     QLabel* subtitle_ = nullptr;

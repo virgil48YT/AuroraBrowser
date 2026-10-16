@@ -36,6 +36,7 @@ class QLabel;
 class QLineEdit;
 class QPropertyAnimation;
 class QPushButton;
+class QRadioButton;
 class QResizeEvent;
 class QScrollArea;
 class QSpinBox;
@@ -147,6 +148,17 @@ private:
     QVBoxLayout* search_body_ = nullptr;
     QPushButton* engine_add_ = nullptr;
     QList<QWidget*> engine_rows_;
+    // Startup card: the radio group + "specific page" URL capture. The first
+    // two options are the kRestoreSession boolean; the third keeps its URL
+    // in prefs under startup.home_url.
+    QRadioButton* startup_open_home_ = nullptr;
+    QRadioButton* startup_continue_ = nullptr;
+    QRadioButton* startup_specific_ = nullptr;
+    QLineEdit* startup_url_ = nullptr;
+    QPushButton* startup_set_page_ = nullptr;
+    // Theme chips (Dark / Light / Auto) replace the old combo; theme_ stays
+    // null so any stale guard referencing it stays inert.
+    QList<QToolButton*> theme_chips_;
     QComboBox* theme_ = nullptr;
     QCheckBox* restore_session_ = nullptr;
     QSpinBox* suspend_minutes_ = nullptr;
