@@ -55,6 +55,13 @@ Theme light_theme() {
     c.accent_hover     = QColor("#08585E");
     c.accent_soft      = QColor(10, 110, 117, 26);  // ~10% wash for hovers
 
+    // The light theme keeps a single accent; the aurora-glass tokens exist
+    // so the dark theme can be restyled per-surface without new struct
+    // members breaking this hand-authored ladder.
+    c.accent2          = QColor("#7C3AED");         // deep violet (light bg)
+    c.accent2_soft     = QColor(124, 58, 237, 22);
+    c.card_bg          = QColor("#FFFFFF");
+
     // Semantic
     c.danger           = QColor("#B3261E");
     c.warning          = QColor("#96581A");
@@ -91,33 +98,37 @@ Theme dark_theme() {
 
     ThemeColors c;
 
-    // Surfaces — cool charcoal tuned against the reference dark browser:
-    // a near-black tab strip (#1A1B1E), a calmer toolbar plate (#28292A),
-    // and a recessed omnibox that sits one step BELOW the toolbar. Never
-    // pure black: black kills the sense of elevation and hides hairlines.
-    c.background       = QColor("#15161A"); // content backdrop
-    c.surface          = QColor("#28292A"); // chrome plate (toolbar + active tab)
-    c.surface_alt      = QColor("#1F2024"); // recessed fill
-    c.surface_raised   = QColor("#313338"); // menus, tooltips, status bubble
-    c.surface_hover    = QColor("#35373C");
-    c.surface_selected = QColor("#26393C"); // teal-tinted charcoal
+    // Aurora glass: a deep transparent-black window (#0D0D14), a slightly
+    // lighter floating content card (#16161D), and the teal → purple nebula
+    // accent pair. Never pure black: black kills the sense of elevation and
+    // hides hairlines, and the glow colors need a hue to shine against.
+    c.background       = QColor("#0D0D14"); // window / content backdrop
+    c.surface          = QColor("#17171F"); // chrome plate (toolbar + active tab)
+    c.surface_alt      = QColor("#131318"); // recessed fill (omnibox at rest)
+    c.surface_raised   = QColor("#1E1E28"); // menus, tooltips, status bubble
+    c.surface_hover    = QColor("#23232E");
+    c.surface_selected = QColor("#1C2F33"); // teal-tinted charcoal
+    c.card_bg          = QColor("#16161D"); // floating content card
 
     // Lines — dark mode needs a slightly brighter border to survive on
     // charcoal, and a much softer subtle border to avoid a boxy look.
-    c.border           = QColor("#3E4046");
-    c.border_subtle    = QColor("#303237");
-    c.divider          = QColor("#34363C");
+    c.border           = QColor("#2E2E3A");
+    c.border_subtle    = QColor("#24242E");
+    c.divider          = QColor("#282832");
 
     // Text — cool off-white, not #FFF, to cut glare in long sessions.
-    c.text             = QColor("#ECEDEF");
-    c.text_muted       = QColor("#9DA1A9");
-    c.text_faint       = QColor("#686C74");
+    c.text             = QColor("#EDEEF4");
+    c.text_muted       = QColor("#9CA0AE");
+    c.text_faint       = QColor("#676B78");
 
-    // Accent — a brighter, slightly cyan-shifted teal so it pops off
-    // charcoal (6.4:1 on the chrome plate).
-    c.accent           = QColor("#4FB3BE");
-    c.accent_hover     = QColor("#6ECBD4");
-    c.accent_soft      = QColor(79, 179, 190, 36); // ~14% wash for hovers
+    // Accent pair — a glassy teal that pops off transparent-black, and the
+    // violet half of the nebula gradient used for glow edges and the
+    // homepage background.
+    c.accent           = QColor("#3DD6C4");
+    c.accent_hover     = QColor("#6FE6D8");
+    c.accent_soft      = QColor(61, 214, 196, 36); // ~14% wash for hovers
+    c.accent2          = QColor("#8B5CF6");
+    c.accent2_soft     = QColor(139, 92, 246, 34);
 
     // Semantic — desaturated slightly so they don't vibrate on dark.
     c.danger           = QColor("#E4695C");
@@ -125,17 +136,18 @@ Theme dark_theme() {
     c.success          = QColor("#6FC06C");
     c.error            = c.danger; // legacy alias
 
-    // Chrome roles. Inactive tabs are TRANSPARENT over the strip (the strip
-    // shows through), so tab_inactive_bg is kept only as a documented
-    // reference equal to the strip color.
-    c.tab_strip_bg     = QColor("#1A1B1E");
+    // Chrome roles. The tab strip is the darkest layer of the window glass;
+    // inactive tabs are TRANSPARENT over it (the strip shows through), so
+    // tab_inactive_bg is kept only as a documented reference equal to the
+    // strip color.
+    c.tab_strip_bg     = QColor("#0A0A10");
     c.toolbar_bg       = c.surface;
     c.tab_inactive_bg  = c.tab_strip_bg; // inactives let the strip show through
     c.tab_active_bg    = c.surface; // fuses with the toolbar below
-    c.tab_hover_bg     = QColor("#26272B"); // subtle lift over the strip
+    c.tab_hover_bg     = QColor("#1B1B24"); // subtle lift over the strip
 
-    c.omnibox_bg           = QColor("#1E1F23"); // darker than the toolbar
-    c.omnibox_border       = QColor("#33353B");
+    c.omnibox_bg           = QColor("#15151D"); // darker than the toolbar
+    c.omnibox_border       = QColor("#2A2A36");
     c.omnibox_focus_border = c.accent;
 
     // Elevation — near-black at higher alpha; on dark surfaces a shadow only

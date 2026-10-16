@@ -210,6 +210,7 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "ui/pages/DownloadsPage.hpp"
 #include "ui/pages/ExtensionsPage.hpp"
 #include "ui/pages/HistoryPage.hpp"
+#include "ui/pages/HomePage.hpp"
 #include "ui/pages/SettingsPage.hpp"
 #include "util/Log.hpp"
 
@@ -911,10 +912,14 @@ void MainWindow::apply_theme_preference(const QString& preference) {
 }
 
 std::string MainWindow::new_tab_url() const {
-    // The home page IS the user's search engine (google.com, bing.com, ...).
-    // There is no separate "startup homepage" setting — picking a search
-    // engine decides both the omnibox search target and the home/new-tab page.
-    return resolved_search_engine().home;
+    // Every new tab opens the native aurora://home page: the aurora-glass
+    // new-tab surface with the centered search pill. Its pill still searches
+    // through the user's configured engine (google.com, bing.com, ...) —
+    // HomePage asks MainWindow to project each query through the active
+    // engine, so the search-engine setting keeps deciding where searches go;
+    // only the page the user lands on is now in-app glass instead of a web
+    // engine's front door.
+    return core::internal_url(core::InternalPage::Home);
 }
 
 searchengines::ResolvedEngine MainWindow::resolved_search_engine() const {
@@ -2380,12 +2385,33 @@ bool MainWindow::chrome_go_forward(core::TabId id) {
     return apply_chrome_entry(id, *entry);
 }
 
-InternalPageWidget* MainWindow::page_widget(core::InternalPage page) {
+QWidget* MainWindow::page_widget(core::InternalPage page) {
     auto it = pages_.find(page);
     if (it != pages_.end()) return it->second;
 
-    InternalPageWidget* widget = nullptr;
+    QWidget* widget = nullptr;
     switch (page) {
+        case core::InternalPage::Home: {
+            auto* home_page = new HomePage(this);
+            // The page emits raw queries; the window owns the search-engine
+            // state, so hand it a projector that resolves each query with the
+            // ACTIVE engine and routes anything that already parses as a URL.
+            home_page->set_query_url_resolver(
+                [this](const QString& query) -> QString {
+                    const core::Url parsed =
+                        core::parse_omnibox_input(query.toStdString());
+                    const bool https_only = services_.prefs
+                        ? services_.prefs->get_bool(
+                              settings::PrefKeys::kHttpsOnly,
+                              settings::PrefDefaults::kHttpsOnly)
+                        : settings::PrefDefaults::kHttpsOnly;
+                    return QString::fromStdString(core::resolve_navigation(
+                        parsed, resolved_search_engine().url_template,
+                        https_only));
+                });
+            widget = home_page;
+            break;
+        }
         case core::InternalPage::History:
             widget = new HistoryPage(services_.history, this);
             break;
@@ -2455,13 +2481,26 @@ InternalPageWidget* MainWindow::page_widget(core::InternalPage page) {
         }
     }
 
-    connect(widget, &InternalPageWidget::open_url_requested, this,
-            [this](const QString& url) {
-                open_url_in_new_tab(
-                    core::parse_omnibox_input(url.toStdString()));
-            });
+    // Pages report with one shared (QString url) / (QString message) signal
+    // contract; HomePage re-states it on QWidget, so bind the slot by name
+    // instead of by base-class member pointer. The home page's submissions
+    // keep the tab (the pill IS the tab's content); the tool pages still open
+    // links in a new tab so the tool stays put.
+    if (page == core::InternalPage::Home) {
+        connect(widget, SIGNAL(open_url_requested(QString)), this,
+                [this](const QString& url) {
+                    navigate_active_tab(
+                        core::parse_omnibox_input(url.toStdString()));
+                });
+    } else {
+        connect(widget, SIGNAL(open_url_requested(QString)), this,
+                [this](const QString& url) {
+                    open_url_in_new_tab(
+                        core::parse_omnibox_input(url.toStdString()));
+                });
+    }
     // Internal-page confirmations are one-shot messages: flash, not stick.
-    connect(widget, &InternalPageWidget::status_message, this,
+    connect(widget, SIGNAL(status_message(QString)), this,
             [this](const QString& msg) { flash_status(msg); });
 
     content_stack_->addWidget(widget);
@@ -2758,10 +2797,14 @@ void MainWindow::clear_browsing_data(bool history, bool downloads, bool cookies)
                      .arg(rows.history)
                      .arg(rows.downloads));
 
-    // Any open internal page must not keep showing deleted rows.
+    // Any open internal tool page must not keep showing deleted rows. The
+    // home page keeps no profile rows, so the skeleton pages — all
+    // InternalPageWidget subclasses — are the only ones with a refresh().
     for (auto& [page, widget] : pages_) {
         (void)page;
-        widget->refresh();
+        if (auto* skeleton = qobject_cast<InternalPageWidget*>(widget)) {
+            skeleton->refresh();
+        }
     }
 }
 
@@ -3144,7 +3187,7 @@ void MainWindow::on_bookmark_page() {
     // Refresh the bookmarks page if it is on screen.
     if (auto page = page_of(active);
         page && *page == core::InternalPage::Bookmarks) {
-        page_widget(*page)->refresh();
+        static_cast<InternalPageWidget*>(page_widget(*page))->refresh();
     }
 }
 
@@ -3480,7 +3523,9 @@ void MainWindow::on_theme_toggled() {
     }
     // Keep an open settings page's controls in sync with the toggle.
     auto it = pages_.find(core::InternalPage::Settings);
-    if (it != pages_.end() && it->second) it->second->refresh();
+    if (it != pages_.end() && it->second) {
+        static_cast<InternalPageWidget*>(it->second)->refresh();
+    }
 }
 
 void MainWindow::on_duplicate_tab(int index) {
@@ -3774,7 +3819,11 @@ void MainWindow::show_host_for(core::TabId id) {
     // Internal pages take the content area over from the web host.
     if (auto page = page_of(id)) {
         auto* widget = page_widget(*page);
-        widget->refresh();
+        // The skeleton pages re-read their service on every show; the home
+        // page is stateless chrome and skips the refresh it does not have.
+        if (auto* skeleton = qobject_cast<InternalPageWidget*>(widget)) {
+            skeleton->refresh();
+        }
         set_current_content(widget, id);
         return;
     }

@@ -44,9 +44,16 @@ struct ThemeColors {
     QColor text_faint;      // placeholders, disabled, shortcut hints
 
     // --- Accent ------------------------------------------------------------
-    QColor accent;          // the single brand color: focus, active, primary
+    QColor accent;          // the brand color: focus, active, primary
     QColor accent_hover;    // pressed / stronger accent
     QColor accent_soft;     // translucent accent wash for hovers (has alpha)
+
+    // Aurora-glass additions. Default-constructed to a neutral purple / card
+    // grey so any code path that skips dark_theme() still compiles and renders
+    // something sane; the dark theme assigns the real nebula pair.
+    QColor accent2          = QColor(QStringLiteral("#8B5CF6")); // secondary brand: purple nebula glow
+    QColor accent2_soft;    // translucent accent2 wash (has alpha)
+    QColor card_bg          = QColor(QStringLiteral("#16161D")); // floating content card
 
     // --- Semantic ----------------------------------------------------------
     QColor danger;          // destructive
@@ -102,6 +109,7 @@ struct Radius {
     static constexpr int md = 6;   // toolbar buttons, menu items
     static constexpr int lg = 8;   // tab tops, menus
     static constexpr int xl = 12;  // dialogs
+    static constexpr int xxl = 18; // window corner, floating content card
     // Dropdown panels that hang off the chrome (downloads popover). Matched
     // to `lg` on purpose: a panel that drops from a toolbar button reads as
     // part of the chrome, and the 12px dialog radius made the short downloads

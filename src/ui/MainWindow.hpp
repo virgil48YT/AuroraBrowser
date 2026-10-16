@@ -469,12 +469,15 @@ private:
     bool apply_chrome_entry(core::TabId id, const core::ChromeNavEntry& entry);
     bool chrome_go_back(core::TabId id);
     bool chrome_go_forward(core::TabId id);
-    // Lazily create the shared widget for a page.
-    InternalPageWidget* page_widget(core::InternalPage page);
-    // The URL a fresh tab and the Home button should open.
+    // Lazily create the shared widget for a page. Home is a plain QWidget —
+    // it paints its own aurora backdrop and does not use the
+    // InternalPageWidget skeleton — so this returns the common base.
+    QWidget* page_widget(core::InternalPage page);
+    // The URL a fresh tab and the Home button should open: aurora://home.
     std::string new_tab_url() const;
     // The default search engine (built-in or custom) for omnibox queries and
-    // the home/new-tab page. Reads the SearchEngineService snapshot only.
+    // the home page's search pill. Reads the SearchEngineService snapshot
+    // only.
     searchengines::ResolvedEngine resolved_search_engine() const;
     // Complete a site-initiated popup handoff after the CEF callback unwinds.
     // An empty target means JavaScript called window.open() with no URL and
@@ -628,7 +631,7 @@ private:
     // Back/Forward, loading the selected entry in the replacement browser.
     std::set<core::TabId> restored_history_;
     // One shared widget per page, created on first use.
-    std::map<core::InternalPage, InternalPageWidget*> pages_;
+    std::map<core::InternalPage, QWidget*> pages_;
 
     // The default search engine preference: a built-in id or "custom:<id>".
     std::string search_engine_;

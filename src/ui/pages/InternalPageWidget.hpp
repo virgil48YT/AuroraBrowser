@@ -1,6 +1,7 @@
 // Aurora — base class for the native internal pages.
 //
-// The internal pages (history, downloads, bookmarks, settings, extensions) are
+// The internal pages (home, history, downloads, bookmarks, settings,
+// extensions) are
 // real Qt widgets swapped into the content stack in place of the web-content
 // host. They share one layout skeleton, so every page has the same rhythm:
 //

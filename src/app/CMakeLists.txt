@@ -23,6 +23,7 @@ qt_add_executable(aurora_browser
     ../ui/TabSpinner.cpp
     ../ui/pages/InternalPageWidget.cpp
     ../ui/pages/HistoryPage.cpp
+    ../ui/pages/HomePage.cpp
     ../ui/pages/DownloadsPage.cpp
     ../ui/pages/BookmarksPage.cpp
     ../ui/pages/SettingsPage.cpp
