@@ -27,11 +27,14 @@
 #include "include/cef_ssl_info.h"
 #include "include/cef_ssl_status.h"
 #include "include/cef_task.h"
+#include "include/cef_values.h"
 
 #include "permissions/PermissionStore.hpp"
+#include "privacy/CookieSite.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -86,6 +89,13 @@ privacy::CertificateAudit* g_certificate_audit = nullptr;
 std::atomic<bool> g_https_only{settings::PrefDefaults::kHttpsOnly};
 std::atomic<bool> g_referer_trim{settings::PrefDefaults::kRefererTrim};
 std::atomic<bool> g_cert_audit{settings::PrefDefaults::kCertAudit};
+// "Send a Do Not Track request" and "Block third-party cookies" from
+// aurora://settings. Both are read on the IO thread (OnBeforeResourceLoad /
+// GetCookieAccessFilter), hence atomics refreshed from the UI thread exactly
+// like the three above.
+std::atomic<bool> g_send_dnt{settings::PrefDefaults::kSendDoNotTrack};
+std::atomic<bool> g_block_3p_cookies{
+    settings::PrefDefaults::kBlockThirdPartyCookies};
 
 // Use Chromium's parser, not core::Url's display parser, for security keys.
 // In particular query-only URLs, credentials, IPv6 and default ports must
@@ -116,6 +126,80 @@ std::string certificate_fingerprint(CefRefPtr<CefX509Certificate> certificate) {
     hash.update(bytes.data(), bytes.size());
     return hash.finish_hex();
 }
+
+// The registrable-domain-like site of an http(s)/ws(s) URL
+// (privacy::cookie_site, an embedded-table approximation of the Public Suffix
+// List — see privacy/CookieSite.hpp), or empty for anything else. The host
+// comes from Chromium's own URL parser, so it is already canonical
+// (lower-case, IDNA punycode).
+std::string url_cookie_site(const CefString& url) {
+    CefURLParts parts;
+    if (!CefParseURL(url, parts)) return {};
+    const auto scheme = CefString(&parts.scheme).ToString();
+    if (scheme != "http" && scheme != "https" && scheme != "ws" &&
+        scheme != "wss")
+        return {};
+    return privacy::cookie_site(CefString(&parts.host).ToString());
+}
+
+// Third-party cookie filter for one request, both directions: CanSendCookie
+// gates every cookie Chromium would attach in the Cookie request header, and
+// CanSaveCookie gates every Set-Cookie of the response. Handed out by
+// TabClient::GetCookieAccessFilter with the top-level page's site captured at
+// request start. The decision is re-made per cookie from the request's
+// CURRENT url, so a first-party sub-resource that redirects to a tracker
+// loses its cookies on the third-party hop, and it re-reads the setting, so
+// flipping the toggle off takes effect even for a request already in flight.
+class ThirdPartyCookieFilter final : public CefCookieAccessFilter {
+public:
+    explicit ThirdPartyCookieFilter(std::string top_site)
+        : top_site_(std::move(top_site)) {}
+
+    bool CanSendCookie(CefRefPtr<CefBrowser> /*browser*/,
+                       CefRefPtr<CefFrame> /*frame*/,
+                       CefRefPtr<CefRequest> request,
+                       const CefCookie& /*cookie*/) override {
+        return !is_third_party(request);
+    }
+    bool CanSaveCookie(CefRefPtr<CefBrowser> /*browser*/,
+                       CefRefPtr<CefFrame> /*frame*/,
+                       CefRefPtr<CefRequest> request,
+                       CefRefPtr<CefResponse> /*response*/,
+                       const CefCookie& /*cookie*/) override {
+        return !is_third_party(request);
+    }
+
+private:
+    bool is_third_party(const CefRefPtr<CefRequest>& request) const {
+        if (!g_block_3p_cookies.load() || !request) return false;
+        const std::string site = url_cookie_site(request->GetURL());
+        // Non-web schemes carry no cookies worth judging; leave them alone.
+        return !site.empty() && site != top_site_;
+    }
+
+    const std::string top_site_;
+    IMPLEMENT_REFCOUNTING(ThirdPartyCookieFilter);
+};
+
+// Completion of CefBrowserHost::PrintToPDF, forwarded to the host callback.
+// CEF runs OnPdfPrintFinished on the browser UI thread — the thread Aurora
+// pumps CEF from — so the host callback can touch Qt directly.
+class PdfPrintCallback final : public CefPdfPrintCallback {
+public:
+    explicit PdfPrintCallback(webview::WebViewController::PdfCallback done)
+        : done_(std::move(done)) {}
+    void OnPdfPrintFinished(const CefString& /*path*/, bool ok) override {
+        // Exactly once, even if CEF were to report twice.
+        if (auto done = std::move(done_)) {
+            done_ = nullptr;
+            done(ok);
+        }
+    }
+
+private:
+    webview::WebViewController::PdfCallback done_;
+    IMPLEMENT_REFCOUNTING(PdfPrintCallback);
+};
 
 struct CookieClearState {
     std::atomic<bool> done{false};
@@ -1445,6 +1529,41 @@ public:
         return this;
     }
 
+    // Third-party cookie blocking, HTTP layer. Runs on the IO thread for
+    // every request before it is sent. "Third party" is judged against the
+    // TOP-LEVEL page, the site the user sees in the omnibox — the same rule
+    // Chrome applies — so an iframe of the page's own site keeps its cookies
+    // and a tracker embedded anywhere does not. The filter covers BOTH
+    // directions (Cookie sent, Set-Cookie saved; see ThirdPartyCookieFilter).
+    // The setting is an atomic refreshed from the UI thread every 250 ms
+    // (refresh_privacy_preferences), so a flip in aurora://settings reaches
+    // every existing browser and request context — normal and private —
+    // without a reload: this client serves all of them.
+    //
+    // Not covered here, by design of the CEF API (cef_resource_request_handler.h:
+    // the filter applies to "resource requests" only):
+    //   - document.cookie / CookieStore reads and writes from a third-party
+    //     iframe's script, which never pass through a resource request;
+    //   - requests without a browser (service workers, CefURLRequest).
+    // Both are left to Chromium's own cookie policy, which
+    // refresh_privacy_preferences() drives through the
+    // "profile.cookie_controls_mode" preference.
+    // The main-frame navigation itself is first-party by definition.
+    CefRefPtr<CefCookieAccessFilter> GetCookieAccessFilter(
+        CefRefPtr<CefBrowser> browser,
+        CefRefPtr<CefFrame> /*frame*/,
+        CefRefPtr<CefRequest> request) override {
+        if (!g_block_3p_cookies.load() || !browser || !request) return nullptr;
+        if (request->GetResourceType() == RT_MAIN_FRAME) return nullptr;
+        const auto main = browser->GetMainFrame();
+        if (!main) return nullptr;
+        std::string top_site = url_cookie_site(main->GetURL());
+        // A top-level page without a web site (aurora pages, about:blank,
+        // file:) gives no first party to protect; do not guess.
+        if (top_site.empty()) return nullptr;
+        return new ThirdPartyCookieFilter(std::move(top_site));
+    }
+
     // The ad-block hot path. Runs on CEF's IO thread (not the UI thread), so
     // it reads privacy atomics, takes g_adblock's mutex and touches no Qt/
     // SQLite objects — the shield badge update is posted to the UI thread.
@@ -1477,6 +1596,12 @@ public:
                 request->SetReferrer(CefString(web_origin(referrer)),
                                      request->GetReferrerPolicy());
             }
+        }
+        // Do Not Track: one header on every request, documents and
+        // sub-resources alike (what Chrome's own toggle does). Overwrite so a
+        // page's fetch() cannot send a contradicting value under our name.
+        if (g_send_dnt.load()) {
+            request->SetHeaderByName("DNT", "1", /*overwrite=*/true);
         }
         const cef_resource_type_t type = request->GetResourceType();
         if (type == RT_MAIN_FRAME || type == RT_SUB_FRAME) {
@@ -2936,6 +3061,94 @@ private:
 
 } // namespace
 
+namespace {
+
+// Chromium's own third-party cookie switch, the second half of "Block
+// third-party cookies" (the first is TabClient::GetCookieAccessFilter).
+//
+// Why both: CefCookieAccessFilter only sees cookies travelling in HTTP
+// headers of resource requests. Script access from a third-party iframe
+// (document.cookie, the CookieStore API) and service-worker requests go
+// through Chromium's RestrictedCookieManager / network-service CookieSettings
+// instead, which consult this profile preference and nothing in the CEF API.
+//
+// What is and is not verified:
+//   - The API is real: CefRequestContext inherits CefPreferenceManager
+//     (include/cef_preference.h: CanSetPreference / SetPreference /
+//     GetPreference, UI thread only; a null value restores the default).
+//   - The NAME is a Chromium pref, so it is not declared in any CEF header:
+//     prefs::kCookieControlsMode = "profile.cookie_controls_mode"
+//     (components/content_settings/core/common/pref_names.h), an int holding
+//     content_settings::CookieControlsMode {kOff = 0, kBlockThirdParty = 1,
+//     kIncognitoOnly = 2 (the registered default)}; CookieSettings observes it
+//     and blocks third-party cookies when it is kBlockThirdParty.
+//   - Whether this CEF build registers it is checked at runtime with
+//     CanSetPreference, and a successful write is read back with
+//     GetPreference, so a silent rejection is logged rather than assumed to
+//     have worked. Without a running CEF build that is the only evidence.
+//
+// Only the global (persistent) context is written. Private windows use an
+// in-memory "incognito mode" context, where Chromium's CookieSettings blocks
+// third-party cookies unconditionally (is_incognito_), whatever the pref says.
+//
+// Turning the setting OFF restores the registered default instead of writing
+// kOff, so Aurora leaves no trace of its own in the profile's preferences.
+void apply_cookie_controls_preference(bool block_3p) {
+    static constexpr const char* kCookieControlsPref =
+        "profile.cookie_controls_mode";
+    static constexpr int kBlockThirdParty = 1;
+    // -1: not applied yet (or must be retried). Only advanced once the
+    // outcome is definitive, so a call that lands before CEF has a global
+    // context is retried on the next 250 ms tick instead of being lost.
+    static int applied = -1;
+    static bool reported_unavailable = false;
+    const int wanted = block_3p ? 1 : 0;
+    if (wanted == applied || !CefCurrentlyOn(TID_UI)) return;
+    const auto context = CefRequestContext::GetGlobalContext();
+    if (!context) return;  // engine not up yet: retry later
+    if (!context->CanSetPreference(kCookieControlsPref)) {
+        // Not registered in this build, or policy/command-line managed. The
+        // header filter still applies; say so once instead of failing silent.
+        if (!reported_unavailable) {
+            AURORA_LOG(util::LogLevel::Warn, "privacy")
+                << kCookieControlsPref
+                << " is not settable in this CEF build; third-party cookies "
+                   "are blocked in HTTP headers only (not document.cookie)";
+            reported_unavailable = true;
+        }
+        applied = wanted;
+        return;
+    }
+    CefRefPtr<CefValue> value;  // null: restore Chromium's default
+    if (block_3p) {
+        value = CefValue::Create();
+        value->SetInt(kBlockThirdParty);
+    }
+    CefString error;
+    if (!context->SetPreference(kCookieControlsPref, value, error)) {
+        AURORA_LOG(util::LogLevel::Warn, "privacy")
+            << "could not set " << kCookieControlsPref << ": "
+            << error.ToString();
+        applied = wanted;  // definitive failure; do not hammer every tick
+        return;
+    }
+    if (block_3p) {
+        const auto read_back = context->GetPreference(kCookieControlsPref);
+        const bool took = read_back && read_back->GetType() == VTYPE_INT &&
+                          read_back->GetInt() == kBlockThirdParty;
+        if (!took) {
+            AURORA_LOG(util::LogLevel::Warn, "privacy")
+                << kCookieControlsPref
+                << " was accepted but did not read back as kBlockThirdParty";
+        }
+    }
+    AURORA_LOG(util::LogLevel::Info, "privacy")
+        << kCookieControlsPref << (block_3p ? " = kBlockThirdParty" : " reset to default");
+    applied = wanted;
+}
+
+} // namespace
+
 void refresh_privacy_preferences() {
     const auto read = [](std::string_view key, bool fallback) {
         return g_privacy_prefs ? g_privacy_prefs->get_bool(key, fallback) : fallback;
@@ -2946,6 +3159,13 @@ void refresh_privacy_preferences() {
                              settings::PrefDefaults::kRefererTrim));
     g_cert_audit.store(read(settings::PrefKeys::kCertAudit,
                            settings::PrefDefaults::kCertAudit));
+    g_send_dnt.store(read(settings::PrefKeys::kSendDoNotTrack,
+                          settings::PrefDefaults::kSendDoNotTrack));
+    const bool block_3p = read(settings::PrefKeys::kBlockThirdPartyCookies,
+                               settings::PrefDefaults::kBlockThirdPartyCookies);
+    g_block_3p_cookies.store(block_3p);
+
+    apply_cookie_controls_preference(block_3p);
 }
 
 void configure_privacy_preferences(settings::Settings* prefs,
@@ -3005,6 +3225,10 @@ CefRefPtr<CefBrowser> CefAdapter::browser_for(TabId tab) {
 }
 
 void CefAdapter::emit(TabId tab, const webview::PageInfo& info) {
+    // A non-empty url is only ever set by OnAddressChange for the MAIN frame
+    // (UI thread): the commit point where a per-site zoom has to be applied,
+    // before the host sees the new address.
+    if (!info.url.empty()) apply_site_zoom(tab, info.url);
     std::lock_guard<std::mutex> lock(callback_mutex_);
     if (callback_) callback_(tab, info);
 }
@@ -3271,11 +3495,101 @@ void CefAdapter::stop_find(TabId tab) {
 void CefAdapter::zoom(TabId tab, int delta) {
     if (auto b = browser_for(tab); b.get()) {
         double level = b->GetHost()->GetZoomLevel();
-        b->GetHost()->SetZoomLevel(level + delta * 0.1);
+        level += delta * 0.1;
+        b->GetHost()->SetZoomLevel(level);
+        // Remember it for the page's origin (not the tab): the next visit to
+        // the site, in any tab, comes back at the same size. A level that
+        // lands on 100% clears the entry (SiteZoomStore drops defaults).
+        ZoomStore store;
+        {
+            std::lock_guard<std::mutex> lock(zoom_mutex_);
+            store = zoom_store_;
+        }
+        const auto origin = b->GetMainFrame()
+                                ? web_origin(b->GetMainFrame()->GetURL())
+                                : std::string();
+        if (store.save && !origin.empty()) store.save(origin, level);
     }
 }
 void CefAdapter::zoom_reset(TabId tab) {
-    if (auto b = browser_for(tab); b.get()) b->GetHost()->SetZoomLevel(0.0);
+    if (auto b = browser_for(tab); b.get()) {
+        b->GetHost()->SetZoomLevel(0.0);
+        // "Reset" means "this site has no custom zoom", so forget it too —
+        // otherwise the next navigation would bring the old level back.
+        ZoomStore store;
+        {
+            std::lock_guard<std::mutex> lock(zoom_mutex_);
+            store = zoom_store_;
+        }
+        const auto origin = b->GetMainFrame()
+                                ? web_origin(b->GetMainFrame()->GetURL())
+                                : std::string();
+        if (store.clear && !origin.empty()) store.clear(origin);
+    }
+}
+
+void CefAdapter::set_zoom_store(ZoomStore store) {
+    std::lock_guard<std::mutex> lock(zoom_mutex_);
+    zoom_store_ = std::move(store);
+}
+
+void CefAdapter::apply_site_zoom(TabId tab, const std::string& url) {
+    ZoomStore store;
+    {
+        std::lock_guard<std::mutex> lock(zoom_mutex_);
+        store = zoom_store_;
+    }
+    if (!store.load) return;  // no persistence: leave Chromium's behaviour
+    auto b = browser_for(tab);
+    if (!b.get() || !b->GetHost()) return;
+    const std::string origin = web_origin(CefString(url));
+    // Pages without a web origin (about:, data:, chrome-extension:) keep the
+    // tab's current zoom rather than being snapped to a stored default.
+    if (origin.empty()) return;
+    double level = 0.0;
+    if (!store.load(origin, level)) level = 0.0;
+    // Compare before setting: pushState/fragment changes report an address
+    // change too, and re-setting an identical level would still make
+    // Chromium relayout the page.
+    if (std::abs(b->GetHost()->GetZoomLevel() - level) > 1e-6)
+        b->GetHost()->SetZoomLevel(level);
+}
+
+bool CefAdapter::print(TabId tab) {
+    auto b = browser_for(tab);
+    if (!b.get() || !b->GetHost()) return false;
+    // Windows and macOS show the platform print dialog. On Linux, Aurora
+    // deliberately does NOT implement CefClient::GetPrintHandler: in CEF 156
+    // (branch 8078, libcef/browser/printing/print_dialog_linux.cc) a browser
+    // without a CefPrintHandler falls back to Chromium's own Linux dialog
+    // selection — the XDG desktop print portal, else the GTK LinuxUi dialog —
+    // which prints to real printers. Returning a handler would REPLACE that
+    // with an Aurora-drawn dialog plus Aurora-side job submission (CUPS/GTK),
+    // i.e. new third-party dependencies for a worse result. The comment on
+    // CefClient::GetPrintHandler ("printing will not be supported") predates
+    // that fallback. If the desktop has neither a portal nor GTK, Chromium
+    // logs "Null interface in CreatePrintDialog" and nothing is shown; the
+    // host tells the user about Save as PDF for that case.
+    b->GetHost()->Print();
+    return true;
+}
+
+bool CefAdapter::print_to_pdf(TabId tab, std::string_view path,
+                              PdfCallback done) {
+    auto b = browser_for(tab);
+    if (!b.get() || !b->GetHost() || path.empty()) return false;
+    // CEF defaults (US Letter, default margins, no background graphics) are
+    // what Chrome's Save as PDF starts with; Aurora has no options UI yet.
+    // Linux needs no CefPrintHandler for this either: CEF 156 implements
+    // PrintToPDF on the DevTools Page.printToPDF path
+    // (libcef/browser/printing/print_util.cc), which takes the paper size from
+    // these settings (Letter when zero) and never calls
+    // CefPrintHandler::GetPdfPaperSize, despite what the PrintToPDF comment in
+    // cef_browser.h still says.
+    CefPdfPrintSettings settings;
+    b->GetHost()->PrintToPDF(CefString(std::string(path)), settings,
+                             new PdfPrintCallback(std::move(done)));
+    return true;
 }
 void CefAdapter::open_devtools_docked(TabId tab, void* native_parent,
                                       int w, int h) {

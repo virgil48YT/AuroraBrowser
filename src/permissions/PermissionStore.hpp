@@ -20,6 +20,7 @@
 #include <cctype>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "settings/Settings.hpp"
 
@@ -65,6 +66,13 @@ inline std::string origin_of(std::string_view url) {
     return out;
 }
 
+// One remembered answer, as listed on aurora://site-settings.
+struct RememberedPermission {
+    std::string origin;
+    PermissionKind kind = PermissionKind::AudioCapture;
+    PermissionDecision decision = PermissionDecision::Ask;
+};
+
 // Per-origin, per-kind remembered decisions on top of the Settings store.
 class PermissionStore {
 public:
@@ -98,7 +106,44 @@ public:
             remember(origin, kind, PermissionDecision::Ask);
     }
 
+    // Every remembered allow/deny, ordered by key (so by kind, then origin).
+    // Forgotten entries (stored as "") and values this build does not
+    // understand are skipped: listing must never resurrect an Ask as a grant.
+    std::vector<RememberedPermission> list() const {
+        std::vector<RememberedPermission> out;
+        for (const auto& [k, v] : prefs_.entries_with_prefix(kKeyPrefix)) {
+            // "perm.<kind>.<origin>": kind names contain no '.', origins do,
+            // so the first '.' after the prefix ends the kind.
+            const std::string_view rest =
+                std::string_view(k).substr(kKeyPrefix.size());
+            const auto dot = rest.find('.');
+            if (dot == std::string_view::npos || dot + 1 >= rest.size())
+                continue;
+            RememberedPermission entry;
+            if (!kind_from_name(rest.substr(0, dot), entry.kind)) continue;
+            if (v == "allow") entry.decision = PermissionDecision::Allow;
+            else if (v == "deny") entry.decision = PermissionDecision::Deny;
+            else continue;
+            entry.origin = std::string(rest.substr(dot + 1));
+            out.push_back(std::move(entry));
+        }
+        return out;
+    }
+
 private:
+    static constexpr std::string_view kKeyPrefix = "perm.";
+
+    static bool kind_from_name(std::string_view name, PermissionKind& out) {
+        for (auto kind : {PermissionKind::AudioCapture,
+                          PermissionKind::VideoCapture,
+                          PermissionKind::Notification}) {
+            if (name == kind_name(kind)) {
+                out = kind;
+                return true;
+            }
+        }
+        return false;
+    }
     static std::string_view kind_name(PermissionKind kind) {
         switch (kind) {
             case PermissionKind::AudioCapture: return "audio";
@@ -108,7 +153,7 @@ private:
         return "unknown";
     }
     static std::string key(std::string_view origin, PermissionKind kind) {
-        std::string k("perm.");
+        std::string k(kKeyPrefix);
         k += kind_name(kind);
         k += '.';
         k += origin;

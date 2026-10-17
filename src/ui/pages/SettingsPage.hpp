@@ -51,6 +51,7 @@ struct MutationResult;
 
 namespace aurora::ui {
 
+class FilterListUpdater;
 class SettingsRow;
 
 class SettingsPage : public InternalPageWidget {
@@ -66,6 +67,11 @@ public:
     // Reload every control from the store (values may have changed elsewhere).
     void refresh() override;
 
+    // Enable the Privacy card's "Update now" filter-list row. Null (the
+    // default, and always in private windows) leaves the button disabled.
+    // The updater is process-wide and outlives the page.
+    void set_filter_list_updater(FilterListUpdater* updater);
+
 signals:
     // "system" | "light" | "dark" — the window re-applies its stylesheet.
     void theme_preference_changed(const QString& theme);
@@ -74,6 +80,8 @@ signals:
     // Aurora Shields was switched on/off globally. The window pushes the new
     // state to the engine immediately (no restart needed).
     void adblock_enabled_changed(bool enabled);
+    // "Site settings" was clicked: the window opens aurora://site-settings.
+    void site_settings_requested();
 
 private:
     // One card on the page plus the sidebar entry that scrolls to it.
@@ -87,6 +95,12 @@ private:
     };
 
     void report_change(const QString& message);
+
+    // Startup card: check the radio (and legacy checkbox) matching the stored
+    // startup.mode, or the kRestoreSession fallback when none is stored.
+    void sync_startup_controls();
+    // Filter-list row: subtitle and button state from the updater.
+    void sync_filter_list_row(const QString& status = QString());
 
     // Custom search engines. reload_search_engines() rebuilds the default-
     // engine picker and the per-engine rows of the Search card from the
@@ -148,9 +162,10 @@ private:
     QVBoxLayout* search_body_ = nullptr;
     QPushButton* engine_add_ = nullptr;
     QList<QWidget*> engine_rows_;
-    // Startup card: the radio group + "specific page" URL capture. The first
-    // two options are the kRestoreSession boolean; the third keeps its URL
-    // in prefs under startup.home_url.
+    // Startup card: the radio group + "specific page" URL capture. The
+    // choice is stored as startup.mode ("home" / "continue" / "specific",
+    // see settings::StartupMode) with the legacy kRestoreSession boolean kept
+    // in step for older builds; the specific page lives in startup.home_url.
     QRadioButton* startup_open_home_ = nullptr;
     QRadioButton* startup_continue_ = nullptr;
     QRadioButton* startup_specific_ = nullptr;
@@ -168,6 +183,11 @@ private:
     QCheckBox* block_third_party_cookies_ = nullptr;
     QCheckBox* send_dnt_ = nullptr;
     QCheckBox* adblock_enabled_ = nullptr;
+    // Privacy card: manual filter-list update + link to site settings.
+    QPointer<FilterListUpdater> filter_lists_;
+    SettingsRow* filter_list_row_ = nullptr;
+    QPushButton* filter_list_update_ = nullptr;
+    QPushButton* site_settings_open_ = nullptr;
     QCheckBox* reduced_motion_ = nullptr;
 };
 

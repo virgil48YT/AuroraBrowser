@@ -56,6 +56,10 @@ public:
     void stop_find(TabId tab) override;
     void zoom(TabId tab, int delta) override;
     void zoom_reset(TabId tab) override;
+    void set_zoom_store(ZoomStore store) override;
+    bool print(TabId tab) override;
+    bool print_to_pdf(TabId tab, std::string_view path,
+                      PdfCallback done) override;
     void set_muted(TabId tab, bool muted) override;
     void request_memory(TabId tab) override;
     void open_devtools_docked(TabId tab, void* native_parent, int w, int h) override;
@@ -199,6 +203,15 @@ private:
     // Desired scheme for browsers created after the host's latest update.
     // Atomic also keeps a concurrent create/update from reading stale state.
     std::atomic<bool> preferred_dark_{false};
+
+    // Per-site zoom persistence installed by the host (UI thread only: the
+    // store reads/writes Settings). zoom_mutex_ guards the copy because
+    // set_zoom_store may race a pump on window setup.
+    ZoomStore zoom_store_;
+    std::mutex zoom_mutex_;
+    // Apply the remembered (or default) zoom for the page now committed in
+    // `tab`'s main frame. Called from emit() for main-frame address changes.
+    void apply_site_zoom(TabId tab, const std::string& url);
 
     CefRefPtr<CefBrowser> browser_for(TabId tab);
     void emit(TabId tab, const webview::PageInfo& info);

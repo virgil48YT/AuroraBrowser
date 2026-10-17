@@ -70,4 +70,8 @@ void SettingsRow::prepend_leading(QWidget* widget) {
     layout_->insertWidget(0, widget, 1);
 }
 
+void SettingsRow::set_subtitle(const QString& text) {
+    if (subtitle_) subtitle_->setText(text);
+}
+
 } // namespace aurora::ui

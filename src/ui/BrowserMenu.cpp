@@ -211,14 +211,18 @@ void BrowserMenu::build_actions() {
 
     make(QStringLiteral("Find in Page"), "Ctrl+F", icons::Name::Search,
          &BrowserMenu::find_requested);
-    make(QStringLiteral("Print"), "Ctrl+P", icons::Name::FileDocument,
+    make(QStringLiteral("Print…"), "Ctrl+P", icons::Name::FileDocument,
          &BrowserMenu::print_requested);
+    make(QStringLiteral("Save as PDF…"), nullptr, icons::Name::FileDocument,
+         &BrowserMenu::save_as_pdf_requested);
     make(QStringLiteral("Fullscreen"), "F11", icons::Name::Fullscreen,
          &BrowserMenu::fullscreen_requested);
     make(QStringLiteral("Developer Tools"), "Ctrl+Shift+I", icons::Name::Code,
          &BrowserMenu::devtools_requested);
     make(QStringLiteral("Extensions"), nullptr, icons::Name::Puzzle,
          &BrowserMenu::extensions_requested);
+    make(QStringLiteral("Site Settings"), nullptr, icons::Name::Shield,
+         &BrowserMenu::site_settings_requested);
     separator();
 
     theme_act_ = make(QStringLiteral("Switch to Dark Theme"), nullptr,

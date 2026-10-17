@@ -46,6 +46,9 @@ std::optional<InternalPage> parse_internal_url(std::string_view input) {
     if (host == "bookmarks") return InternalPage::Bookmarks;
     if (host == "extensions") return InternalPage::Extensions;
     if (host == "settings" || host == "preferences") return InternalPage::Settings;
+    // chrome://settings/content is where Chrome keeps the same controls.
+    if (host == "site-settings" || host == "settings/content")
+        return InternalPage::SiteSettings;
     return std::nullopt;
 }
 
@@ -69,6 +72,7 @@ std::string internal_url(InternalPage page) {
         case InternalPage::Bookmarks: return "aurora://bookmarks";
         case InternalPage::Extensions: return "aurora://extensions";
         case InternalPage::Settings:  return "aurora://settings";
+        case InternalPage::SiteSettings: return "aurora://site-settings";
     }
     return "aurora://settings";
 }
@@ -81,6 +85,7 @@ std::string internal_page_title(InternalPage page) {
         case InternalPage::Bookmarks: return "Bookmarks";
         case InternalPage::Extensions: return "Extensions";
         case InternalPage::Settings:  return "Settings";
+        case InternalPage::SiteSettings: return "Site settings";
     }
     return "Aurora";
 }

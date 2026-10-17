@@ -118,4 +118,71 @@ void Settings::set_downloads_ask_where(bool ask) {
     set_bool(PrefKeys::kDownloadsAskWhere, ask);
 }
 
+std::vector<std::pair<std::string, std::string>>
+Settings::entries_with_prefix(std::string_view prefix) const {
+    std::vector<std::pair<std::string, std::string>> out;
+    // substr() rather than LIKE: '_' is legal in hosts and would be a LIKE
+    // wildcard, and an exact prefix compare needs no escaping rules.
+    if (auto s = db_.prepare(
+            "SELECT key, value FROM preferences "
+            "WHERE substr(key, 1, ?2) = ?1 ORDER BY key;")) {
+        s->bind(1, prefix);
+        s->bind(2, static_cast<int64_t>(prefix.size()));
+        for (auto r = s->step(); r && *r; r = s->step()) {
+            std::string value = s->column_text(1);
+            if (value.empty()) continue;
+            out.emplace_back(s->column_text(0), std::move(value));
+        }
+    }
+    return out;
+}
+
+void Settings::remove(std::string_view key) {
+    if (read_only_) return;
+    if (auto s = db_.prepare("DELETE FROM preferences WHERE key = ?1;")) {
+        s->bind(1, key);
+        s->step();
+    }
+    // Cache the absence too: raw_get() treats "" as "not set", so the next
+    // read returns the caller's fallback without a database round trip.
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    cache_[std::string(key)] = std::string();
+}
+
+std::string_view startup_mode_name(StartupMode mode) {
+    switch (mode) {
+        case StartupMode::Home: return "home";
+        case StartupMode::Continue: return "continue";
+        case StartupMode::Specific: return "specific";
+    }
+    return "home";
+}
+
+bool parse_startup_mode(std::string_view text, StartupMode& out) {
+    for (auto mode : {StartupMode::Home, StartupMode::Continue,
+                      StartupMode::Specific}) {
+        if (text == startup_mode_name(mode)) {
+            out = mode;
+            return true;
+        }
+    }
+    return false;
+}
+
+StartupMode resolve_startup_mode(const Settings& prefs) {
+    StartupMode mode = StartupMode::Home;
+    if (!parse_startup_mode(prefs.get_string(PrefKeys::kStartupMode, ""),
+                            mode)) {
+        mode = prefs.get_bool(PrefKeys::kRestoreSession,
+                              PrefDefaults::kRestoreSession)
+                   ? StartupMode::Continue
+                   : StartupMode::Home;
+    }
+    if (mode == StartupMode::Specific &&
+        prefs.get_string(PrefKeys::kStartupHomeUrl, "").empty()) {
+        mode = StartupMode::Home;
+    }
+    return mode;
+}
+
 } // namespace aurora::settings

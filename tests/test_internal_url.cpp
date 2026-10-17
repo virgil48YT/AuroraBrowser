@@ -31,7 +31,7 @@ TEST_CASE("non-internal input is rejected") {
 TEST_CASE("internal_url round-trips through the parser") {
     for (auto page : {InternalPage::History, InternalPage::Downloads,
                       InternalPage::Bookmarks, InternalPage::Settings,
-                      InternalPage::Extensions}) {
+                      InternalPage::Extensions, InternalPage::SiteSettings}) {
         const auto url = internal_url(page);
         CHECK(parse_internal_url(url) == page);
         CHECK_FALSE(internal_page_title(page).empty());
