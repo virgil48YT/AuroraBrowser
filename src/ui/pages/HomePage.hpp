@@ -70,6 +70,7 @@ signals:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private slots:
@@ -127,6 +128,10 @@ private:
     QVector<QToolButton*> action_buttons_;    // quick-action rows
 
     history::HistoryService* history_ = nullptr;
+
+    // The aurora wallpaper is scaled-once-painted-many (see paintEvent).
+    QPixmap bg_;
+    QPixmap bg_source_;
 
     SearchUrlFor query_url_for_;              // window-provided query → URL
     std::uint64_t theme_observer_ = 0;        // ThemeState subscription

@@ -1055,9 +1055,37 @@ QString StylesheetBuilder::build(const Theme& t) {
     // column, a header band (title + subtitle + hairline), a toolbar row, the
     // body, and an empty-state card. Everything below is expressed in the same
     // tokens as the chrome so the pages stop looking like a different app.
-    s += QString("QWidget#InternalPage { background: %1; }").arg(c.card_bg.name());
+    // Internal pages no longer paint a flat plate: the aurora wallpaper in
+    // InternalPageWidget::paintEvent fills the whole page, so the widget and
+    // translucent surfaces on top must not alpha-fight it with solid fills
+    // here. Their backgrounds stay transparent and the glass below is what
+    // keeps text readable.
+    s += QString("QWidget#InternalPage { background: transparent; }");
     s += QString("QWidget#PageColumn, QWidget#PageHeader, QWidget#PageToolbar {"
                  "  background: transparent; }");
+    // Scroll areas and viewports are pure windows onto the parent — any fill
+    // here would block the wallpaper under long lists.
+    s += QString("QScrollArea, QAbstractScrollArea, QAbstractScrollArea#SettingsScroll,"
+                 "QAbstractScrollArea#ExtensionsScroll {"
+                 "  background: transparent; border: none; }");
+    s += QString("QAbstractScrollArea::corner { background: transparent; border: none; }");
+    s += QString("QWidget#qt_scrollarea_viewport {"
+                 "  background: transparent; border: none; }");
+    // The glass surface shared by cards, rows, panels and inputs on every
+    // internal page: a dimmed version of the dark-blue card color with a
+    // faint purple hairline, so the aurora image keeps breathing through
+    // while text contrast stays comfortable (~60-70% alpha covers a busy
+    // aurora pixel under body text).
+    s += QString("QWidget#PageCard, QWidget#SettingsCard,"
+                 " QFrame#PagePanel, QWidget#HistoryPanel,"
+                 " QWidget#HistoryGroupCard, QWidget#SettingsSidebarCard,"
+                 " QWidget#SettingsSectionCard {"
+                 "  background: %1; border: %2px solid %3;"
+                 "  border-radius: %4px; }")
+            .arg(rgba(c.card_bg, 168))
+            .arg(Metrics::hairline)
+            .arg(glow_edge)
+            .arg(Radius::lg);
     // Title: one clear step above everything else, tightened tracking so a
     // short word like "History" does not read as spaced-out.
     s += QString("QLabel#PageTitle { color: %1; font-size: %2px; font-weight: 600;"
@@ -1074,8 +1102,8 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  border: %4px solid %5; border-radius: %6px;"
                  "  padding: %7px; min-height: 160px; }")
             .arg(c.text_muted.name()).arg(t.body_font_px + 1)
-            .arg(c.surface.name()).arg(Metrics::hairline)
-            .arg(c.border_subtle.name()).arg(Radius::md).arg(Spacing::xl);
+            .arg(rgba(c.surface, 150)).arg(Metrics::hairline)
+            .arg(glow_edge_soft).arg(Radius::md).arg(Spacing::xl);
     s += QString("QLabel#PageWarning { color: %1; }").arg(c.warning.name());
     s += QString("QWidget#InternalPage QLabel { color: %1; }").arg(c.text.name());
 
@@ -1083,7 +1111,8 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: %1; color: %2; border: 1px solid %3;"
                  "  padding: 7px 12px; border-radius: %4px; min-height: 24px;"
                  "  selection-background-color: %5; selection-color: %2; }")
-            .arg(c.surface_alt.name()).arg(c.text.name()).arg(c.border.name())
+            .arg(rgba(c.surface_alt, 160)).arg(c.text.name())
+            .arg(glow_edge_soft)
             .arg(Radius::md).arg(rgba(c.accent, 60));
     s += QString("QLineEdit#PageSearch:focus, QLineEdit#PageInput:focus {"
                  "  border: 1px solid %1; }").arg(c.accent.name());
@@ -1095,7 +1124,8 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: %1; color: %2; border: 1px solid %3;"
                  "  padding: 7px 14px; border-radius: %4px; min-height: 24px;"
                  "  font-weight: 500; }")
-            .arg(c.surface_alt.name()).arg(c.text.name()).arg(c.border.name())
+            .arg(rgba(c.surface_alt, 160)).arg(c.text.name())
+            .arg(glow_edge_soft)
             .arg(Radius::md);
     s += QString("QPushButton#PageButton:hover { background: %1; border-color: %2;"
                  "  color: %3; }")
@@ -1122,8 +1152,8 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: %1; alternate-background-color: %1;"
                  "  color: %2; border: %3px solid %4; border-radius: %5px;"
                  "  outline: none; padding: %6px; }")
-            .arg(c.surface.name()).arg(c.text.name()).arg(Metrics::hairline)
-            .arg(c.border_subtle.name()).arg(Radius::lg).arg(Spacing::xxs);
+            .arg(rgba(c.card_bg, 168)).arg(c.text.name()).arg(Metrics::hairline)
+            .arg(glow_edge_soft).arg(Radius::lg).arg(Spacing::xxs);
     s += QString("QTreeWidget#PageList::item, QTreeWidget#PageTree::item {"
                  "  color: %1; padding: 7px 8px; border-radius: %2px; }")
             .arg(c.text.name()).arg(Radius::sm);
@@ -1150,6 +1180,86 @@ QString StylesheetBuilder::build(const Theme& t) {
             .arg(c.divider.name()).arg(t.small_font_px);
     s += QString("QTreeWidget#PageTree::branch { background: transparent; }");
 
+    // --- History page (aurora://history) ------------------------------------
+    // The glass plates, gradient rims and outer glows are painted in C++ by
+    // GlowFrame and the page's custom widgets; the sheet owns text color,
+    // spacing and the few flat bits (checkbox indicator, hover washes).
+    s += QString("QWidget#HistoryHeader, QWidget#HistoryBody,"
+                 "QWidget#HistoryGroupsHost, QWidget#HistoryGroupHeader,"
+                 "QWidget#HistoryGroupRows, QWidget#HistorySearchWrap,"
+                 "QWidget#HistoryClearWrap { background: transparent; border: none; }");
+    s += QString("QLabel#HistoryTitle { color: %1; font-size: %2px;"
+                 "  font-weight: 600; letter-spacing: -0.3px; }")
+            .arg(c.text.name()).arg(t.title_font_px + 9);
+    // Search pill content: the field itself is a transparent strip inside
+    // the GlowFrame, so the gradient rim on the host reads as uninterrupted.
+    s += QString("QLineEdit#HistorySearch, QLineEdit#HistorySiteSearch {"
+                 "  background: transparent; color: %1; border: none;"
+                 "  selection-background-color: %2; selection-color: %1; }")
+            .arg(c.text.name())
+            .arg(rgba(c.accent, 60));
+    s += QString("QLineEdit#HistorySiteSearch {"
+                 "  background: %1; border: 1px solid %2;"
+                 "  border-radius: %3px; padding: 6px 10px; min-height: 22px; }")
+            .arg(rgba(c.surface_alt, 150))
+            .arg(glow_edge_soft)
+            .arg(Radius::md);
+    // Clear-browsing-data chrome: the label sits inside a GlowFrame whose
+    // magenta rim marks the destructive action; the button itself is flat.
+    s += QString("QPushButton#HistoryClearButton {"
+                 "  background: transparent; color: %1; border: none;"
+                 "  font-weight: 500; padding: 0px; }")
+            .arg(c.text.name());
+    // Group cards: bold header, the count as a blue badge, rows on a hover
+    // wash. The chevron glyph is a QLabel pixmap so tint comes from C++.
+    s += QString("QLabel#HistoryGroupTitle {"
+                 "  color: %1; font-size: %2px; font-weight: 600; }")
+            .arg(c.text.name()).arg(t.body_font_px + 1);
+    s += QString("QLabel#HistoryGroupCount {"
+                 "  color: %1; font-size: %2px; font-weight: 600;"
+                 "  background: %3; border-radius: 11px; padding: 2px 10px; }")
+            .arg(c.accent.name())
+            .arg(t.small_font_px + 1)
+            .arg(rgba(c.accent, 38));
+    s += QString("QWidget#HistoryRow {"
+                 "  background: transparent; border-radius: %1px; }")
+            .arg(Radius::md);
+    s += QString("QWidget#HistoryRow:hover { background: %1; }")
+            .arg(rgba(c.accent, 22));
+    s += QString("QLabel#HistoryRowTitle { color: %1; font-size: %2px; }")
+            .arg(c.text.name()).arg(t.body_font_px);
+    s += QString("QLabel#HistoryRowDomain { color: %1; font-size: %2px; }")
+            .arg(c.text_muted.name()).arg(t.small_font_px + 1);
+    s += QString("QLabel#HistoryRowTime { color: %1; font-size: %2px; }")
+            .arg(c.text_faint.name()).arg(t.small_font_px + 1);
+    // Filter panel rows: the purple highlight bar and radio dot appear only
+    // on the selected row, so the left of the list reads as one column.
+    s += QString("QWidget#HistoryFilterItem {"
+                 "  background: transparent; border-radius: %1px; color: %2; }")
+            .arg(Radius::md).arg(c.text.name());
+    s += QString("QWidget#HistoryFilterItem:hover { background: %1; }")
+            .arg(rgba(c.accent, 20));
+    s += QString("QWidget#HistoryFilterItem[selected=\"true\"] {"
+                 "  background: %1; }")
+            .arg(rgba(c.accent2, 25));
+    s += QString("QFrame#HistoryFilterBar {"
+                 "  background: %1; border: none; border-radius: 2px; }")
+            .arg(c.accent2.name());
+    s += QString("QLabel#HistoryPanelHeading {"
+                 "  color: %1; font-size: %2px; font-weight: 600;"
+                 "  letter-spacing: 0.2px; }")
+            .arg(c.text.name()).arg(t.body_font_px);
+    s += QString("QWidget#HistoryActionRow {"
+                 "  background: transparent; border-radius: %1px; }")
+            .arg(Radius::md);
+    s += QString("QWidget#HistoryActionRow:hover { background: %1; }")
+            .arg(rgba(c.accent, 20));
+    s += QString("QLabel#HistoryActionLabel { color: %1; font-size: %2px; }")
+            .arg(c.text.name()).arg(t.body_font_px);
+    s += QString("QLabel#HistorySyncNote {"
+                 "  color: %1; font-size: %2px; font-style: italic; }")
+            .arg(c.text_faint.name()).arg(t.small_font_px + 1);
+
     // --- Downloads page (aurora://downloads) -------------------------------
     // Same family as the shared page list, but flatter and airier: the list is
     // the whole page here, so it gets a small 6px radius (a large radius on a
@@ -1159,8 +1269,8 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: %1; alternate-background-color: %1;"
                  "  color: %2; border: %3px solid %4; border-radius: %5px;"
                  "  outline: none; padding: %6px; }")
-            .arg(c.surface.name()).arg(c.text.name()).arg(Metrics::hairline)
-            .arg(c.border_subtle.name()).arg(Radius::md).arg(Spacing::xs);
+            .arg(rgba(c.card_bg, 168)).arg(c.text.name()).arg(Metrics::hairline)
+            .arg(glow_edge_soft).arg(Radius::md).arg(Spacing::xs);
     s += QString("QTreeWidget#DownloadsList::item {"
                  "  color: %1; padding: %2px %3px; border-radius: %4px; }")
             .arg(c.text.name()).arg(Spacing::sm).arg(Spacing::md)
@@ -1186,9 +1296,9 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "QProgressBar#DownloadPageProgress::chunk {"
                  "  background: %8; border-radius: %4px;"
                  "}")
-            .arg(c.surface_alt.name())
+            .arg(rgba(c.surface_alt, 170))
             .arg(Metrics::hairline)
-            .arg(c.border_subtle.name())
+            .arg(glow_edge_soft)
             .arg(Radius::sm)
             .arg(kDownloadProgressHeight)
             .arg(c.text.name())
@@ -1240,8 +1350,8 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QWidget#SettingsCard {"
                  "  background: %1; border: %2px solid %3;"
                  "  border-radius: %4px; }")
-            .arg(c.card_bg.name()).arg(Metrics::hairline)
-            .arg(c.border.name()).arg(Radius::xl);
+            .arg(rgba(c.card_bg, 165)).arg(Metrics::hairline)
+            .arg(glow_edge).arg(Radius::xl);
     s += QString("QWidget#SettingsCard QLabel { color: %1; background: transparent; }")
             .arg(c.text.name());
     s += QString("QLabel#SettingsRowTitle { color: %1; font-size: %2px; }")
@@ -1295,7 +1405,7 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: %1; color: %2;"
                  "  border: %3px solid %4; border-radius: %5px;"
                  "  padding: %6px %7px; font-size: %8px; font-weight: 500; }")
-            .arg(c.surface_alt.name()).arg(c.text_muted.name())
+            .arg(rgba(c.surface_alt, 170)).arg(c.text_muted.name())
             .arg(Metrics::hairline).arg(c.border.name())
             .arg(Radius::lg).arg(Spacing::sm).arg(Spacing::md)
             .arg(t.small_font_px + 1);
@@ -1313,8 +1423,8 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: %1; color: %2; border: 1px solid %3;"
                  "  padding: 4px 10px; border-radius: %4px; min-height: 22px;"
                  "  selection-background-color: %5; selection-color: %2; }")
-            .arg(c.surface_alt.name()).arg(c.text.name())
-            .arg(c.border.name()).arg(Radius::md).arg(rgba(c.accent, 60));
+            .arg(rgba(c.surface_alt, 160)).arg(c.text.name())
+            .arg(glow_edge_soft).arg(Radius::md).arg(rgba(c.accent, 60));
     s += QString("QLineEdit#PageInputInline:focus { border-color: %1; }")
             .arg(c.accent.name());
     s += QString("QPushButton#PageOutlineButton {"
@@ -1335,8 +1445,8 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QWidget#ExtensionCard {"
                  "  background: %1; border: %2px solid %3;"
                  "  border-radius: %4px; }")
-            .arg(c.surface.name()).arg(Metrics::hairline)
-            .arg(c.border_subtle.name()).arg(Radius::lg);
+            .arg(rgba(c.card_bg, 168)).arg(Metrics::hairline)
+            .arg(glow_edge_soft).arg(Radius::lg);
     s += QString("QWidget#ExtensionCard:hover { border-color: %1; }")
             .arg(c.border.name());
     s += QString("QLabel#ExtensionCardName {"
@@ -1450,9 +1560,9 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QWidget#HomeCard {"
                  "  background: %1; border: %2px solid %3;"
                  "  border-radius: %4px;}")
-            .arg(rgba(c.card_bg, 235))
+            .arg(rgba(c.card_bg, 170))
             .arg(Metrics::hairline)
-            .arg(hex(c.border_subtle))
+            .arg(glow_edge)
             .arg(Radius::xl);
     s += QString("QWidget#HomeRow { border-radius: %1px; padding: 0px %2px;}"
                  "QWidget#HomeRow:hover { background: %3;}")
@@ -1538,8 +1648,8 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "QSpinBox#TabSuspendMinutes::up-button:hover, "
                  "QSpinBox#TabSuspendMinutes::down-button:hover {"
                  "  background: %7;}")
-            .arg(c.surface_alt.name()).arg(c.text.name())
-            .arg(c.border.name())
+            .arg(rgba(c.surface_alt, 165)).arg(c.text.name())
+            .arg(glow_edge_soft)
             .arg(Radius::md)
             .arg(rgba(c.accent, 60))
             .arg(c.accent.name())
@@ -1548,7 +1658,8 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QComboBox#PageCombo {"
                  "  background: %1; color: %2; border: 1px solid %3;"
                  "  border-radius: %4px; padding: 5px 10px; min-height: 22px; }")
-            .arg(c.surface_alt.name()).arg(c.text.name()).arg(c.border.name())
+            .arg(rgba(c.surface_alt, 170)).arg(c.text.name())
+            .arg(glow_edge_soft)
             .arg(Radius::md);
     s += QString("QComboBox#PageCombo:hover { border-color: %1; }").arg(c.accent.name());
     s += QString("QComboBox#PageCombo:disabled { color: %1; background: %2; }")

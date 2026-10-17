@@ -3,9 +3,15 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QGuiApplication>
+#include <QPainter>
+#include <QPaintEvent>
+#include <QPalette>
+#include <QResizeEvent>
 #include <QShowEvent>
 #include <QVBoxLayout>
 
+#include "ui/PageBackground.hpp"
 #include "ui/Theme.hpp"
 
 namespace aurora::ui {
@@ -29,6 +35,11 @@ constexpr int kTopGutter = 28;
 InternalPageWidget::InternalPageWidget(const QString& title, QWidget* parent)
     : QWidget(parent) {
     setObjectName("InternalPage");
+    // The aurora wallpaper is painted by paintEvent() over the whole page;
+    // the styled background is built into the column so translucent surfaces
+    // can lie on top of it without alpha-compositing seams over QSS.
+    setAttribute(Qt::WA_StyledBackground, false);
+    setAutoFillBackground(false);
 
     // The title also identifies the page for accessibility tooling and for
     // anything inspecting the widget.
@@ -92,6 +103,43 @@ InternalPageWidget::InternalPageWidget(const QString& title, QWidget* parent)
     empty_label_->setWordWrap(true);
     empty_label_->hide();
     root_->addWidget(empty_label_, 1);
+}
+
+// Full-bleed aurora backdrop, cached so paints cost one drawPixmap instead
+// of a full-image scale. Only the size changing re-rasterises the wallpaper
+// (resizeEvent below).
+void InternalPageWidget::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
+    if (bg_source_.isNull()) {
+        bg_source_ = load_page_wallpaper();
+        bg_source_.setDevicePixelRatio(devicePixelRatioF());
+    }
+    if (bg_.isNull() && !bg_source_.isNull()) {
+        bg_ = scale_page_wallpaper(bg_source_, size(), devicePixelRatioF());
+    }
+    // A DPR change (window dragged to another monitor) invalidates the
+    // cached scale; re-scale rather than stretch blurry pixels.
+    if (!bg_.isNull() && bg_.devicePixelRatio() != devicePixelRatioF()) {
+        bg_ = scale_page_wallpaper(bg_source_, size(), devicePixelRatioF());
+    }
+    QPainter p(this);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    if (!bg_.isNull()) {
+        // Centre-crop: the pixmap is at least widget-sized per the scale
+        // mode, so the offsets clip the longer axis around the middle.
+        const int x = (width() - bg_.width() / devicePixelRatioF()) / 2;
+        const int y = (height() - bg_.height() / devicePixelRatioF()) / 2;
+        p.drawPixmap(x, y, bg_);
+    } else {
+        // Missing artwork must never leave the page unpainted; fall back to
+        // the window background token while keeping the page readable.
+        p.fillRect(rect(), QGuiApplication::palette().color(QPalette::Window));
+    }
+}
+
+void InternalPageWidget::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    bg_ = {};  // repaint lazily via paintEvent's empty-cache check
 }
 
 void InternalPageWidget::showEvent(QShowEvent* event) {

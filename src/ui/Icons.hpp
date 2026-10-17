@@ -99,6 +99,10 @@ enum class Name {
     WeatherSnow,
     WeatherStorm,
     WeatherFog,
+    // --- History page (aurora://history) ---
+    Funnel,    // filter panel header
+    Link,      // "search by site" glyph
+    CloudOff,  // sync unavailable (honest disabled placeholder)
 };
 
 // Paint an icon centered within `rect` using `color`. The pixmap is cached.

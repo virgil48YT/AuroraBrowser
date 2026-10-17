@@ -24,12 +24,15 @@ qt_add_executable(aurora_browser
     ../ui/TabSpinner.cpp
     ../ui/ShortcutList.cpp
     ../ui/ToggleSwitch.cpp
+    ../ui/GlowFrame.cpp
+    ../ui/PageBackground.cpp
     ../ui/TabHoverCard.cpp
     ../ui/RoundedToolTip.cpp
     ../ui/ShortcutDialog.cpp
     ../ui/WeatherService.cpp
     ../ui/pages/InternalPageWidget.cpp
     ../ui/pages/HistoryPage.cpp
+    ../ui/pages/HistoryWidgets.cpp
     ../ui/pages/HomePage.cpp
     ../ui/pages/DownloadsPage.cpp
     ../ui/pages/BookmarksPage.cpp

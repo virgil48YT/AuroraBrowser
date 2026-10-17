@@ -30,6 +30,7 @@
 #include "settings/Settings.hpp"
 #include "ui/FaviconCache.hpp"
 #include "ui/Icons.hpp"
+#include "ui/PageBackground.hpp"
 #include "ui/ShortcutDialog.hpp"
 #include "ui/Theme.hpp"
 #include "ui/ThemeState.hpp"
@@ -854,48 +855,37 @@ QString HomePage::time_ago(std::int64_t epoch_seconds) const {
 // ---------------------------------------------------------------------------
 
 void HomePage::paintEvent(QPaintEvent* event) {
-    const Theme& t = current_theme();
-    const ThemeColors& c = t.colors;
     QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing, true);
-
-    // Deep cosmic base: navy falling off to near-black at the bottom corners.
-    QLinearGradient base(rect().topLeft(), rect().bottomLeft());
-    base.setColorAt(0.0, QColor(11, 17, 32));
-    base.setColorAt(0.55, c.background);
-    base.setColorAt(1.0, QColor(4, 6, 14));
-    p.fillRect(rect(), base);
-
-    // Aurora glows: cyan bloom on the left edge, magenta on the right, a
-    // quiet violet core overhead. Subtle: the content owns the page.
-    const qreal w = width(), h = height();
-    paint_blob(p, QPointF(w * -0.02, h * 0.35), qMax(w, h) * 0.52,
-               c.accent, 66);
-    paint_blob(p, QPointF(w * 0.16, h * 0.72), qMax(w, h) * 0.44,
-               c.accent, 40);
-    paint_blob(p, QPointF(w * 1.02, h * 0.30), qMax(w, h) * 0.52,
-               c.accent2, 72);
-    paint_blob(p, QPointF(w * 0.88, h * 0.74), qMax(w, h) * 0.42,
-               c.accent3, 46);
-    paint_blob(p, QPointF(w * 0.5, h * 0.12), qMax(w, h) * 0.30,
-               c.accent2, 22);
-
-    // A faint starfield of pinned dots keeps the navy from reading as a flat
-    // fill. Deterministic positions: repaint-stable, no allocations.
-    p.setPen(Qt::NoPen);
-    for (int i = 0; i < 64; ++i) {
-        const quint32 x = static_cast<quint32>(i * 2654435761u);
-        const quint32 y = static_cast<quint32>((i + 31) * 2246822519u);
-        const qreal sx = (x % 1000) / 1000.0 * w;
-        const qreal sy = (y % 1000) / 1000.0 * h;
-        QColor star(200, 220, 255);
-        star.setAlpha(14 + (x >> 24) % 26);
-        p.setBrush(star);
-        const qreal r = 0.6 + ((y >> 24) % 3) * 0.4;
-        p.drawEllipse(QPointF(sx, sy), r, r);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    // The full-bleed aurora wallpaper is the page's backdrop. Scaled once,
+    // repainted cheaply: only the size changes matter (resizeEvent clears
+    // the cache and paintEvent lazily re-scales on next frame).
+    if (bg_source_.isNull()) {
+        bg_source_ = load_page_wallpaper();
+        bg_source_.setDevicePixelRatio(devicePixelRatioF());
+    }
+    if (!bg_source_.isNull() && bg_.isNull()) {
+        bg_ = scale_page_wallpaper(bg_source_, size(), devicePixelRatioF());
+    }
+    if (!bg_.isNull() && bg_.devicePixelRatio() != devicePixelRatioF()) {
+        bg_ = scale_page_wallpaper(bg_source_, size(), devicePixelRatioF());
+    }
+    if (!bg_.isNull()) {
+        const int x = (width() - bg_.width() / devicePixelRatioF()) / 2;
+        const int y = (height() - bg_.height() / devicePixelRatioF()) / 2;
+        p.drawPixmap(x, y, bg_);
+    } else {
+        // Without the image the page must still read as a calm dark surface
+        // and never flash black between states.
+        p.fillRect(rect(), current_theme().colors.background);
     }
 
     QWidget::paintEvent(event);
+}
+
+void HomePage::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    bg_ = {};  // repaint lazily via paintEvent's empty-cache check
 }
 
 void HomePage::apply_icons() {
