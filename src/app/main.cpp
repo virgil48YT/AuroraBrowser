@@ -5,8 +5,10 @@
 // with CEF, it runs the CEF subprocess check first (so renderer/GPU
 // subprocesses never start the Qt UI) and initializes CEF before Qt.
 //
-// On startup the last session is restored when the "reopen my tabs"
-// preference is on (default), and the open tabs are persisted on shutdown.
+// On startup the first window follows the Startup preference (see
+// MainWindow::open_startup_tabs): restore the last session (the default),
+// open the home page, or open one specific page. The open tabs are persisted
+// on shutdown either way, so switching back to "continue" finds them.
 #include <QApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
@@ -48,6 +50,7 @@
 #include "settings/Settings.hpp"
 #include "ui/RoundedToolTip.hpp"
 #include "ui/FaviconCache.hpp"
+#include "ui/FilterListUpdater.hpp"
 #include "ui/MainWindow.hpp"
 #include "ui/ServiceBundle.hpp"
 #include "util/Log.hpp"
@@ -155,7 +158,7 @@ void run_smoke_test(ui::MainWindow& window, int restored) {
 
     for (auto page : {InternalPage::History, InternalPage::Downloads,
                       InternalPage::Bookmarks, InternalPage::Settings,
-                      InternalPage::Extensions}) {
+                      InternalPage::Extensions, InternalPage::SiteSettings}) {
         window.show_page(page);
         QApplication::processEvents();
     }
@@ -483,6 +486,13 @@ int main(int argc, char** argv) {
     ui::FaviconCache::instance().set_cache_dir(profile);
 
     ui::ServiceBundle services;
+    // Profile list first (the file adblock::ListUpdater installs, named by
+    // adblock::kFilterListFileName), then the legacy location (see below).
+    const std::vector<std::string> adblock_rule_paths{
+        (profile + "/adblock-rules.txt").toStdString(),
+        (QDir::homePath() + "/.aurora/profile/adblock-rules.txt").toStdString()};
+    // Outlives every window (declared before them) — windows only borrow it.
+    std::unique_ptr<ui::FilterListUpdater> filter_list_updater;
     if (db.is_open()) {
         services.history = &history_svc;
         services.bookmarks = &bookmark_svc;
@@ -494,9 +504,10 @@ int main(int argc, char** argv) {
         services.search_engines = search_engine_svc.get();
         // Filter list from the profile directory, combined with the built-in
         // starter rules (see adblock::load_rules). The file is refreshed out
-        // of band (scripts/fetch_filter_lists.sh) — nothing here downloads
-        // anything at startup. `profile` is a QString (paths are UTF-16 on
-        // Windows), so convert exactly like the db.open() call above.
+        // of band — by scripts/fetch_filter_lists.sh, or on request from
+        // Settings > Privacy (ui::FilterListUpdater below) — and nothing here
+        // downloads anything at startup. `profile` is a QString (paths are
+        // UTF-16 on Windows), so convert exactly like the db.open() call above.
         //
         // The legacy path is tried second: older versions of
         // scripts/fetch_filter_lists.sh defaulted to ~/.aurora/profile, which
@@ -505,10 +516,11 @@ int main(int argc, char** argv) {
         // never looked and silently kept running on starter rules only. The
         // script now defaults to the real profile directory; this fallback
         // keeps already-fetched lists working without a re-download.
-        services.adblock_rules = adblock::load_rules(std::vector<std::string>{
-            (profile + "/adblock-rules.txt").toStdString(),
-            (QDir::homePath() + "/.aurora/profile/adblock-rules.txt")
-                .toStdString()});
+        services.adblock_rules = adblock::load_rules(adblock_rule_paths);
+        // Manual, opt-in updates only: the updater never starts on its own.
+        filter_list_updater = std::make_unique<ui::FilterListUpdater>(
+            profile, &prefs, adblock_rule_paths, services.adblock_rules);
+        services.filter_lists = filter_list_updater.get();
     }
 
     // CI hook: seed a large session so the restore below exercises the bulk
@@ -521,13 +533,16 @@ int main(int argc, char** argv) {
     window.show();
     util::startup_milestone("window shown");
 
-    // Restore the previous session. This MUST go through the window: it
-    // validates every saved row, opens the tabs in bulk mode so only the one
-    // chosen tab is ever made visible, and keeps its own tab bookkeeping
-    // consistent. Opening restored tabs directly on window.tabs() from here
-    // (as older builds did) bypasses that guard and creates one web engine per
-    // restored tab in a single event-loop turn — the startup crash.
-    const int restored = window.restore_session();
+    // Apply the Startup preference: restore the previous session, keep the
+    // seed home tab, or point it at the user's specific page. Restoring MUST
+    // go through the window: it validates every saved row, opens the tabs in
+    // bulk mode so only the one chosen tab is ever made visible, and keeps
+    // its own tab bookkeeping consistent. Opening restored tabs directly on
+    // window.tabs() from here (as older builds did) bypasses that guard and
+    // creates one web engine per restored tab in a single event-loop turn —
+    // the startup crash. Only this first window does any of this: windows
+    // opened later (Ctrl+N) always start on the home page.
+    const int restored = window.open_startup_tabs();
 
     // URLs given on the command line (`aurora_browser https://example.com`, or
     // the OS handing a link to the chosen browser) open in their own tabs after

@@ -30,6 +30,7 @@ qt_add_executable(aurora_browser
     ../ui/RoundedToolTip.cpp
     ../ui/ShortcutDialog.cpp
     ../ui/WeatherService.cpp
+    ../ui/FilterListUpdater.cpp
     ../ui/pages/InternalPageWidget.cpp
     ../ui/pages/HistoryPage.cpp
     ../ui/pages/HistoryWidgets.cpp
@@ -39,6 +40,7 @@ qt_add_executable(aurora_browser
     ../ui/pages/SettingsPage.cpp
     ../ui/pages/SettingsRow.cpp
     ../ui/pages/ExtensionsPage.cpp
+    ../ui/pages/SiteSettingsPage.cpp
     main.cpp
 )
 

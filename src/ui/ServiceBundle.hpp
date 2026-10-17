@@ -26,6 +26,8 @@ namespace searchengines { class SearchEngineService; }
 
 namespace aurora::ui {
 
+class FilterListUpdater;
+
 struct ServiceBundle {
     history::HistoryService* history = nullptr;
     bookmarks::BookmarkService* bookmarks = nullptr;
@@ -45,6 +47,11 @@ struct ServiceBundle {
     // window searches with the profile's default engine but cannot edit the
     // list — the settings page disables management there).
     searchengines::SearchEngineService* search_engines = nullptr;
+    // In-app filter-list updates (Settings > Privacy > "Update now"). Holds
+    // the current combined rule text, which supersedes `adblock_rules` once
+    // an update has installed a newer list. Null in private windows: an
+    // update rewrites a profile file, which a private window never does.
+    FilterListUpdater* filter_lists = nullptr;
 };
 
 } // namespace aurora::ui

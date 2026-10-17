@@ -6,6 +6,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDateTime>
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -16,6 +17,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMessageBox>
 #include <QMetaObject>
 #include <QPropertyAnimation>
@@ -33,6 +35,7 @@
 #include "searchengines/SearchEngine.hpp"
 #include "searchengines/SearchEngineService.hpp"
 #include "settings/Settings.hpp"
+#include "ui/FilterListUpdater.hpp"
 #include "ui/Theme.hpp"
 #include "ui/ThemeState.hpp"
 #include "ui/pages/SettingsRow.hpp"
@@ -83,6 +86,7 @@ constexpr ShortcutLine kShortcuts[] = {
     {"Ctrl+R", "Reload the page"},
     {"F5", "Reload the page (alternative)"},
     {"Ctrl+F", "Find on the page"},
+    {"Ctrl+P", "Print the page"},
     {"Ctrl+D", "Bookmark this page"},
     {"Ctrl+J", "Open Downloads"},
     {"Ctrl+Shift+I", "Open developer tools"},
@@ -93,6 +97,12 @@ constexpr ShortcutLine kShortcuts[] = {
 void select_id(QComboBox* box, const QString& id) {
     const int index = box->findData(id);
     box->setCurrentIndex(index >= 0 ? index : 0);
+}
+
+// The Startup card's single write path for the launch-mode preference.
+void store_startup_mode(settings::Settings& prefs, settings::StartupMode mode) {
+    prefs.set_string(settings::PrefKeys::kStartupMode,
+                     settings::startup_mode_name(mode));
 }
 
 QString qs(std::string_view text) {
@@ -177,10 +187,10 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
     }
 
     // === Startup ============================================================
-    // The radio group maps directly onto the existing preferences: the first
-    // two options are the kRestoreSession boolean; the third enables typing a
-    // specific home URL, kept in prefs under "startup.home_url". Picking an
-    // option persists immediately like every other control on the page.
+    // The radio group is kStartupMode ("home" | "continue" | "specific"),
+    // which main.cpp's launch path reads through MainWindow::open_startup_tabs;
+    // "specific" opens the URL kept under kStartupHomeUrl. Picking an option
+    // persists immediately like every other control on the page.
     QVBoxLayout* startup_body = add_section(QStringLiteral("Startup"),
                                             icons::Name::Globe);
     const auto add_startup_row = [this, startup_body, container](
@@ -373,6 +383,33 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
             QStringLiteral("Send a “Do Not Track” request"),
             QStringLiteral("Websites may ignore the request"),
             send_dnt_);
+    add_divider(container, privacy_body);
+    // Manual only: Aurora never downloads filter lists on its own (no timer,
+    // no update at launch). The button stays disabled until the window
+    // hands over the updater (set_filter_list_updater).
+    filter_list_update_ = new QPushButton(QStringLiteral("Update now"), container);
+    filter_list_update_->setObjectName(QStringLiteral("PageButton"));
+    filter_list_update_->setEnabled(false);
+    filter_list_row_ = add_row(
+        privacy_body, QStringLiteral("Shields filter list"),
+        QStringLiteral("Download the latest EasyList for Aurora Shields"),
+        filter_list_update_);
+    connect(filter_list_update_, &QPushButton::clicked, this, [this] {
+        // One raw load of the guarded pointer (GCC cannot see through two
+        // separate QPointer reads and warns -Wnull-dereference otherwise).
+        if (FilterListUpdater* updater = filter_lists_.data();
+            updater && !updater->busy())
+            updater->start();
+    });
+    add_divider(container, privacy_body);
+    site_settings_open_ = new QPushButton(QStringLiteral("Open"), container);
+    site_settings_open_->setObjectName(QStringLiteral("PageButton"));
+    add_row(privacy_body, QStringLiteral("Site settings"),
+            QStringLiteral("Review and clear permissions, zoom levels and "
+                           "Shields exceptions remembered for each site"),
+            site_settings_open_);
+    connect(site_settings_open_, &QPushButton::clicked, this,
+            &SettingsPage::site_settings_requested);
     // Additional privacy rows use properties so refresh() can update them
     // without changing the existing controls or their write/read-only policy.
     struct PrivacyRow {
@@ -492,6 +529,7 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
                            static_cast<QWidget*>(block_third_party_cookies_),
                            static_cast<QWidget*>(send_dnt_),
                            static_cast<QWidget*>(adblock_enabled_),
+                           static_cast<QWidget*>(filter_list_update_),
                            static_cast<QWidget*>(reduced_motion_)}) {
             w->setEnabled(false);
         }
@@ -538,31 +576,49 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         report_change(QStringLiteral("Search engine set to %1")
                                 .arg(search_engine_->currentText()));
     });
-    // Startup radio group: home / restore-session map onto kRestoreSession;
-    // "specific page" stores its URL under startup.home_url.
+    // Startup radio group. kStartupMode is what the launch path reads (see
+    // settings::resolve_startup_mode); kRestoreSession is kept in step so the
+    // "Reopen the tabs" switch below — and an older build sharing the
+    // profile — agree with the radio choice.
     connect(startup_open_home_, &QRadioButton::toggled, this, [this](bool on) {
         if (loading_ || !prefs_ || !on) return;
         prefs_->set_bool(settings::PrefKeys::kRestoreSession, false);
-        prefs_->set_string("startup.mode", "home");
+        store_startup_mode(*prefs_, settings::StartupMode::Home);
+        sync_startup_controls();
         report_change(QStringLiteral("Startup will open the home page"));
     });
     connect(startup_continue_, &QRadioButton::toggled, this, [this](bool on) {
         if (loading_ || !prefs_ || !on) return;
         prefs_->set_bool(settings::PrefKeys::kRestoreSession, true);
-        prefs_->set_string("startup.mode", "continue");
+        store_startup_mode(*prefs_, settings::StartupMode::Continue);
+        sync_startup_controls();
         report_change(QStringLiteral("Session will be restored on startup"));
     });
     connect(startup_specific_, &QRadioButton::toggled, this, [this](bool on) {
         if (loading_ || !prefs_ || !on) return;
-        prefs_->set_string("startup.mode", "specific");
+        // A specific page replaces the session, so the legacy boolean goes
+        // off too: an older build reading this profile then opens its home
+        // page rather than restoring tabs the user opted out of.
+        prefs_->set_bool(settings::PrefKeys::kRestoreSession, false);
+        store_startup_mode(*prefs_, settings::StartupMode::Specific);
+        sync_startup_controls();
         if (startup_url_) startup_url_->setFocus(Qt::ShortcutFocusReason);
-        report_change(QStringLiteral("Startup opens a specific page"));
+        report_change(startup_url_ && startup_url_->text().trimmed().isEmpty()
+            ? QStringLiteral("Enter the page to open on startup")
+            : QStringLiteral("Startup opens a specific page"));
     });
     const auto save_startup_url = [this] {
         if (loading_ || !prefs_) return;
-        prefs_->set_string("startup.home_url",
-                           startup_url_->text().trimmed().toStdString());
-        report_change(QStringLiteral("Startup page saved"));
+        const QString url = startup_url_->text().trimmed();
+        prefs_->set_string(settings::PrefKeys::kStartupHomeUrl,
+                           url.toStdString());
+        // Typing a page is a clear statement of intent: select the option
+        // instead of silently saving a URL nothing will open.
+        if (!url.isEmpty() && !startup_specific_->isChecked()) {
+            startup_specific_->setChecked(true);  // persists via toggled()
+        }
+        report_change(url.isEmpty() ? QStringLiteral("Startup page cleared")
+                                    : QStringLiteral("Startup page saved"));
     };
     connect(startup_set_page_, &QPushButton::clicked, this, save_startup_url);
     connect(startup_url_, &QLineEdit::editingFinished, this,
@@ -570,6 +626,18 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
     connect(restore_session_, &QCheckBox::toggled, this, [this](bool on) {
         if (loading_ || !prefs_) return;
         prefs_->set_bool(settings::PrefKeys::kRestoreSession, on);
+        // Mirror the switch into the Startup card. Turning it off only
+        // leaves "continue" (to home); a specific page stays selected.
+        const std::string mode = prefs_->get_string(
+            settings::PrefKeys::kStartupMode, "");
+        if (on) {
+            store_startup_mode(*prefs_, settings::StartupMode::Continue);
+        } else if (mode.empty() ||
+                   mode == settings::startup_mode_name(
+                               settings::StartupMode::Continue)) {
+            store_startup_mode(*prefs_, settings::StartupMode::Home);
+        }
+        sync_startup_controls();
         report_change(on ? QStringLiteral("Session will be restored on "
                                                "startup")
                                : QStringLiteral("Startup will open a new tab"));
@@ -1084,6 +1152,85 @@ void SettingsPage::on_search_engine_saved(
     report_change(message);
 }
 
+void SettingsPage::set_filter_list_updater(FilterListUpdater* updater) {
+    if (filter_lists_) disconnect(filter_lists_, nullptr, this, nullptr);
+    filter_lists_ = updater;
+    if (filter_lists_) {
+        connect(filter_lists_, &FilterListUpdater::busy_changed, this,
+                [this](bool) { sync_filter_list_row(); });
+        connect(filter_lists_, &FilterListUpdater::finished, this,
+                [this](bool ok, const QString& message) {
+                    // A failure stays visible on the row (the previous list
+                    // is still in use); success shows the new timestamp.
+                    sync_filter_list_row(ok ? QString() : message);
+                });
+    }
+    sync_filter_list_row();
+}
+
+void SettingsPage::sync_filter_list_row(const QString& status) {
+    if (!filter_list_row_) return;
+    const bool writable = prefs_ && !prefs_->is_read_only();
+    // One snapshot of the QPointer: every `filter_lists_->` re-reads it, which
+    // is what GCC's -Wnull-dereference flagged after the null check.
+    FilterListUpdater* const updater = filter_lists_.data();
+    if (!updater) {
+        filter_list_update_->setEnabled(false);
+        filter_list_row_->set_subtitle(
+            writable ? QStringLiteral("Filter list updates are unavailable "
+                                      "without a profile")
+                     : QStringLiteral("Filter lists can only be updated from "
+                                      "a normal window"));
+        return;
+    }
+    const bool busy = updater->busy();
+    filter_list_update_->setEnabled(writable && !busy);
+    filter_list_update_->setText(busy ? QStringLiteral("Updating…")
+                                      : QStringLiteral("Update now"));
+    if (busy) {
+        filter_list_row_->set_subtitle(
+            QStringLiteral("Downloading %1…").arg(updater->source_url()));
+        return;
+    }
+    const adblock::UpdateRecord record = updater->last_update();
+    QString line;
+    if (record.last_success_unix > 0) {
+        const QString when = QLocale().toString(
+            QDateTime::fromSecsSinceEpoch(record.last_success_unix),
+            QLocale::ShortFormat);
+        line = QStringLiteral("Last updated %1 from %2")
+                   .arg(when, QString::fromStdString(record.source_url));
+    } else {
+        line = QStringLiteral("Not updated from Aurora yet. Source: %1")
+                   .arg(updater->source_url());
+    }
+    if (!status.isEmpty()) line = status + QStringLiteral(". ") + line;
+    filter_list_row_->set_subtitle(line);
+}
+
+void SettingsPage::sync_startup_controls() {
+    if (!prefs_) return;
+    // The stored mode as the user picked it — NOT resolve_startup_mode(),
+    // which degrades "specific" without a URL to Home for the launch path;
+    // the card must keep showing the half-finished choice so it can be
+    // completed. No stored mode: the legacy boolean decides, like at launch.
+    settings::StartupMode mode = settings::StartupMode::Home;
+    if (!settings::parse_startup_mode(
+            prefs_->get_string(settings::PrefKeys::kStartupMode, ""), mode)) {
+        mode = prefs_->get_bool(settings::PrefKeys::kRestoreSession,
+                                settings::PrefDefaults::kRestoreSession)
+                   ? settings::StartupMode::Continue
+                   : settings::StartupMode::Home;
+    }
+    const bool was_loading = loading_;
+    loading_ = true;
+    startup_open_home_->setChecked(mode == settings::StartupMode::Home);
+    startup_continue_->setChecked(mode == settings::StartupMode::Continue);
+    startup_specific_->setChecked(mode == settings::StartupMode::Specific);
+    restore_session_->setChecked(mode == settings::StartupMode::Continue);
+    loading_ = was_loading;
+}
+
 void SettingsPage::refresh() {
     if (!prefs_) {
         // No profile: still offer the built-in engines (disabled).
@@ -1102,24 +1249,9 @@ void SettingsPage::refresh() {
         chip->setChecked(chip->property("auroraThemeId").toString() ==
                          theme_pref);
     }
-    // Startup mode: continue / specific / home (default).
-    const QString startup_mode = QString::fromStdString(
-        prefs_->get_string("startup.mode",
-                           prefs_->get_bool(
-                               settings::PrefKeys::kRestoreSession,
-                               settings::PrefDefaults::kRestoreSession)
-                               ? std::string("continue")
-                               : std::string("home")));
-    startup_open_home_->setChecked(startup_mode == QStringLiteral("home"));
-    startup_continue_->setChecked(
-        startup_mode == QStringLiteral("continue"));
-    startup_specific_->setChecked(
-        startup_mode == QStringLiteral("specific"));
+    sync_startup_controls();
     startup_url_->setText(QString::fromStdString(
-        prefs_->get_string("startup.home_url", std::string())));
-    restore_session_->setChecked(
-        prefs_->get_bool(settings::PrefKeys::kRestoreSession,
-                         settings::PrefDefaults::kRestoreSession));
+        prefs_->get_string(settings::PrefKeys::kStartupHomeUrl, "")));
     suspend_minutes_->setValue(static_cast<int>(prefs_->get_int(
         settings::PrefKeys::kTabSuspendAfterMinutes,
         settings::PrefDefaults::kTabSuspendAfterMinutes)));
@@ -1127,9 +1259,11 @@ void SettingsPage::refresh() {
         QString::fromStdString(prefs_->downloads_path()));
     downloads_ask_where_->setChecked(prefs_->downloads_ask_where());
     block_third_party_cookies_->setChecked(
-        prefs_->get_bool(settings::PrefKeys::kBlockThirdPartyCookies, true));
+        prefs_->get_bool(settings::PrefKeys::kBlockThirdPartyCookies,
+                         settings::PrefDefaults::kBlockThirdPartyCookies));
     send_dnt_->setChecked(
-        prefs_->get_bool(settings::PrefKeys::kSendDoNotTrack, false));
+        prefs_->get_bool(settings::PrefKeys::kSendDoNotTrack,
+                         settings::PrefDefaults::kSendDoNotTrack));
     adblock_enabled_->setChecked(
         prefs_->get_bool(settings::PrefKeys::kAdblockEnabled, true));
     reduced_motion_->setChecked(
@@ -1142,6 +1276,8 @@ void SettingsPage::refresh() {
             key.toString().toStdString(),
             box->property("auroraPrivacyDefault").toBool()));
     }
+
+    sync_filter_list_row();
 
     loading_ = false;
     apply_filter();

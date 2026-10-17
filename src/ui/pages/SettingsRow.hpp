@@ -26,6 +26,11 @@ public:
     QString search_terms() const { return search_terms_; }
     void add_search_text(const QString& text);
 
+    // Replace the subtitle text of a row built with a non-empty subtitle
+    // (used for live status lines such as the filter-list "last updated").
+    // The search index keeps the original text: status is not a keyword.
+    void set_subtitle(const QString& text);
+
     // Append an extra widget on the right, after the primary control (used
     // for the shortcut key hints on the About card).
     void add_accessory(QWidget* widget);

@@ -1128,6 +1128,9 @@ void TabBar::refresh_tab(int idx) {
             case core::InternalPage::Settings:
                 setTabIcon(idx, icons::icon(icons::Name::Settings, accent));
                 break;
+            case core::InternalPage::SiteSettings:
+                setTabIcon(idx, icons::icon(icons::Name::Shield, accent));
+                break;
         }
     } else {
         const auto page_url = QString::fromStdString(tab.url.display());

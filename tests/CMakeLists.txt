@@ -11,14 +11,17 @@ add_executable(aurora_tests
     test_bulk_restore.cpp
     test_settings.cpp
     test_settings_presentation.cpp
+    test_site_prefs.cpp
     test_internal_url.cpp
     test_chrome_nav.cpp
     test_downloads.cpp
     test_adblock.cpp
+    test_list_updater.cpp
     test_gpu_policy.cpp
     test_media_policy.cpp
     test_incognito.cpp
     test_privacy.cpp
+    test_cookie_site.cpp
     test_extensions.cpp
     test_extension_load_list.cpp
     test_search_engines.cpp

@@ -10,8 +10,16 @@ accounts.
 
 ## Features
 
-- Ad and tracker blocking with per-site allow lists
+- Ad and tracker blocking with per-site allow lists; the EasyList filter
+  list can be updated from Settings > Privacy & Security ("Update now" —
+  manual only, never on a timer)
+- Site settings page (`aurora://site-settings`) to review and clear
+  remembered permissions, per-site zoom levels and Shields exceptions
 - Incognito windows (Ctrl+Shift+N) that leave no trace on disk
+- Third-party cookies blocked by default (Settings > Privacy & Security),
+  judged against the site in the address bar; site boundaries use a small
+  built-in list of shared suffixes (co.uk, github.io, ...) rather than the
+  full Public Suffix List
 - Chrome-style layout: tabs, address bar, downloads
 - History, bookmarks, downloads and settings pages
 - Custom search engines (any `https://` search URL with `%s`), selectable as
@@ -19,9 +27,14 @@ accounts.
 - Unpacked Chrome extensions, loaded by the engine at startup (restart to
   apply changes; no Chrome Web Store installs, no CRX signature
   verification — see [docs/extensions.md](docs/extensions.md))
-- Find in page (Ctrl+F), fullscreen (F11)
+- Find in page (Ctrl+F), print and save as PDF (Ctrl+P / browser menu),
+  fullscreen (F11). On Linux, Print uses the desktop's print dialog (the
+  XDG print portal, or GTK); on a desktop with neither, use Save as PDF,
+  which works everywhere
+- Per-site zoom that is remembered across visits and restarts
 - Dark and light theme
-- Session restore — tabs come back after a restart
+- Startup choice: continue where you left off (session restore), open the
+  home page, or open a specific page
 - Runs without the Chromium engine; the UI and internal pages still work
 
 ## Keyboard shortcuts
@@ -35,6 +48,7 @@ accounts.
 | Ctrl+Shift+N | New incognito window |
 | Ctrl+L | Focus address bar |
 | Ctrl+F | Find in page |
+| Ctrl+P | Print |
 | F5 / Ctrl+R | Reload |
 | Alt+Left / Alt+Right | Back / Forward |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |

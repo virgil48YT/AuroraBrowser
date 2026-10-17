@@ -58,11 +58,16 @@ signals:
     void bookmark_bar_toggled();
     // Open aurora://extensions.
     void extensions_requested();
+    // Open aurora://site-settings.
+    void site_settings_requested();
     void zoom_in_requested();
     void zoom_out_requested();
     void zoom_reset_requested();
     void find_requested();
+    // Open the engine's print dialog for the active page (Ctrl+P).
     void print_requested();
+    // Ask for a file name and render the active page to PDF.
+    void save_as_pdf_requested();
     void fullscreen_requested();
     void devtools_requested();
     void theme_toggled();

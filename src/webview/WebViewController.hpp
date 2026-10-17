@@ -180,6 +180,39 @@ public:
     virtual void zoom(core::TabId tab, int delta) = 0;
     virtual void zoom_reset(core::TabId tab) = 0;
 
+    // Per-site zoom persistence. The engine knows the page's origin and its
+    // zoom level; the host owns storage (the prefs store, see
+    // settings::SiteZoomStore). With a store installed, zoom() saves the new
+    // level for the active page's origin, zoom_reset() clears it, and every
+    // main-frame navigation commit applies the remembered level (or the
+    // default) for the origin being shown. `origin` is scheme://host[:port]
+    // as the engine derives it; levels use the engine's logarithmic scale
+    // (0 = 100%). Any member may be empty. Default no-op: zoom stays per tab.
+    struct ZoomStore {
+        std::function<bool(const std::string& origin, double& level)> load;
+        std::function<void(const std::string& origin, double level)> save;
+        std::function<void(const std::string& origin)> clear;
+    };
+    virtual void set_zoom_store(ZoomStore store) { (void)store; }
+
+    // Printing. print() opens the engine's print dialog for the tab's page
+    // (returns false when there is no live page to print). print_to_pdf()
+    // renders the page to `path` without a dialog and reports completion on
+    // the UI thread exactly once; it returns false — and never calls `done` —
+    // when the request could not even be started. Defaults: unsupported.
+    virtual bool print(core::TabId tab) {
+        (void)tab;
+        return false;
+    }
+    using PdfCallback = std::function<void(bool ok)>;
+    virtual bool print_to_pdf(core::TabId tab, std::string_view path,
+                              PdfCallback done) {
+        (void)tab;
+        (void)path;
+        (void)done;
+        return false;
+    }
+
     // Mute/unmute all audio output for a tab's browser. CEF maps this to
     // CefBrowserHost::SetAudioMuted. The default no-op keeps non-CEF / test
     // doubles unaffected.

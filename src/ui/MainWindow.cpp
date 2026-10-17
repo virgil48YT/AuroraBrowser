@@ -22,6 +22,9 @@
 #include <QWidget>
 #include <QWindow>
 #include <QDir>
+#include <QFileDialog>
+#include <QPointer>
+#include <QRegularExpression>
 #include <QDockWidget>
 #include <QFile>
 #include <QResizeEvent>
@@ -199,9 +202,11 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "searchengines/SearchEngineService.hpp"
 #include "session/SessionService.hpp"
 #include "settings/Settings.hpp"
+#include "settings/SiteZoomStore.hpp"
 #include "ui/BookmarkBar.hpp"
 #include "ui/CefHostWidget.hpp"
 #include "ui/DownloadsPopover.hpp"
+#include "ui/FilterListUpdater.hpp"
 #include "ui/IconButton.hpp"
 #include "ui/Icons.hpp"
 #include "ui/PermissionPrompt.hpp"
@@ -219,6 +224,7 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "ui/ShortcutList.hpp"
 #include "ui/pages/HomePage.hpp"
 #include "ui/pages/SettingsPage.hpp"
+#include "ui/pages/SiteSettingsPage.hpp"
 #include "util/Log.hpp"
 
 #if defined(AURORA_HAS_CEF)
@@ -299,6 +305,8 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
         services_.session = nullptr;
         services_.adblock = nullptr;
         services_.bookmarks = nullptr;
+        // Updating the filter list rewrites a profile file.
+        services_.filter_lists = nullptr;
     }
     // Extensions are loaded process-wide by the engine at startup (the
     // --load-extension switch, see cef/CefLifecycle.cpp), but a private window
@@ -488,12 +496,43 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
                 ? services_.prefs->get_bool(settings::PrefKeys::kAdblockEnabled,
                                             /*default=*/true)
                 : true;
-        webview_->set_adblock_rules(services_.adblock_rules, adblock_on);
+        // After an in-app update the updater holds the newer list; the
+        // bundle's copy is what main.cpp loaded at startup.
+        webview_->set_adblock_rules(services_.filter_lists
+                                        ? services_.filter_lists->rules()
+                                        : services_.adblock_rules,
+                                    adblock_on);
+        if (services_.filter_lists) services_.filter_lists->mark_engine_current();
         std::vector<std::string> exceptions;
         for (const auto& site : services_.adblock->list_exception_sites()) {
             exceptions.push_back(site);
         }
         webview_->set_adblock_exceptions(exceptions);
+    }
+    // Per-site zoom lives in the prefs store under "zoom.<origin>". The
+    // adapter calls these on the UI thread (zoom actions and main-frame
+    // commits). In a private window services_.prefs is the read-only view:
+    // remembered levels still apply, but nothing the user zooms there is
+    // written back — the same rule every other preference follows.
+    if (services_.prefs) {
+        settings::Settings* prefs = services_.prefs;
+        webview::WebViewController::ZoomStore zoom_store;
+        zoom_store.load = [prefs](const std::string& origin, double& level) {
+            return settings::SiteZoomStore(*prefs).level(origin, level);
+        };
+        zoom_store.save = [prefs](const std::string& origin, double level) {
+            settings::SiteZoomStore(*prefs).set_level(origin, level);
+        };
+        zoom_store.clear = [prefs](const std::string& origin) {
+            settings::SiteZoomStore(*prefs).clear(origin);
+        };
+        webview_->set_zoom_store(std::move(zoom_store));
+    }
+    // Manual filter-list updates: every normal window listens so the
+    // shared engine is rebuilt even if the page that started it is gone.
+    if (services_.filter_lists) {
+        connect(services_.filter_lists, &FilterListUpdater::finished, this,
+                &MainWindow::on_filter_list_update_finished);
     }
     webview_->set_adblock_blocked_callback(
         [guard = QPointer<MainWindow>(this)](core::TabId tab,
@@ -1876,6 +1915,15 @@ bool MainWindow::nativeEvent(const QByteArray& eventType, void* message,
     }
     return QMainWindow::nativeEvent(eventType, message, result);
 }
+#else
+// Declared for every platform in MainWindow.hpp; off Windows there is no
+// native hit-test to do (eventFilter's startSystemMove/startSystemResize
+// fallback handles the frameless window), so defer to Qt. Without this
+// definition the Linux/macOS link failed with an undefined vtable entry.
+bool MainWindow::nativeEvent(const QByteArray& eventType, void* message,
+                             qintptr* result) {
+    return QMainWindow::nativeEvent(eventType, message, result);
+}
 #endif // Q_OS_WIN
 
 
@@ -1969,12 +2017,9 @@ void MainWindow::setup_menu_button() {
     connect(menu_button_, &BrowserMenu::new_window_requested, this,
             &MainWindow::open_new_window);
     connect(menu_button_, &BrowserMenu::find_requested, this, &MainWindow::on_find);
-    connect(menu_button_, &BrowserMenu::print_requested, this, [this] {
-        // Printing is not yet exposed by WebViewController. Keep the restored
-        // menu action honest and wired rather than silently swallowing it.
-        flash_status(QStringLiteral(
-            "Printing is not available in this Aurora build"));
-    });
+    connect(menu_button_, &BrowserMenu::print_requested, this, &MainWindow::on_print);
+    connect(menu_button_, &BrowserMenu::save_as_pdf_requested, this,
+            &MainWindow::on_save_as_pdf);
     connect(menu_button_, &BrowserMenu::fullscreen_requested, this, &MainWindow::on_fullscreen_toggle);
     connect(menu_button_, &BrowserMenu::devtools_requested, this, &MainWindow::on_devtools);
     connect(menu_button_, &BrowserMenu::bookmark_page_requested, this, &MainWindow::on_bookmark_page);
@@ -1994,6 +2039,8 @@ void MainWindow::setup_menu_button() {
             [this] { show_page(core::InternalPage::Settings); });
     connect(menu_button_, &BrowserMenu::extensions_requested, this,
             [this] { show_page(core::InternalPage::Extensions); });
+    connect(menu_button_, &BrowserMenu::site_settings_requested, this,
+            [this] { show_page(core::InternalPage::SiteSettings); });
     connect(menu_button_, &BrowserMenu::clear_browsing_data_requested, this,
             &MainWindow::on_clear_browsing_data);
 }
@@ -2056,6 +2103,7 @@ void MainWindow::setup_shortcuts() {
     bind("Ctrl+J", [this] { show_page(core::InternalPage::Downloads); });
     bind("Ctrl+D", &MainWindow::on_bookmark_page);
     bind("Ctrl+F", &MainWindow::on_find);
+    bind("Ctrl+P", &MainWindow::on_print);
 
     // Page presentation.
     bind("Ctrl++", &MainWindow::on_zoom_in);
@@ -2120,7 +2168,8 @@ bool MainWindow::forward_engine_key(const webview::EngineKeyEvent& ev) {
     // table covers all.
     constexpr int VK_T = 0x54, VK_W = 0x57, VK_N = 0x4E, VK_R = 0x52,
                   VK_L = 0x4C, VK_J = 0x4A, VK_H = 0x48, VK_D = 0x44,
-                  VK_F = 0x46, VK_A = 0x41, VK_I = 0x49, VK_TAB = 0x09,
+                  VK_F = 0x46, VK_A = 0x41, VK_I = 0x49, VK_P = 0x50,
+                  VK_TAB = 0x09,
                   VK_PRIOR = 0x21, VK_NEXT = 0x22, VK_HOME = 0x24,
                   VK_LEFT = 0x25, VK_RIGHT = 0x27,
                   VK_F5 = 0x74, VK_F11 = 0x7A, VK_F12 = 0x7B,
@@ -2147,6 +2196,7 @@ bool MainWindow::forward_engine_key(const webview::EngineKeyEvent& ev) {
             case VK_H: post([this] { show_page(core::InternalPage::History); }); return true;
             case VK_D: post(&MainWindow::on_bookmark_page); return true;
             case VK_F: post(&MainWindow::on_find); return true;
+            case VK_P: post(&MainWindow::on_print); return true;
             case VK_0: post(&MainWindow::on_zoom_reset); return true;
             case VK_OEM_PLUS: case VK_ADD: post(&MainWindow::on_zoom_in); return true;
             case VK_OEM_MINUS: case VK_SUBTRACT: post(&MainWindow::on_zoom_out); return true;
@@ -2628,7 +2678,28 @@ QWidget* MainWindow::page_widget(core::InternalPage page) {
                     [this](bool enabled) {
                         if (webview_) webview_->set_adblock_enabled(enabled);
                     });
+            // "Update now" talks to the shared updater directly; the result
+            // reaches the engine through on_filter_list_update_finished.
+            settings_page->set_filter_list_updater(services_.filter_lists);
+            connect(settings_page, &SettingsPage::site_settings_requested, this,
+                    [this] { show_page(core::InternalPage::SiteSettings); });
             widget = settings_page;
+            break;
+        }
+        case core::InternalPage::SiteSettings: {
+            auto* site_page =
+                new SiteSettingsPage(services_.prefs, services_.adblock, this);
+            // Same engine path as the toolbar shield (set_site_blocking):
+            // push the whole exception set, then repaint the shield.
+            connect(site_page, &SiteSettingsPage::adblock_exceptions_changed,
+                    this, [this] {
+                        if (webview_ && services_.adblock) {
+                            webview_->set_adblock_exceptions(
+                                services_.adblock->list_exception_sites());
+                        }
+                        update_shield_for_tab();
+                    });
+            widget = site_page;
             break;
         }
         case core::InternalPage::Extensions: {
@@ -3659,6 +3730,80 @@ void MainWindow::on_zoom_reset() {
     }
 }
 
+void MainWindow::on_print() {
+    const auto tab = tabs_.active();
+    // Internal pages are Qt widgets, not engine documents: nothing to print.
+    if (!tab.valid() || page_of(tab).has_value() || !webview_ ||
+        !webview_->print(tab)) {
+        flash_status(QStringLiteral("This page can't be printed"));
+        return;
+    }
+#if defined(Q_OS_LINUX)
+    // On Linux the engine asks the desktop for a print dialog (the XDG print
+    // portal, else GTK). On a system with neither, Chromium has no dialog to
+    // show and gives the embedder no failure signal, so say up front where
+    // the always-available fallback is instead of leaving a silent no-op.
+    flash_status(QStringLiteral(
+        "Opening the system print dialog. If none appears, use Save as PDF "
+        "in the browser menu."));
+#endif
+}
+
+void MainWindow::on_save_as_pdf() {
+    const auto tab = tabs_.active();
+    if (!tab.valid() || page_of(tab).has_value() || !webview_) {
+        flash_status(QStringLiteral("This page can't be saved as PDF"));
+        return;
+    }
+    // Suggest "<page title>.pdf" in the downloads folder, like a download.
+    QString name;
+    if (const auto* state = tabs_.find(tab))
+        name = QString::fromStdString(state->title).trimmed();
+    if (name.isEmpty()) name = QStringLiteral("page");
+    static const QRegularExpression kUnsafe(QStringLiteral(R"([\\/:*?"<>|\x00-\x1f])"));
+    name.replace(kUnsafe, QStringLiteral("_"));
+    if (name.size() > 120) name.truncate(120);
+    QString dir = services_.prefs
+                      ? QString::fromStdString(services_.prefs->downloads_path())
+                      : QString();
+    if (dir.isEmpty())
+        dir = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Save page as PDF"),
+        QDir(dir).filePath(name + QStringLiteral(".pdf")),
+        QStringLiteral("PDF files (*.pdf)"));
+    if (path.isEmpty()) return;  // cancelled
+    if (!path.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive))
+        path += QStringLiteral(".pdf");
+    // The dialog ran a nested event loop: the tab may have closed meanwhile.
+    if (!tabs_.find(tab)) return;
+    const QPointer<MainWindow> guard(this);
+    const bool started = webview_->print_to_pdf(
+        tab, path.toStdString(), [guard, path](bool ok) {
+            if (!guard) return;
+            guard->flash_status(
+                ok ? QStringLiteral("Saved PDF to %1")
+                         .arg(QDir::toNativeSeparators(path))
+                   : QStringLiteral("Could not save the page as PDF"));
+        });
+    if (!started)
+        flash_status(QStringLiteral("This page can't be saved as PDF"));
+}
+
+void MainWindow::on_filter_list_update_finished(bool ok, const QString& message) {
+    // The ad-block engine is process-wide: the first window to see a new
+    // list rebuilds it, later windows find engine_current() already true.
+    if (ok && services_.filter_lists && webview_ &&
+        !services_.filter_lists->engine_current()) {
+        const bool adblock_on =
+            !services_.prefs ||
+            services_.prefs->get_bool(settings::PrefKeys::kAdblockEnabled, true);
+        webview_->set_adblock_rules(services_.filter_lists->rules(), adblock_on);
+        services_.filter_lists->mark_engine_current();
+    }
+    if (isActiveWindow()) flash_status(message);
+}
+
 void MainWindow::on_next_tab() {
     const auto& tabs = tabs_.tabs();
     if (tabs.empty()) return;
@@ -4152,12 +4297,55 @@ int MainWindow::hosts_with_native_window() const {
     return n;
 }
 
+int MainWindow::open_startup_tabs() {
+    // No profile: nothing remembered, the seed tab is the whole startup.
+    if (!services_.prefs) return 0;
+    switch (settings::resolve_startup_mode(*services_.prefs)) {
+        case settings::StartupMode::Continue:
+            return restore_session();
+        case settings::StartupMode::Home:
+            // The constructor's seed tab already opened new_tab_url() — the
+            // same page the Home button shows.
+            return 0;
+        case settings::StartupMode::Specific: {
+            const std::string text = services_.prefs->get_string(
+                settings::PrefKeys::kStartupHomeUrl, "");
+            if (auto page = core::parse_internal_url(text)) {
+                // aurora://home is what the seed tab already shows.
+                if (*page == core::InternalPage::Home) return 0;
+                // show_page() always opens its own tab, so drop the seed
+                // afterwards to still start with exactly one tab.
+                const auto seed = tabs_.active();
+                show_page(*page);
+                if (seed.valid() && tabs_.count() > 1) tabs_.close(seed);
+                return 0;
+            }
+            // Interpreted exactly like typing it into the omnibox, so
+            // "example.com" works and https-only upgrading still applies.
+            const core::Url url = core::parse_omnibox_input(text);
+            if (!url.is_valid()) {
+                AURORA_LOG(util::LogLevel::Warn, "session")
+                    << "startup page '" << text
+                    << "' is not a valid address; opening the home page";
+                return 0;
+            }
+            // Reuse the seed tab rather than opening a second one, so the
+            // window starts with exactly one tab, like the other modes.
+            navigate_active_tab(url);
+            return 0;
+        }
+    }
+    return 0;
+}
+
 int MainWindow::restore_session() {
     if (!services_.session) return 0;
-    // Honor the user's "reopen my tabs" preference.
+    // Honor the Startup preference: only "continue where you left off"
+    // restores. resolve_startup_mode() falls back to the legacy
+    // kRestoreSession boolean when no startup.mode was ever saved.
     if (services_.prefs &&
-        !services_.prefs->get_bool(settings::PrefKeys::kRestoreSession,
-                                   settings::PrefDefaults::kRestoreSession)) {
+        settings::resolve_startup_mode(*services_.prefs) !=
+            settings::StartupMode::Continue) {
         return 0;
     }
 

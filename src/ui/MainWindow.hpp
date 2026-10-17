@@ -134,6 +134,16 @@ public:
     // restored (0 when there was nothing valid to restore).
     int restore_session();
 
+    // Launch-time entry point (main.cpp, first window only): apply the
+    // Startup preference resolved by settings::resolve_startup_mode().
+    //   Continue -> restore_session() (the seed home tab stays if there is
+    //               nothing valid to restore);
+    //   Home     -> keep the seed tab, which already shows new_tab_url();
+    //   Specific -> navigate the seed tab to the stored startup.home_url.
+    // Returns the number of restored tabs (0 unless Continue restored some),
+    // which the smoke test checks.
+    int open_startup_tabs();
+
     // Persist the open tabs so the next launch can restore them.
     void save_session();
 
@@ -319,6 +329,15 @@ private slots:
     void on_zoom_in();
     void on_zoom_out();
     void on_zoom_reset();
+    // Ctrl+P / menu "Print…": the engine's print dialog for the active page.
+    void on_print();
+    // Menu "Save as PDF…": pick a file (same QFileDialog pattern as
+    // downloads) and have the engine render the active page into it.
+    void on_save_as_pdf();
+    // A manual filter-list update finished (FilterListUpdater::finished).
+    // Rebuilds the process-wide engine from the new list once, whichever
+    // window gets here first, and reports the outcome in the active window.
+    void on_filter_list_update_finished(bool ok, const QString& message);
     void on_next_tab();
     void on_prev_tab();
     void on_theme_toggled();

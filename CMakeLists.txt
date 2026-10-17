@@ -120,8 +120,10 @@ target_sources(aurora_core
         src/searchengines/SearchEngine.cpp
         src/searchengines/SearchEngineService.cpp
         src/privacy/CertificateAudit.cpp
+        src/privacy/CookieSite.cpp
         src/adblock/AdblockEngine.cpp
         src/adblock/AdblockService.cpp
+        src/adblock/ListUpdater.cpp
 )
 target_include_directories(aurora_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_features(aurora_core PUBLIC cxx_std_20)
