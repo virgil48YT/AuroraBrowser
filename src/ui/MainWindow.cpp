@@ -181,6 +181,7 @@ inline bool ensure_native_frame(void* hwnd) {
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QMenu>
+#include <QScreen>
 #include <QUrl>
 #include <vector>
 #include <QMessageBox>
@@ -3757,18 +3758,20 @@ void MainWindow::show_tab_hover_card(int index) {
         address = QStringLiteral("Aurora");
     } else {
         address = QUrl(QString::fromStdString(raw)).host();
+        if (address.startsWith(QLatin1String("www.")))
+            address = address.mid(4);   // "github.com", as in Chrome's card
         if (address.isEmpty()) address = QString::fromStdString(raw);
     }
 
     QString memory;
     if (tab.suspended) {
-        memory = QStringLiteral("Suspended · memory freed");
+        memory = QStringLiteral("Suspended - memory freed");
     } else if (!internal) {
         const auto known = tab_memory_.find(tab.id);
         memory = known != tab_memory_.end()
             ? QStringLiteral("Memory usage: %1")
                   .arg(TabHoverCard::format_memory(known->second))
-            : QStringLiteral("Memory usage: measuring…");
+            : QStringLiteral("Memory usage: measuring...");
         // Ask for a fresh figure; the answer updates the card in place.
         if (webview_) webview_->request_memory(tab.id);
     }
@@ -4252,10 +4255,55 @@ void MainWindow::showEvent(QShowEvent* e) {
     QMainWindow::showEvent(e);
 }
 
+void MainWindow::restore_saved_window_state() {
+    // Private windows never read or write placement, and neither does a
+    // window without a profile.
+    if (incognito_ || !services_.prefs) return;
+    const std::string state = services_.prefs->get_string(
+        settings::PrefKeys::kWindowState, "maximized");
+    const QStringList parts = QString::fromStdString(
+        services_.prefs->get_string(settings::PrefKeys::kWindowRect, ""))
+                                  .split(QLatin1Char(','));
+    if (parts.size() == 4) {
+        const QRect saved(parts[0].toInt(), parts[1].toInt(),
+                          parts[2].toInt(), parts[3].toInt());
+        // Only reuse a rectangle that still lands on a connected screen
+        // (a monitor may have been unplugged since), and is a sane size.
+        bool on_screen = false;
+        for (const QScreen* screen : QGuiApplication::screens()) {
+            const QRect overlap = screen->availableGeometry().intersected(saved);
+            if (overlap.width() >= 120 && overlap.height() >= 80) {
+                on_screen = true;
+                break;
+            }
+        }
+        if (on_screen && saved.width() >= 400 && saved.height() >= 320) {
+            setGeometry(saved);
+        }
+    }
+    // Maximized is applied by showMaximized(); the caller's show() reads this.
+    if (state != "normal") setWindowState(windowState() | Qt::WindowMaximized);
+}
+
 void MainWindow::closeEvent(QCloseEvent* e) {
     if (privacy_exit_started_) {
         e->accept();
         return;
+    }
+    // Remember the window placement for the next launch. normalGeometry() is
+    // the restored rectangle even while maximized, so un-maximizing later
+    // still lands somewhere sensible. Fullscreen counts as maximized.
+    if (!incognito_ && services_.prefs && !services_.prefs->is_read_only()) {
+        const bool maximized = isMaximized() || isFullScreen();
+        const QRect r = (isMaximized() || isFullScreen()) ? normalGeometry()
+                                                          : geometry();
+        services_.prefs->set_string(settings::PrefKeys::kWindowState,
+                                    maximized ? "maximized" : "normal");
+        services_.prefs->set_string(
+            settings::PrefKeys::kWindowRect,
+            QStringLiteral("%1,%2,%3,%4")
+                .arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height())
+                .toStdString());
     }
     // Download clients retain a copy of the host callback, so clearing the
     // controller's callback alone would not suppress late persistent writes.

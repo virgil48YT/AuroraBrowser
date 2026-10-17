@@ -1210,13 +1210,14 @@ QString StylesheetBuilder::build(const Theme& t) {
     // wash. The chevron glyph is a QLabel pixmap so tint comes from C++.
     s += QString("QLabel#HistoryGroupTitle {"
                  "  color: %1; font-size: %2px; font-weight: 600; }")
-            .arg(c.text.name()).arg(t.body_font_px + 4);
+            .arg(c.text.name()).arg(t.body_font_px + 6);
+    // Count badge: bright blue number on a deep-blue capsule, as in the mock.
     s += QString("QLabel#HistoryGroupCount {"
-                 "  color: %1; font-size: %2px; font-weight: 600;"
-                 "  background: %3; border-radius: 11px; padding: 2px 10px; }")
-            .arg(c.accent.name())
-            .arg(t.small_font_px + 1)
-            .arg(rgba(c.accent, 38));
+                 "  color: #4C9BFF; font-size: %1px; font-weight: 600;"
+                 "  background: rgba(30, 80, 220, 70);"
+                 "  border: 1px solid rgba(60, 120, 255, 90);"
+                 "  border-radius: 11px; padding: 1px 10px; }")
+            .arg(t.small_font_px + 2);
     s += QString("QWidget#HistoryRow {"
                  "  background: transparent; border-radius: %1px; }")
             .arg(Radius::md);

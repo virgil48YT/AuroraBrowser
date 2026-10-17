@@ -516,6 +516,8 @@ int main(int argc, char** argv) {
     if (seed_tabs > 0 && db.is_open()) seed_session(session_svc, seed_tabs);
 
     ui::MainWindow window(services);
+    // Start where the last run left off; a first run starts maximized.
+    window.restore_saved_window_state();
     window.show();
     util::startup_milestone("window shown");
 

@@ -66,6 +66,11 @@ struct PrefKeys {
     static constexpr std::string_view kDockPins = "dock.pins";
     // Homepage weather: "auto" locates by IP; a JSON {name,lat,lon} pins a city.
     static constexpr std::string_view kWeatherLocation = "home.weather_location";
+    // Main window placement from the last run: "maximized" or "normal", plus
+    // the restored (non-maximized) rectangle as "x,y,w,h". Absent on first run,
+    // where the browser starts maximized.
+    static constexpr std::string_view kWindowState = "window.state";
+    static constexpr std::string_view kWindowRect = "window.rect";
 };
 
 class Settings {

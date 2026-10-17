@@ -17,14 +17,20 @@ namespace {
 // actions): the cyan end is deliberately faint so the glow reads as a
 // blue-purple haze rather than a neon circuit trace. The history mock has
 // a small purple/blue rim, not a rainbow loop.
-constexpr int kCardCyanAlpha = 130;
-constexpr int kCardPurpleAlpha = 80;
+// The mock's cards are near-black navy plates with a thin electric-blue edge
+// that warms to violet toward the lower right, and a tight blue halo. These
+// are fixed brand colors rather than theme tokens because the look is the
+// point: the plate must stay this dark whatever the surface tokens are.
+const QColor kCardEdgeA(54, 112, 255, 215);     // electric blue
+const QColor kCardEdgeB(124, 78, 240, 170);     // violet
+const QColor kCardHalo(52, 96, 255, 96);
+const QColor kCardPlate(5, 9, 30, 196);         // ~77% navy over the aurora
 // One joint purple->magenta rim for destructive actions (Clear browsing
 // data) so they read as "this one is different, be careful".
-constexpr int kDangerPurpleAlpha = 170;
-constexpr int kDangerMagentaAlpha = 110;
-constexpr int kCardFillAlpha = 122;   // ~48% over the aurora background
-constexpr int kDangerFillAlpha = 90;  // the button stays a touch lighter
+const QColor kDangerEdgeA(176, 84, 255, 235);
+const QColor kDangerEdgeB(236, 72, 190, 200);
+const QColor kDangerHalo(200, 70, 240, 100);
+const QColor kDangerPlate(26, 8, 40, 190);
 
 } // namespace
 
@@ -35,31 +41,13 @@ GlowFrame::GlowFrame(QWidget* parent) : QFrame(parent) {
 }
 
 void GlowFrame::apply_card_style(int radius, int glow_extent) {
-    const ThemeColors& c = current_theme().colors;
-    QColor cyan = c.accent;
-    cyan.setAlpha(kCardCyanAlpha);
-    QColor purple = c.accent2;
-    purple.setAlpha(kCardPurpleAlpha);
-    QColor glow = c.accent2;
-    glow.setAlpha(84);
-    QColor fill = c.card_bg;
-    fill.setAlpha(kCardFillAlpha);
-    set_style({cyan, purple, glow, glow_extent}, fill, radius);
+    set_style({kCardEdgeA, kCardEdgeB, kCardHalo, glow_extent}, kCardPlate,
+              radius);
 }
 
 void GlowFrame::apply_danger_style(int radius, int glow_extent) {
-    const ThemeColors& c = current_theme().colors;
-    QColor purple = c.accent2;
-    purple.setAlpha(kDangerPurpleAlpha);
-    QColor magenta = c.accent3;
-    magenta.setAlpha(kDangerMagentaAlpha);
-    QColor glow = c.accent3;
-    glow.setAlpha(84);
-    // A barely-raised fill; the clear button's content (icon + label) is
-    // the emphasis, not its surface.
-    QColor fill = c.surface_alt;
-    fill.setAlpha(kDangerFillAlpha);
-    set_style({purple, magenta, glow, glow_extent}, fill, radius);
+    set_style({kDangerEdgeA, kDangerEdgeB, kDangerHalo, glow_extent},
+              kDangerPlate, radius);
 }
 
 void GlowFrame::set_style(const Edge& edge, const QColor& fill, int radius) {
