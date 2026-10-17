@@ -100,7 +100,7 @@ void HistoryPage::build_ui() {
         QColor purple = c.accent2;
         purple.setAlpha(115);
         QColor glow = c.accent2;
-        glow.setAlpha(30);
+        glow.setAlpha(70);
         edge.color1 = cyan;
         edge.color2 = purple;
         edge.glow = glow;
@@ -183,7 +183,7 @@ void HistoryPage::build_ui() {
     auto* panel = new GlowFrame(body);
     panel->setObjectName(QStringLiteral("HistoryPanel"));
     panel->apply_card_style(14, 3);
-    panel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+    panel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Maximum);
     panel->setFixedWidth(300);
     auto* panel_layout = new QVBoxLayout(panel);
     panel_layout->setContentsMargins(16, 14, 16, 14);
@@ -288,9 +288,10 @@ void HistoryPage::build_ui() {
         sl->addWidget(note, 1);
         panel_layout->addWidget(sync);
     }
-    panel_layout->addStretch(1);
 
-    body_row->addWidget(panel);
+    // Top-aligned at its natural height, like the mock, instead of
+    // stretching to the bottom of the window.
+    body_row->addWidget(panel, 0, Qt::AlignTop);
     set_body(body);
 
     // Wiring: search is the service's full-text search (the page re-queries),
@@ -386,6 +387,9 @@ void HistoryPage::rebuild_rows() {
         }
         total += static_cast<int>(bucket.size());
         group_cards_[i]->set_visits(bucket);
+        // Empty date groups are noise, not content: hide them (the mock
+        // only shows the groups that have rows).
+        group_cards_[i]->setVisible(!bucket.isEmpty());
     }
 
     const QString trimmed = search_ ? search_->text().trimmed() : QString();

@@ -82,20 +82,17 @@ QString StylesheetBuilder::build(const Theme& t) {
     // window glass; it must stay transparent or it would box out the rail.
     s += QString("QWidget#MainColumn { background: transparent; border: none; }");
 
-    // The content stack floats inside the window as its own rounded card —
-    // slightly lighter than the glass behind it, with a faint purple glow
-    // hairline, inset from the window edge.
+    // The content stack is full-bleed under the toolbar. It used to be a
+    // rounded, inset card, but the web page inside is a native window that
+    // cannot be clipped to rounded corners, so the card's roundness only
+    // showed as odd dark margins around pages and the wallpaper.
     s += QString("QWidget#ContentStack {"
                  "  background: %1;"
-                 "  border: %2px solid %3;"
-                 "  border-radius: %4px;"
-                 "  margin: 0px %5px %5px %5px;"
+                 "  border: none;"
+                 "  border-radius: 0px;"
+                 "  margin: 0px;"
                  "}")
-            .arg(hex(c.card_bg))
-            .arg(Metrics::hairline)
-            .arg(glow_edge_soft)
-            .arg(Radius::xxl)
-            .arg(Spacing::lg);
+            .arg(hex(c.card_bg));
 
     // =======================================================================
     // Chrome surface
@@ -1077,8 +1074,7 @@ QString StylesheetBuilder::build(const Theme& t) {
     // while text contrast stays comfortable (~60-70% alpha covers a busy
     // aurora pixel under body text).
     s += QString("QWidget#PageCard, QWidget#SettingsCard,"
-                 " QFrame#PagePanel, QWidget#HistoryPanel,"
-                 " QWidget#HistoryGroupCard, QWidget#SettingsSidebarCard,"
+                 " QFrame#PagePanel, QWidget#SettingsSidebarCard,"
                  " QWidget#SettingsSectionCard {"
                  "  background: %1; border: %2px solid %3;"
                  "  border-radius: %4px; }")
@@ -1214,7 +1210,7 @@ QString StylesheetBuilder::build(const Theme& t) {
     // wash. The chevron glyph is a QLabel pixmap so tint comes from C++.
     s += QString("QLabel#HistoryGroupTitle {"
                  "  color: %1; font-size: %2px; font-weight: 600; }")
-            .arg(c.text.name()).arg(t.body_font_px + 1);
+            .arg(c.text.name()).arg(t.body_font_px + 4);
     s += QString("QLabel#HistoryGroupCount {"
                  "  color: %1; font-size: %2px; font-weight: 600;"
                  "  background: %3; border-radius: 11px; padding: 2px 10px; }")
@@ -1227,11 +1223,11 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QWidget#HistoryRow:hover { background: %1; }")
             .arg(rgba(c.accent, 22));
     s += QString("QLabel#HistoryRowTitle { color: %1; font-size: %2px; }")
-            .arg(c.text.name()).arg(t.body_font_px);
+            .arg(c.text.name()).arg(t.body_font_px + 1);
     s += QString("QLabel#HistoryRowDomain { color: %1; font-size: %2px; }")
-            .arg(c.text_muted.name()).arg(t.small_font_px + 1);
+            .arg(c.text_muted.name()).arg(t.small_font_px + 2);
     s += QString("QLabel#HistoryRowTime { color: %1; font-size: %2px; }")
-            .arg(c.text_faint.name()).arg(t.small_font_px + 1);
+            .arg(c.text_muted.name()).arg(t.small_font_px + 2);
     // Filter panel rows: the purple highlight bar and radio dot appear only
     // on the selected row, so the left of the list reads as one column.
     s += QString("QWidget#HistoryFilterItem {"
