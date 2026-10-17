@@ -10,6 +10,8 @@
 #include <QFrame>
 #include <QHash>
 #include <QVector>
+#include <QCheckBox>
+#include <QLabel>
 #include <QWidget>
 
 #include <chrono>
@@ -18,9 +20,7 @@
 #include "history/HistoryService.hpp"
 #include "ui/GlowFrame.hpp"
 
-class QCheckBox;
 class QHBoxLayout;
-class QLabel;
 class QVBoxLayout;
 
 namespace aurora::ui {
@@ -31,6 +31,33 @@ class HistoryPage;
 // database row even after filtering or collapse.
 inline constexpr const char* kHistoryIdProperty = "history_id";
 inline constexpr const char* kHistoryActionProperty = "history_action";
+
+// Square-ish checkbox with a painted tick. The global #PageCheck sheet turns
+// every QCheckBox into a pill switch (right for Settings, wrong for a list
+// of rows), so history rows draw their own indicator.
+class RoundCheck : public QCheckBox {
+public:
+    explicit RoundCheck(QWidget* parent = nullptr);
+    QSize sizeHint() const override { return {20, 20}; }
+    QSize minimumSizeHint() const override { return {20, 20}; }
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    bool hitButton(const QPoint& pos) const override {
+        return rect().contains(pos);
+    }
+};
+
+// One-line label that elides with "..." instead of forcing its column wider,
+// so the domain and time columns stay aligned from row to row.
+class ElidedLabel : public QLabel {
+public:
+    explicit ElidedLabel(QWidget* parent = nullptr);
+    QSize minimumSizeHint() const override;
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+};
 
 // Radio indicator for the filter rows. QRadioButton's ::indicator is hard
 // to match to the aurora pair at 16px without turning fuzzy, so the ring
@@ -92,10 +119,10 @@ protected:
 
 private:
     QString url_;
-    QCheckBox* check_ = nullptr;
+    RoundCheck* check_ = nullptr;
     QLabel* favicon_ = nullptr;
-    QLabel* title_ = nullptr;
-    QLabel* domain_ = nullptr;
+    ElidedLabel* title_ = nullptr;
+    ElidedLabel* domain_ = nullptr;
     QLabel* time_ = nullptr;
 };
 

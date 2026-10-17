@@ -21,6 +21,7 @@
 #include <QTimer>
 #include <QVariantAnimation>
 
+#include "core/InternalUrl.hpp"
 #include "ui/FaviconCache.hpp"
 #include "ui/IconButton.hpp"
 #include "ui/Icons.hpp"
@@ -1105,6 +1106,31 @@ void TabBar::refresh_tab(int idx) {
     if (tab.muted) {
         setTabIcon(idx, icons::icon(icons::Name::Mute,
                                     current_theme().colors.text_muted));
+    } else if (const auto internal = core::parse_internal_url(tab.url.raw())) {
+        // Built-in pages have no site favicon to fetch: give each its own
+        // glyph (the Aurora mark for the home page) so the tab never shows
+        // the empty placeholder dot.
+        const QColor accent = current_theme().colors.accent;
+        switch (*internal) {
+            case core::InternalPage::Home:
+                setTabIcon(idx, QIcon(QStringLiteral(":/brand/aurora_mark.png")));
+                break;
+            case core::InternalPage::History:
+                setTabIcon(idx, icons::icon(icons::Name::History, accent));
+                break;
+            case core::InternalPage::Downloads:
+                setTabIcon(idx, icons::icon(icons::Name::Downloads, accent));
+                break;
+            case core::InternalPage::Bookmarks:
+                setTabIcon(idx, icons::icon(icons::Name::Bookmarks, accent));
+                break;
+            case core::InternalPage::Extensions:
+                setTabIcon(idx, icons::icon(icons::Name::Puzzle, accent));
+                break;
+            case core::InternalPage::Settings:
+                setTabIcon(idx, icons::icon(icons::Name::Settings, accent));
+                break;
+        }
     } else {
         const auto page_url = QString::fromStdString(tab.url.display());
         auto& favicons = FaviconCache::instance();

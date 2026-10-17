@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QLinearGradient>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPen>
 #include <QRectF>
 
@@ -40,7 +41,7 @@ void GlowFrame::apply_card_style(int radius, int glow_extent) {
     QColor purple = c.accent2;
     purple.setAlpha(kCardPurpleAlpha);
     QColor glow = c.accent2;
-    glow.setAlpha(28);
+    glow.setAlpha(84);
     QColor fill = c.card_bg;
     fill.setAlpha(kCardFillAlpha);
     set_style({cyan, purple, glow, glow_extent}, fill, radius);
@@ -53,7 +54,7 @@ void GlowFrame::apply_danger_style(int radius, int glow_extent) {
     QColor magenta = c.accent3;
     magenta.setAlpha(kDangerMagentaAlpha);
     QColor glow = c.accent3;
-    glow.setAlpha(30);
+    glow.setAlpha(84);
     // A barely-raised fill; the clear button's content (icon + label) is
     // the emphasis, not its surface.
     QColor fill = c.surface_alt;
@@ -82,25 +83,29 @@ void GlowFrame::paintEvent(QPaintEvent* event) {
                              -edge_.glow_extent, -edge_.glow_extent);
     const qreal inset = 0.75;  // half the 1.5px stroke, for crisp edges
     r.adjust(inset, inset, -inset, -inset);
-    const qreal rad = qMax<qreal>(0.0, radius_ - edge_.glow_extent - inset);
+    // The radius is the plate's own radius (not reduced by the glow), so the
+    // corners are exactly as round as asked and rim, fill and aura agree.
+    const qreal rad = qMin<qreal>(radius_, qMin(r.width(), r.height()) / 2.0);
 
-    QLinearGradient grad(r.topLeft(), r.bottomRight());
-    grad.setColorAt(0.0, edge_.color1);
-    grad.setColorAt(1.0, edge_.color2);
+    QPainterPath plate;
+    plate.addRoundedRect(r, rad, rad);
 
-    // Outer aura: two soft passes so the edge blooms just a little, like the
-    // mock's panel shadows. Skipped when no glow color is set.
+    // Outer aura: a few widening, faint strokes along the edge, clipped to
+    // the OUTSIDE of the plate. Painting them as filled shapes behind the
+    // semi-transparent plate tinted its inside and read as a second outline.
     if (edge_.glow.isValid() && edge_.glow_extent > 0) {
-        QColor outer = edge_.glow;
-        outer.setAlpha(edge_.glow.alpha() / 2);
-        p.setPen(Qt::NoPen);
-        p.setBrush(outer);
-        p.drawRoundedRect(r.adjusted(-edge_.glow_extent, -edge_.glow_extent,
-                                     edge_.glow_extent, edge_.glow_extent),
-                          rad + edge_.glow_extent, rad + edge_.glow_extent);
-        p.setBrush(edge_.glow);
-        p.drawRoundedRect(r.adjusted(-1.2, -1.2, 1.2, 1.2),
-                          rad + 1.2, rad + 1.2);
+        QPainterPath outside;
+        outside.addRect(QRectF(rect()));
+        p.save();
+        p.setClipPath(outside.subtracted(plate));
+        QColor pass = edge_.glow;
+        pass.setAlpha(qBound(4, edge_.glow.alpha() / edge_.glow_extent, 255));
+        p.setBrush(Qt::NoBrush);
+        for (int i = edge_.glow_extent; i >= 1; --i) {
+            p.setPen(QPen(pass, 2.0 * i));
+            p.drawPath(plate);
+        }
+        p.restore();
     }
 
     // The glass plate: semi-transparent so the aurora wallpaper shows
@@ -108,13 +113,16 @@ void GlowFrame::paintEvent(QPaintEvent* event) {
     if (fill_.alpha() > 0) {
         p.setPen(Qt::NoPen);
         p.setBrush(fill_);
-        p.drawRoundedRect(r, rad, rad);
+        p.drawPath(plate);
     }
 
     // Gradient rim on top of the fill so it never dips under the plate.
+    QLinearGradient grad(r.topLeft(), r.bottomRight());
+    grad.setColorAt(0.0, edge_.color1);
+    grad.setColorAt(1.0, edge_.color2);
     p.setBrush(Qt::NoBrush);
     p.setPen(QPen(QBrush(grad), 1.5, Qt::SolidLine, Qt::RoundCap));
-    p.drawRoundedRect(r, rad, rad);
+    p.drawPath(plate);
 }
 
 } // namespace aurora::ui

@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QScreen>
 #include <QStyle>
@@ -34,6 +35,61 @@ inline qreal current_dpr(const QWidget* w) {
 }
 
 } // namespace
+
+// RoundCheck ----------------------------------------------------------------
+RoundCheck::RoundCheck(QWidget* parent) : QCheckBox(parent) {
+    setObjectName(QStringLiteral("HistoryCheck"));
+    setFixedSize(20, 20);
+    setCursor(Qt::PointingHandCursor);
+    setFocusPolicy(Qt::NoFocus);
+}
+
+void RoundCheck::paintEvent(QPaintEvent*) {
+    const ThemeColors& c = current_theme().colors;
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    const QRectF box = QRectF(rect()).adjusted(2, 2, -2, -2);
+    if (isChecked()) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(c.accent);
+        p.drawRoundedRect(box, 5, 5);
+        // Tick, in the dark surface color so it reads on the cyan fill.
+        QPainterPath tick;
+        tick.moveTo(box.left() + box.width() * 0.26, box.top() + box.height() * 0.54);
+        tick.lineTo(box.left() + box.width() * 0.43, box.top() + box.height() * 0.72);
+        tick.lineTo(box.left() + box.width() * 0.76, box.top() + box.height() * 0.30);
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(c.background, 1.8, Qt::SolidLine, Qt::RoundCap,
+                      Qt::RoundJoin));
+        p.drawPath(tick);
+    } else {
+        QColor edge = underMouse() ? c.accent : c.text_muted;
+        if (!underMouse()) edge.setAlpha(170);
+        p.setPen(QPen(edge, 1.4));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(box.adjusted(0.7, 0.7, -0.7, -0.7), 5, 5);
+    }
+}
+
+// ElidedLabel ---------------------------------------------------------------
+ElidedLabel::ElidedLabel(QWidget* parent) : QLabel(parent) {
+    // Ignored: the layout decides the width, the text adapts to it.
+    setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+}
+
+QSize ElidedLabel::minimumSizeHint() const {
+    return {0, QLabel::minimumSizeHint().height()};
+}
+
+void ElidedLabel::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    // The sheet's `color` lands in the palette when the label is polished.
+    p.setPen(palette().color(foregroundRole()));
+    p.setFont(font());
+    const QRect area = contentsRect();
+    p.drawText(area, int(alignment()),
+               fontMetrics().elidedText(text(), Qt::ElideRight, area.width()));
+}
 
 // FilterRadio ---------------------------------------------------------------
 FilterRadio::FilterRadio(QWidget* parent) : QWidget(parent) {
@@ -106,11 +162,10 @@ HistoryRow::HistoryRow(QString url, QWidget* parent)
     setAttribute(Qt::WA_StyledBackground, true);
     setCursor(Qt::PointingHandCursor);
     auto* row = new QHBoxLayout(this);
-    row->setContentsMargins(12, 6, 12, 6);
-    row->setSpacing(10);
+    row->setContentsMargins(12, 7, 12, 7);
+    row->setSpacing(12);
 
-    check_ = new QCheckBox(this);
-    check_->setObjectName(QStringLiteral("PageCheck"));
+    check_ = new RoundCheck(this);
     row->addWidget(check_);
 
     favicon_ = new QLabel(this);
@@ -118,19 +173,21 @@ HistoryRow::HistoryRow(QString url, QWidget* parent)
     favicon_->setAlignment(Qt::AlignCenter);
     row->addWidget(favicon_);
 
-    title_ = new QLabel(this);
+    // Fixed stretch ratio + eliding labels: every row's domain and time sit
+    // in the same columns whatever the title length.
+    title_ = new ElidedLabel(this);
     title_->setObjectName(QStringLiteral("HistoryRowTitle"));
-    title_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    row->addWidget(title_, 3);
+    row->addWidget(title_, 5);
 
-    domain_ = new QLabel(this);
+    domain_ = new ElidedLabel(this);
     domain_->setObjectName(QStringLiteral("HistoryRowDomain"));
-    row->addWidget(domain_, 2);
+    row->addWidget(domain_, 3);
 
     time_ = new QLabel(this);
     time_->setObjectName(QStringLiteral("HistoryRowTime"));
     time_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    row->addWidget(time_, 1);
+    time_->setFixedWidth(76);
+    row->addWidget(time_);
 }
 
 void HistoryRow::set_visit(const history::Visit& v) {
