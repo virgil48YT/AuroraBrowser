@@ -1095,11 +1095,9 @@ void TabBar::refresh_tab(int idx) {
     } else {
         setTabText(idx, QString::fromStdString(tab.title.empty() ? "New Tab" : tab.title));
     }
-    QString tooltip = QString::fromStdString(tab.url.display());
-    if (tab.suspended) tooltip += QStringLiteral("\nSuspended — click to restore");
-    else if (tab.exclude_from_suspension)
-        tooltip += QStringLiteral("\nExcluded from suspension");
-    setTabToolTip(idx, tooltip);
+    // No native tool tip on tabs: the hover card (title, site, memory) is the
+    // one hover surface, and a URL tip popping up first would sit on top of it.
+    setTabToolTip(idx, QString());
 
     // Muted tabs show the muted-volume glyph as the tab icon so the user can
     // see mute applied (the audio itself is muted through CEF).

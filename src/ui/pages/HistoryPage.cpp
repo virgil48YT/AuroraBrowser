@@ -94,20 +94,14 @@ void HistoryPage::build_ui() {
     auto* search_wrap = new GlowFrame(this);
     search_wrap->setObjectName(QStringLiteral("HistorySearchWrap"));
     {
+        // Same electric-blue -> violet rim as the cards, a touch brighter
+        // since the field is the page's primary control.
         GlowFrame::Edge edge;
-        QColor cyan = c.accent;
-        cyan.setAlpha(165);
-        QColor purple = c.accent2;
-        purple.setAlpha(115);
-        QColor glow = c.accent2;
-        glow.setAlpha(70);
-        edge.color1 = cyan;
-        edge.color2 = purple;
-        edge.glow = glow;
+        edge.color1 = QColor(40, 190, 255, 230);   // cyan-blue
+        edge.color2 = QColor(150, 90, 255, 215);   // violet
+        edge.glow = QColor(70, 120, 255, 100);
         edge.glow_extent = 3;
-        QColor fill = c.card_bg;
-        fill.setAlpha(150);
-        search_wrap->set_style(edge, fill, 12);
+        search_wrap->set_style(edge, QColor(5, 9, 30, 200), 14);
         auto* l = new QHBoxLayout(search_wrap);
         l->setContentsMargins(14, 7, 14, 7);
         l->setSpacing(8);

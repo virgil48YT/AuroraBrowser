@@ -169,7 +169,7 @@ HistoryRow::HistoryRow(QString url, QWidget* parent)
     row->addWidget(check_);
 
     favicon_ = new QLabel(this);
-    favicon_->setFixedSize(20, 20);
+    favicon_->setFixedSize(24, 24);
     favicon_->setAlignment(Qt::AlignCenter);
     row->addWidget(favicon_);
 
@@ -208,14 +208,14 @@ void HistoryRow::set_visit(const history::Visit& v) {
                                           current_theme().colors.text_muted,
                                           current_dpr(this)));
     } else {
-        favicon_->setPixmap(icon.pixmap(20));
+        favicon_->setPixmap(icon.pixmap(22));
     }
 }
 
 void HistoryRow::refresh_icon(const QString& host) {
     if (FaviconCache::host_of(url_) != host) return;
     const QIcon icon = FaviconCache::instance().icon_for_url(url_);
-    if (!icon.isNull()) favicon_->setPixmap(icon.pixmap(20));
+    if (!icon.isNull()) favicon_->setPixmap(icon.pixmap(22));
 }
 
 qint64 HistoryRow::id() const {
@@ -234,7 +234,7 @@ HistoryGroupCard::HistoryGroupCard(const QString& title, QWidget* parent)
     apply_card_style(14, 3);
 
     auto* outer = new QVBoxLayout(this);
-    outer->setContentsMargins(14, 12, 14, 10);
+    outer->setContentsMargins(18, 14, 18, 12);
     outer->setSpacing(4);
 
     header_ = new QWidget(this);
@@ -267,8 +267,8 @@ HistoryGroupCard::HistoryGroupCard(const QString& title, QWidget* parent)
     rows_host_ = new QWidget(this);
     rows_host_->setObjectName(QStringLiteral("HistoryGroupRows"));
     rows_ = new QVBoxLayout(rows_host_);
-    rows_->setContentsMargins(0, 4, 0, 0);
-    rows_->setSpacing(2);
+    rows_->setContentsMargins(0, 6, 0, 0);
+    rows_->setSpacing(1);
     outer->addWidget(rows_host_);
 
     // The whole header strip toggles the group, like the mock's cards.

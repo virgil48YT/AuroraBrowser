@@ -116,6 +116,10 @@ public:
     // True when this window is a private (incognito) window.
     bool is_incognito() const { return incognito_; }
 
+    // Applies the window placement saved by the previous run (or maximizes on
+    // a first run). Call before show(). Persisting happens in closeEvent().
+    void restore_saved_window_state();
+
     // core::TabObserver: drives host-widget lifecycle from the tab model.
     void on_tab_changed(core::TabId id, core::TabChange change) override;
 
