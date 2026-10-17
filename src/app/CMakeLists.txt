@@ -46,7 +46,8 @@ qt_add_resources(aurora_browser aurora_brand
     BASE "${CMAKE_SOURCE_DIR}/assets/brand"
     FILES
         "${CMAKE_SOURCE_DIR}/assets/brand/aurora_logo_full.png"
-        "${CMAKE_SOURCE_DIR}/assets/brand/aurora_mark.png")
+        "${CMAKE_SOURCE_DIR}/assets/brand/aurora_mark.png"
+        "${CMAKE_SOURCE_DIR}/assets/brand/aurora_bg.jpg")
 
 target_include_directories(aurora_browser PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(aurora_browser PRIVATE
