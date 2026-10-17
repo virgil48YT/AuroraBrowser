@@ -22,12 +22,15 @@
 // MainWindow and stay testable in isolation.
 #pragma once
 
+#include <QPixmap>
 #include <QString>
 #include <QWidget>
 
 class QFrame;
 class QHBoxLayout;
 class QLabel;
+class QPaintEvent;
+class QResizeEvent;
 class QShowEvent;
 class QVBoxLayout;
 
@@ -58,6 +61,11 @@ protected:
     void set_subtitle(const QString& text);
     // Row of controls at the top of the page (search field, action buttons).
     QHBoxLayout* toolbar_row();
+    // Header bits for pages that want to restyle/re-arrange the top block
+    // (the history page adds a leading icon next to its title, so it needs
+    // both the label and the column it lives in).
+    QLabel* page_title_label() const { return title_label_; }
+    QVBoxLayout* root_layout() const { return root_; }
     // Add the main content widget; it expands to fill the page.
     void set_body(QWidget* body);
     // Show/hide the inline empty state with a given message.
@@ -65,8 +73,14 @@ protected:
 
     void showEvent(QShowEvent* event) override;
 
+    // Paint + resize hooks for the shared aurora wallpaper (see .cpp).
+    void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+
 private:
     QVBoxLayout* root_ = nullptr;
+    QPixmap bg_;            // scaled wallpaper cache; rebuilt on resize
+    QPixmap bg_source_;     // ".../brand/aurora_bg.jpg" loaded once
     QLabel* title_label_ = nullptr;
     QWidget* toolbar_host_ = nullptr;
     QHBoxLayout* toolbar_ = nullptr;

@@ -274,6 +274,20 @@ QString svg_markup(Name n) {
             return doc("<path d=\"M4 14a8 8 0 1 1 16 0\"/>"
                        "<path d=\"M12 14l3.5-4\"/>"
                        "<circle cx=\"12\" cy=\"14\" r=\"1\" fill=\"__C__\" stroke=\"none\"/>");
+        // --- History page (aurora://history) ---
+        case Name::Funnel:
+            // Filter glyph: a tray that necks into a stem, like the reference
+            // (and every filter affordance since spreadsheets invented it).
+            return doc("<path d=\"M3 5h18l-6.9 7.2v6.3L9.9 21v-8.8z\"/>");
+        case Name::Link:
+            // Two joined chain links on a gentle diagonal.
+            return doc("<path d=\"M10 14a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.6 1.6\"/>"
+                       "<path d=\"M14 10a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.6-1.6\"/>");
+        case Name::CloudOff:
+            // A cloud with a slash: sync is genuinely absent, so the honest
+            // placeholder icon says "no cloud", not a fake sign-in flow.
+            return doc("<path d=\"M7 17h9.5a4 4 0 0 0 1.2-7.82 5 5 0 0 0-9.1-1.7A4.5 4.5 0 0 0 7 17z\"/>"
+                       "<path d=\"M4 4l16 16\"/>");
         default:
             return doc("<rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"3\"/>");
     }
