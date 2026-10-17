@@ -19,7 +19,11 @@ constexpr int kGapBelowTab = 4;
 
 TabHoverCard::TabHoverCard(QWidget* parent)
     : QFrame(parent, Qt::ToolTip | Qt::FramelessWindowHint |
+                         Qt::NoDropShadowWindowHint |
                          Qt::WindowDoesNotAcceptFocus) {
+    // Translucent window so the rounded corners show the page behind them
+    // instead of a square backing.
+    setAttribute(Qt::WA_TranslucentBackground, true);
     setObjectName(QStringLiteral("TabHoverCard"));
     setAttribute(Qt::WA_ShowWithoutActivating, true);
     setAttribute(Qt::WA_TransparentForMouseEvents, true);

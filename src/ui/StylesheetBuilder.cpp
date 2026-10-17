@@ -239,27 +239,10 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: transparent;"
                  "  border: none;"
                  "}");
-    // Pill tabs: tab pixels are normally painted by TabStripStyle (C++), so
-    // these rules are the QSS hooks QTabBar consults plus the look for any
-    // style fallback — dark pills with no hard edges, never squared tabs.
-    s += QString("QTabBar::tab {"
-                 "  background: transparent;"
-                 "  color: %1;"
-                 "  border: none;"
-                 "  border-radius: %2px;"
-                 "  padding: 2px %3px;"
-                 "  margin: 1px;"
-                 "}")
-            .arg(hex(c.text_muted))
-            .arg(Radius::pill)
-            .arg(Spacing::md);
-    s += QString("QTabBar::tab:selected {"
-                 "  background: %1; color: %2; border-radius: %3px;"
-                 "}")
-            .arg(hex(c.surface), hex(c.text))
-            .arg(Radius::pill);
-    s += QString("QTabBar::tab:hover:!selected { background: %1; }")
-            .arg(hex(c.tab_hover_bg));
+    // No QTabBar::tab rules on purpose. Any rule with a box (padding, margin,
+    // radius) makes the style sheet paint the tab itself and bypass
+    // TabStripStyle, which is what produced flat, square tabs. TabStripStyle
+    // draws the rounded pill tabs.
     s += QString("QTabWidget::pane { border: none; background: %1; }")
             .arg(hex(c.background));
     s += QString("QTabWidget::tab-bar { alignment: left; }");
@@ -321,27 +304,31 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QToolButton#NewTabButton:focus, QToolButton#TabSearchButton:focus {"
                  "  background: %1; }").arg(accent_wash);
 
-    // Custom window controls (frameless): small round ghost buttons floating
-    // over the glass in the top-right corner; the close button turns danger on
-    // hover. Qt clips the hover fill to the radius, so `pill` renders as a
-    // true circle on the square hit target.
+    // Custom window controls (frameless): large rounded buttons that fill the
+    // full strip height at the top-right corner. The close button's hover fill
+    // runs flush into the corner so the extreme top-right pixel is Close.
     s += QString("QToolButton#WindowButton, QToolButton#WindowCloseButton {"
                  "  background: transparent;"
                  "  border: none;"
                  "  border-radius: %1px;"
                  "  color: %2;"
-                 "  margin: %3px;"
+                 "  margin: 4px 2px;"
                  "  padding: 0px;"
                  "}")
-            .arg(Radius::pill)
-            .arg(hex(c.text_muted))
-            .arg(Spacing::xs);
+            .arg(Radius::xl)
+            .arg(hex(c.text_muted));
+    s += QString("QToolButton#WindowCloseButton {"
+                 "  margin: 0px;"
+                 "  border-radius: 0px;"
+                 "  border-top-right-radius: %1px;"
+                 "  border-bottom-left-radius: %1px;"
+                 "}").arg(Radius::xl);
     s += QString("QToolButton#WindowButton:hover { background: %1; color: %2; }")
             .arg(rgba(c.text, 22), hex(c.text));
     s += QString("QToolButton#WindowButton:pressed { background: %1; }")
             .arg(rgba(c.text, 40));
-    s += QString("QToolButton#WindowCloseButton:hover { background: %1; }")
-            .arg(rgba(c.danger, 210));
+    s += QString("QToolButton#WindowCloseButton:hover { background: %1; color: %2; }")
+            .arg(rgba(c.danger, 230), hex(c.text));
     s += QString("QToolButton#WindowCloseButton:pressed { background: %1; }")
             .arg(hex(c.danger));
 

@@ -46,6 +46,7 @@
 #include "storage/Migration.hpp"
 #include "session/SessionService.hpp"
 #include "settings/Settings.hpp"
+#include "ui/RoundedToolTip.hpp"
 #include "ui/FaviconCache.hpp"
 #include "ui/MainWindow.hpp"
 #include "ui/ServiceBundle.hpp"
@@ -344,6 +345,7 @@ int main(int argc, char** argv) {
 #endif
 
     QApplication app(argc, argv);
+    aurora::ui::install_rounded_tooltips(&app);
     // Closing one browser window must never quit the process while another
     // MainWindow is still open. MainWindow::closeEvent quits explicitly when
     // the last visible MainWindow goes away, so Alt+F4 / the window X on the

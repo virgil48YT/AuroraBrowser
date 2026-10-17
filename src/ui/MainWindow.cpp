@@ -1299,8 +1299,8 @@ void MainWindow::setup_window_controls(QHBoxLayout* tab_row) {
         auto* b = new IconButton(n, this);
         b->setObjectName("WindowButton");
         b->setToolTip(tip);
-        b->setFixedSize(46, 32);
-        b->setIconPx(14);  // window chrome reads best slightly lighter
+        b->setFixedSize(58, 40);   // full strip height: reaches the top edge
+        b->setIconPx(18);
         return b;
     };
     win_min_ = make(icons::Name::Minimize, "Minimize");
@@ -1792,7 +1792,11 @@ bool MainWindow::nativeEvent(const QByteArray& eventType, void* message,
 
                 const bool left = local.x() >= r.left() &&
                                   local.x() < r.left() + kResizeMargin;
-                const bool right = local.x() <= r.right() &&
+                // The strip's right edge belongs to the window controls: the
+                // very top-right pixel must hit Close, not a resize border.
+                const bool in_strip =
+                    caption_ && local.y() < caption_->height();
+                const bool right = !in_strip && local.x() <= r.right() &&
                                    local.x() > r.right() - kResizeMargin;
                 const bool bottom = local.y() <= r.bottom() &&
                                     local.y() > r.bottom() - kResizeMargin;

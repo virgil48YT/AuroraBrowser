@@ -3156,7 +3156,17 @@ void CefAdapter::destroy(TabId tab) {
         // ever arrive to clear it.
         if (browser) closing_tabs_.insert(tab);
     }
-    if (browser.get()) browser->GetHost()->CloseBrowser(true);
+    if (browser.get()) {
+        // CloseBrowser is asynchronous: the renderer takes a few seconds to
+        // tear the page down, and a playing video keeps being heard for that
+        // whole time. Silence it at the audio mixer first (instant, browser
+        // process side), stop any load, and stop rendering, then close.
+        const CefRefPtr<CefBrowserHost> host = browser->GetHost();
+        host->SetAudioMuted(true);
+        browser->StopLoad();
+        host->WasHidden(true);
+        host->CloseBrowser(true);
+    }
 }
 
 void CefAdapter::set_visible(TabId tab, bool visible) {
