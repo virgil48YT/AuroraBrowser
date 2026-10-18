@@ -1328,12 +1328,16 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "QWidget#SettingsContainer {"
                  "  background: transparent; border: none; }");
     s += QString("QWidget#SettingsSidebar { min-width: 190px; max-width: 220px; }");
+    // Settings typography: one consistent scale (rows and radios 14px, hints
+    // 12px, section headers 15px semibold), regular weight at rest (500 has
+    // no real face in Segoe UI and was synthesized), and no fractional
+    // letter-spacing, which Qt rounds per glyph into uneven gaps.
     s += QString("QToolButton#SettingsNavButton {"
                  "  background: transparent; border: %1px solid transparent; color: %2;"
-                 "  font-size: %3px; font-weight: 500; text-align: left;"
-                 "  padding: %4px %5px; border-radius: %6px; }")
+                 "  font-size: %3px; font-weight: 400; text-align: left;"
+                 "  padding: %4px %5px; border-radius: %6px; min-height: 22px; }")
             .arg(Metrics::hairline).arg(c.text_muted.name())
-            .arg(t.body_font_px)
+            .arg(t.body_font_px + 1)
             .arg(Spacing::sm).arg(Spacing::md).arg(Radius::lg);
     s += QString("QToolButton#SettingsNavButton:hover { background: %1; color: %2; }")
             .arg(rgba(c.accent, 14)).arg(c.text.name());
@@ -1346,8 +1350,8 @@ QString StylesheetBuilder::build(const Theme& t) {
             .arg(Metrics::hairline).arg(hex(c.accent2));
     s += QString("QLabel#SettingsSectionHeader {"
                  "  color: %1; font-size: %2px; font-weight: 600;"
-                 "  letter-spacing: 0.2px; padding-left: %3px; background: transparent; }")
-            .arg(c.text.name()).arg(t.title_font_px).arg(Spacing::sm);
+                 "  padding-left: %3px; background: transparent; }")
+            .arg(c.text.name()).arg(t.title_font_px + 1).arg(Spacing::xxs);
     s += QString("QWidget#SettingsCard {"
                  "  background: %1; border: %2px solid %3;"
                  "  border-radius: %4px; }")
@@ -1358,7 +1362,8 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QLabel#SettingsRowTitle { color: %1; font-size: %2px; }")
             .arg(c.text.name()).arg(t.body_font_px + 1);
     s += QString("QLabel#SettingsRowSubtitle, QLabel#SettingsRowHint {"
-                 "  color: %1; font-size: %2px; background: transparent; }")
+                 "  color: %1; font-size: %2px; font-weight: 400;"
+                 "  background: transparent; }")
             .arg(c.text_muted.name()).arg(t.small_font_px + 1);
     s += QString("QFrame#SettingsRowDivider {"
                  "  background: %1; border: none;"
@@ -1370,7 +1375,7 @@ QString StylesheetBuilder::build(const Theme& t) {
     // experience.").
     s += QString("QLabel#SettingsPageTitle {"
                  "  color: %1; font-size: %2px; font-weight: 600;"
-                 "  letter-spacing: -0.2px; background: transparent; }")
+                 "  background: transparent; }")
             .arg(c.text.name()).arg(t.body_font_px + 9);
     s += QString("QLabel#SettingsPageSubtitle {"
                  "  color: %1; font-size: %2px; background: transparent; }")
@@ -1380,8 +1385,8 @@ QString StylesheetBuilder::build(const Theme& t) {
     // a slate ring at rest, the cyan→magenta gradient with a navy core dot
     // when selected.
     s += QString("QRadioButton#PageRadio { color: %1; spacing: %2px; "
-                 "  background: transparent; min-height: 32px; }")
-            .arg(c.text.name()).arg(Spacing::sm);
+                 "  font-size: %3px; background: transparent; min-height: 32px; }")
+            .arg(c.text.name()).arg(Spacing::sm).arg(t.body_font_px + 1);
     s += QString("QRadioButton#PageRadio::indicator {"
                  "  width: 16px; height: 16px; border-radius: 9px;"
                  "  border: 1px solid %1; background: transparent; }")

@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
@@ -12,6 +13,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
+#include <QFontInfo>
 #include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -144,6 +146,22 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
 
     // --- Body: fixed section rail on the left, scrolling cards on the right.
     auto* body = new QWidget(this);
+    body->setObjectName(QStringLiteral("SettingsBody"));
+    // Pin the face the platform actually resolved for the UI font (the same
+    // fix BrowserMenu uses): the app-wide CSS family list can land on a
+    // partial fallback face on some Windows setups, which is what made the
+    // settings text render oddly. Sizes/weights still come from the sheet.
+    {
+        QFont ui_font = QApplication::font();
+        ui_font.setStyleHint(QFont::SansSerif, QFont::PreferDefault);
+        const QString family = QFontInfo(ui_font).family();
+        if (!family.isEmpty()) {
+            body->setStyleSheet(
+                QStringLiteral("QWidget#SettingsBody, QWidget#SettingsBody * {"
+                               " font-family: \"%1\"; }")
+                    .arg(family));
+        }
+    }
     auto* body_row = new QHBoxLayout(body);
     body_row->setContentsMargins(0, 0, 0, 0);
     body_row->setSpacing(Spacing::xl);
@@ -576,7 +594,13 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         Section& section = sections_[i];
         auto* button = new QToolButton(sidebar_);
         button->setObjectName(QStringLiteral("SettingsNavButton"));
-        button->setText(section.title);
+        // QToolButton treats '&' as a mnemonic marker, which turned
+        // "Tabs & Performance" into "Tabs _Performance" (underlined P).
+        // Escape it, and give the glyph a little air: QToolButton has no
+        // icon/text spacing property, so the text carries a leading gap.
+        QString nav_text = section.title;
+        nav_text.replace(QLatin1Char('&'), QStringLiteral("&&"));
+        button->setText(QStringLiteral("  ") + nav_text);
         button->setCheckable(true);
         button->setAutoExclusive(true);
         button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
