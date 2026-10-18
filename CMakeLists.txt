@@ -119,6 +119,7 @@ target_sources(aurora_core
         src/settings/Settings.cpp
         src/searchengines/SearchEngine.cpp
         src/searchengines/SearchEngineService.cpp
+        src/omnibox/OmniboxSuggest.cpp
         src/privacy/CertificateAudit.cpp
         src/privacy/CookieSite.cpp
         src/adblock/AdblockEngine.cpp

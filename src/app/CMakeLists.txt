@@ -5,6 +5,8 @@
 qt_add_executable(aurora_browser
     ../ui/MainWindow.cpp
     ../ui/Omnibox.cpp
+    ../ui/OmniboxPopup.cpp
+    ../ui/OmniboxSuggestController.cpp
     ../ui/TabBar.cpp
     ../ui/TabContextMenu.cpp
     ../ui/BrowserMenu.cpp

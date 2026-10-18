@@ -29,6 +29,10 @@ struct PrefDefaults {
     static constexpr std::string_view kStartupMode = "continue";
     static constexpr bool kDownloadsAskWhere = false;
     static constexpr bool kHttpsOnly = true;
+    // Address-bar dropdown: ask the default search engine for query
+    // completions while typing. History, bookmark and open-tab matches are
+    // local and always shown; this only controls the network lookups.
+    static constexpr bool kSearchSuggestions = true;
     static constexpr bool kClearOnExitCookies = false;
     static constexpr bool kClearOnExitHistory = false;
     static constexpr bool kClearOnExitDownloads = false;
@@ -59,6 +63,7 @@ struct PrefKeys {
     // absent.
     static constexpr std::string_view kRestoreSession = "startup.restore_session";
     static constexpr std::string_view kSearchEngine = "search.engine";
+    static constexpr std::string_view kSearchSuggestions = "search.suggestions";
     static constexpr std::string_view kTheme = "appearance.theme";
     static constexpr std::string_view kAccentColor = "appearance.accent";
     static constexpr std::string_view kShowBookmarkBar = "appearance.bookmark_bar";

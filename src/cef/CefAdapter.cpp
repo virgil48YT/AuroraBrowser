@@ -1,4 +1,5 @@
 #include "cef/CefAdapter.hpp"
+#include "cef/ContextMenuText.hpp"
 
 #include "adblock/AdblockEngine.hpp"
 #include "adblock/AdblockService.hpp"
@@ -1330,16 +1331,38 @@ bool copy_image_to_clipboard(CefWindowHandle owner, CefRefPtr<CefImage> image) {
 
 class CopyImageCallback : public CefDownloadImageCallback {
 public:
-    explicit CopyImageCallback(CefWindowHandle owner) : owner_(owner) {}
+    // `owner` is the native window used for the Win32 clipboard; `tab` and
+    // `to_host` carry the image to the host's clipboard everywhere else.
+    CopyImageCallback(CefWindowHandle owner, TabId tab,
+                      std::function<void(TabId, webview::WebViewController::ContextActionRequest)> to_host)
+        : owner_(owner), tab_(tab), to_host_(std::move(to_host)) {}
 
     void OnDownloadImageFinished(const CefString& image_url,
                                  int http_status_code,
                                  CefRefPtr<CefImage> image) override {
+        const bool ok = image.get() &&
+                        (http_status_code == 0 ||
+                         (http_status_code >= 200 && http_status_code < 400));
 #if defined(OS_WIN)
-        if ((http_status_code == 0 ||
-             (http_status_code >= 200 && http_status_code < 400)) &&
-            copy_image_to_clipboard(owner_, image)) {
-            return;
+        (void)tab_;
+        (void)to_host_;
+        if (ok && copy_image_to_clipboard(owner_, image)) return;
+#else
+        (void)owner_;
+        if (ok && to_host_) {
+            // CEF has no clipboard API, so hand the host a PNG and let it
+            // put the image on the system clipboard.
+            int w = 0, h = 0;
+            CefRefPtr<CefBinaryValue> png =
+                image->GetAsPNG(1.0f, true, w, h);
+            if (png.get() && png->GetSize() > 0) {
+                webview::WebViewController::ContextActionRequest req;
+                req.action = webview::WebViewController::ContextAction::CopyImage;
+                req.data.resize(png->GetSize());
+                png->GetData(req.data.data(), req.data.size(), 0);
+                to_host_(tab_, std::move(req));
+                return;
+            }
         }
 #endif
         AURORA_LOG(util::LogLevel::Warn, "cef")
@@ -1349,6 +1372,8 @@ public:
 
 private:
     CefWindowHandle owner_;
+    TabId tab_;
+    std::function<void(TabId, webview::WebViewController::ContextActionRequest)> to_host_;
     IMPLEMENT_REFCOUNTING(CopyImageCallback);
 };
 
@@ -1395,6 +1420,9 @@ public:
     // A page asked for a capability (mic/camera/notification). The request
     // carries an exactly-once, default-deny responder; the host answers it
     // from a prompt (or immediately from a remembered decision).
+    // Right-click actions the host performs (clipboard, search, inspect...).
+    using ContextActionEmitter =
+        std::function<void(TabId, webview::WebViewController::ContextActionRequest)>;
     using PermissionEmitter =
         std::function<void(webview::PermissionRequest)>;
     // Supplies a document-start script only for synthetic extension popups,
@@ -1436,6 +1464,7 @@ public:
               FullscreenEmitter fullscreen_emit,
               KeyEmitter key_emit, ExtensionEmitter extension_emit,
               PermissionEmitter permission_emit,
+              ContextActionEmitter context_action_emit,
               PopupShimProvider popup_shim_provider, bool private_window)
         : id_(id), emit_(std::move(emit)), close_emit_(std::move(close_emit)),
           new_tab_emit_(std::move(new_tab_emit)),
@@ -1448,6 +1477,7 @@ public:
           key_emit_(std::move(key_emit)),
           extension_emit_(std::move(extension_emit)),
           permission_emit_(std::move(permission_emit)),
+          context_action_emit_(std::move(context_action_emit)),
           popup_shim_provider_(std::move(popup_shim_provider)),
           private_window_(private_window) {}
 
@@ -2160,53 +2190,109 @@ public:
         emit_(id_, info);
     }
 
+    // The page's own default entries are replaced by a menu Aurora builds, so
+    // that every platform gets the same, complete set (Chromium's default is
+    // sparse and several of its entries are inert in an embedded browser).
     // CEF has a single MEDIA type flag; GetMediaType distinguishes images from
-    // video. Preserve Chromium's default entries and append Aurora's commands.
-    void OnBeforeContextMenu(CefRefPtr<CefBrowser> /*browser*/,
+    // video. Edit commands use CEF's built-in ids, which CEF executes itself;
+    // everything else is an Aurora command handled in OnContextMenuCommand.
+    void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
                              CefRefPtr<CefFrame> /*frame*/,
                              CefRefPtr<CefContextMenuParams> params,
                              CefRefPtr<CefMenuModel> model) override {
         if (!params || !model) return;
         const auto flags = params->GetTypeFlags();
+        const int edit = params->GetEditStateFlags();
         const bool is_media = (flags & CM_TYPEFLAG_MEDIA) != 0;
         const bool is_image =
             is_media && params->GetMediaType() == CM_MEDIATYPE_IMAGE;
         const bool is_video =
             is_media && params->GetMediaType() == CM_MEDIATYPE_VIDEO;
         const bool is_link = (flags & CM_TYPEFLAG_LINK) != 0;
-        if (!is_image && !is_video && !is_link) return;
+        const bool is_editable = (flags & CM_TYPEFLAG_EDITABLE) != 0;
+        const std::string selection =
+            tidy_selection(params->GetSelectionText().ToString());
+        const bool has_selection = !selection.empty();
 
-        if (model->GetCount() > 0) model->AddSeparator();
+        model->Clear();
+        // A separator only ever goes between two non-empty sections.
+        auto section = [&model] {
+            if (model->GetCount() > 0) model->AddSeparator();
+        };
+
+        if (is_editable) {
+            model->AddItem(MENU_ID_UNDO, CefString("Undo"));
+            model->SetEnabled(MENU_ID_UNDO, (edit & CM_EDITFLAG_CAN_UNDO) != 0);
+            model->AddItem(MENU_ID_REDO, CefString("Redo"));
+            model->SetEnabled(MENU_ID_REDO, (edit & CM_EDITFLAG_CAN_REDO) != 0);
+            section();
+            model->AddItem(MENU_ID_CUT, CefString("Cut"));
+            model->SetEnabled(MENU_ID_CUT, (edit & CM_EDITFLAG_CAN_CUT) != 0);
+            model->AddItem(MENU_ID_COPY, CefString("Copy"));
+            model->SetEnabled(MENU_ID_COPY, (edit & CM_EDITFLAG_CAN_COPY) != 0);
+            model->AddItem(MENU_ID_PASTE, CefString("Paste"));
+            model->SetEnabled(MENU_ID_PASTE, (edit & CM_EDITFLAG_CAN_PASTE) != 0);
+            model->AddItem(MENU_ID_DELETE, CefString("Delete"));
+            model->SetEnabled(MENU_ID_DELETE, (edit & CM_EDITFLAG_CAN_DELETE) != 0);
+            section();
+            model->AddItem(MENU_ID_SELECT_ALL, CefString("Select all"));
+            model->SetEnabled(MENU_ID_SELECT_ALL,
+                              (edit & CM_EDITFLAG_CAN_SELECT_ALL) != 0);
+        } else if (has_selection) {
+            model->AddItem(MENU_ID_COPY, CefString("Copy"));
+            model->SetEnabled(MENU_ID_COPY, (edit & CM_EDITFLAG_CAN_COPY) != 0);
+        }
+        if (has_selection) {
+            section();
+            model->AddItem(kSearchSelection,
+                           CefString("Search for \"" +
+                                     menu_snippet(selection, 32) + "\""));
+        }
+
+        if (is_link) {
+            section();
+            model->AddItem(kOpenLinkNewTab, CefString("Open link in new tab"));
+            model->AddItem(kCopyLinkAddress, CefString("Copy link address"));
+        }
         if (is_image) {
+            section();
             model->AddItem(kSaveImage, CefString(u"Save image as\u2026"));
             model->AddItem(kCopyImage, CefString("Copy image"));
-            model->AddItem(kCopyImageAddress,
-                           CefString("Copy image address"));
-            model->AddItem(kOpenImageNewTab,
-                           CefString("Open image in new tab"));
-#if !defined(OS_WIN)
-            model->SetEnabled(kCopyImage, false);
-            model->SetEnabled(kCopyImageAddress, false);
-#endif
+            model->AddItem(kCopyImageAddress, CefString("Copy image address"));
+            model->AddItem(kOpenImageNewTab, CefString("Open image in new tab"));
         }
         if (is_video) {
+            section();
             model->AddItem(kSaveVideo, CefString(u"Save video as\u2026"));
-            model->AddItem(kCopyVideoAddress,
-                           CefString("Copy video address"));
-            model->AddItem(kOpenVideoNewTab,
-                           CefString("Open video in new tab"));
-#if !defined(OS_WIN)
-            model->SetEnabled(kCopyVideoAddress, false);
-#endif
+            model->AddItem(kCopyVideoAddress, CefString("Copy video address"));
+            model->AddItem(kOpenVideoNewTab, CefString("Open video in new tab"));
         }
-        if (is_link) {
-            model->AddItem(kCopyLinkAddress, CefString("Copy link address"));
-            model->AddItem(kOpenLinkNewTab,
-                           CefString("Open link in new tab"));
-#if !defined(OS_WIN)
-            model->SetEnabled(kCopyLinkAddress, false);
-#endif
+
+        // Plain page: navigation and page-level commands, like every browser.
+        if (!is_editable && !is_link && !is_media && !has_selection) {
+            section();
+            model->AddItem(kPageBack, CefString("Back"));
+            model->SetEnabled(kPageBack, browser && browser->CanGoBack());
+            model->AddItem(kPageForward, CefString("Forward"));
+            model->SetEnabled(kPageForward, browser && browser->CanGoForward());
+            model->AddItem(kPageReload, CefString("Reload"));
+            section();
+            model->AddItem(kPageSavePdf, CefString(u"Save as PDF\u2026"));
+            model->AddItem(kPagePrint, CefString(u"Print\u2026"));
+            model->AddItem(kPageViewSource, CefString("View page source"));
         }
+
+        section();
+        model->AddItem(kInspect, CefString("Inspect"));
+    }
+
+    void emit_action(webview::WebViewController::ContextAction action,
+                     std::string text = {}) {
+        if (!context_action_emit_) return;
+        webview::WebViewController::ContextActionRequest req;
+        req.action = action;
+        req.text = std::move(text);
+        context_action_emit_(id_, std::move(req));
     }
 
     bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
@@ -2217,6 +2303,7 @@ public:
         if (!browser || !params) return false;
         auto host = browser->GetHost();
         if (!host) return false;
+        using Action = webview::WebViewController::ContextAction;
 
         switch (command_id) {
         case kSaveImage: {
@@ -2237,23 +2324,17 @@ public:
             if (!url.empty() && params->HasImageContents()) {
                 host->DownloadImage(
                     url, false, 0, false,
-                    CefRefPtr<CopyImageCallback>(
-                        new CopyImageCallback(host->GetWindowHandle())));
+                    CefRefPtr<CopyImageCallback>(new CopyImageCallback(
+                        host->GetWindowHandle(), id_, context_action_emit_)));
             }
             return true;
         }
         case kCopyImageAddress:
         case kCopyVideoAddress:
-#if defined(OS_WIN)
-            copy_text_to_clipboard(host->GetWindowHandle(),
-                                   params->GetSourceUrl());
-#endif
+            copy_text(params->GetSourceUrl(), host);
             return true;
         case kCopyLinkAddress:
-#if defined(OS_WIN)
-            copy_text_to_clipboard(host->GetWindowHandle(),
-                                   params->GetUnfilteredLinkUrl());
-#endif
+            copy_text(params->GetUnfilteredLinkUrl(), host);
             return true;
         case kOpenImageNewTab:
         case kOpenVideoNewTab: {
@@ -2266,9 +2347,43 @@ public:
             if (!url.empty() && new_tab_emit_) new_tab_emit_(url);
             return true;
         }
+        case kSearchSelection: {
+            const std::string text =
+                tidy_selection(params->GetSelectionText().ToString());
+            if (!text.empty()) emit_action(Action::SearchSelection, text);
+            return true;
+        }
+        case kPageBack:    emit_action(Action::Back); return true;
+        case kPageForward: emit_action(Action::Forward); return true;
+        case kPageReload:  emit_action(Action::Reload); return true;
+        case kPageSavePdf: emit_action(Action::SavePageAsPdf); return true;
+        case kPagePrint:   emit_action(Action::Print); return true;
+        case kInspect:     emit_action(Action::Inspect); return true;
+        case kPageViewSource: {
+            // Only real web documents have source worth showing; the host
+            // opens it as a "view-source:" tab.
+            const std::string page = params->GetPageUrl().ToString();
+            if (!page.empty() && new_tab_emit_) new_tab_emit_("view-source:" + page);
+            return true;
+        }
         default:
+            // CEF's own ids (Cut/Copy/Paste/Undo/Select all...) fall through to
+            // CEF, which executes them.
             return false;
         }
+    }
+
+    // Copies text to the system clipboard. Win32 uses the native clipboard
+    // directly; every other platform asks the host (Qt owns the clipboard).
+    void copy_text(const CefString& value,
+                   [[maybe_unused]] CefRefPtr<CefBrowserHost> host) {
+        if (value.empty()) return;
+#if defined(OS_WIN)
+        copy_text_to_clipboard(host->GetWindowHandle(), value);
+#else
+        emit_action(webview::WebViewController::ContextAction::CopyText,
+                    value.ToString());
+#endif
     }
 
     // Closing a *tab* must never close the host window. CEF's default DoClose
@@ -2881,6 +2996,14 @@ private:
         kOpenVideoNewTab,
         kCopyLinkAddress,
         kOpenLinkNewTab,
+        kSearchSelection,
+        kPageBack,
+        kPageForward,
+        kPageReload,
+        kPageSavePdf,
+        kPagePrint,
+        kPageViewSource,
+        kInspect,
     };
 
     bool take_force_save_dialog(const std::string& url) {
@@ -2927,6 +3050,7 @@ private:
     KeyEmitter key_emit_;
     ExtensionEmitter extension_emit_;
     PermissionEmitter permission_emit_;
+    ContextActionEmitter context_action_emit_;
     PopupShimProvider popup_shim_provider_;
     bool private_window_ = false;
     bool closed_ = false;
@@ -2950,6 +3074,7 @@ CefRefPtr<CefBrowser> create_browser(TabId tab, std::string_view url,
                                       const TabClient::KeyEmitter& on_key,
                                       const TabClient::ExtensionEmitter& on_extension,
                                       const TabClient::PermissionEmitter& on_permission,
+                                      const TabClient::ContextActionEmitter& on_context_action,
                                       const TabClient::PopupShimProvider& popup_shim,
                                       CefRefPtr<CefRequestContext> private_context) {
     CefWindowInfo info;
@@ -3017,6 +3142,7 @@ CefRefPtr<CefBrowser> create_browser(TabId tab, std::string_view url,
         on_key,
         on_extension,
         on_permission,
+        on_context_action,
         popup_shim, private_context != nullptr));
     return CefBrowserHost::CreateBrowserSync(
         info, client, CefString(core::upgrade_http_url(url, g_https_only.load())),
@@ -3320,6 +3446,9 @@ void CefAdapter::create(TabId tab, std::string_view initial_url,
         },
         [this](webview::PermissionRequest req) {
             on_permission_request(std::move(req));
+        },
+        [this](TabId id, webview::WebViewController::ContextActionRequest req) {
+            on_context_action(id, std::move(req));
         },
         [this](TabId popup, std::string_view bridge_request) {
             return extension_popup_script(popup, bridge_request);
@@ -5142,6 +5271,21 @@ void CefAdapter::on_permission_request(webview::PermissionRequest req) {
     // No host: drop the request. The responder it carries denies on
     // destruction, so the page is refused rather than left hanging.
     if (cb) cb(std::move(req));
+}
+
+void CefAdapter::set_context_action_callback(ContextActionCallback cb) {
+    std::lock_guard<std::mutex> lock(context_action_mutex_);
+    context_action_callback_ = std::move(cb);
+}
+
+void CefAdapter::on_context_action(TabId tab, webview::WebViewController::ContextActionRequest req) {
+    ContextActionCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(context_action_mutex_);
+        cb = context_action_callback_;
+    }
+    // Never call host code while holding the mutex.
+    if (cb) cb(tab, std::move(req));
 }
 
 bool CefAdapter::open_in_new_tab(std::string url) {

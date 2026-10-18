@@ -24,14 +24,19 @@
 #include <QPropertyAnimation>
 #include <QWidget>
 
+#include <vector>
+
 #include "core/Url.hpp"
+#include "omnibox/OmniboxSuggest.hpp"
 
 class QAbstractNativeEventFilter;
+class QKeyEvent;
 class QTimer;
 
 namespace aurora::ui {
 
 class IconButton;
+class OmniboxPopup;
 
 class Omnibox : public QWidget {
     Q_OBJECT
@@ -76,6 +81,21 @@ public:
     // child window). Synchronizes Qt's focus record and drops the glow.
     void on_native_focus_lost();
 
+    // --- Suggestion dropdown -------------------------------------------------
+    // The window answers query_changed() by calling set_suggestions() with
+    // rows for that exact query (it may do so a moment later, e.g. once the
+    // search engine replies). Rows for a query the user has since typed past
+    // are dropped here, so a slow reply can never repaint stale results.
+    void set_suggestions(const QString& query,
+                         std::vector<omnibox::Suggestion> rows,
+                         const QString& engine_name);
+    void hide_suggestions();
+    bool suggestions_visible() const;
+
+    // Forwarded from the inner edit's key handler. Returns true when the key
+    // was consumed (navigating or dismissing the dropdown).
+    bool handle_edit_key(QKeyEvent* e);
+
     qreal focusProgress() const { return focus_progress_; }
     void setFocusProgress(qreal v);
 
@@ -84,6 +104,13 @@ public:
 signals:
     void navigate_requested(const core::Url& url);
     void bookmark_requested();
+    // The user is typing: `text` is the current contents of the address bar.
+    void query_changed(const QString& text);
+    // A suggested search query was chosen: search for it verbatim, even when
+    // it happens to look like an address.
+    void search_requested(const QString& text);
+    // An "open tab" row was chosen.
+    void switch_tab_requested(quint64 tab_id);
 
 protected:
     void paintEvent(QPaintEvent* e) override;
@@ -91,11 +118,16 @@ protected:
 
 private:
     void apply_layout();
+    void activate_row(int index);
+    void set_edit_text_quietly(const QString& text);
     QColor interp(const QColor& a, const QColor& b, qreal t) const;
 
     QLineEdit* edit_ = nullptr;
     IconButton* star_btn_ = nullptr;
     QTimer* focus_watch_ = nullptr;
+    OmniboxPopup* popup_ = nullptr;
+    QString typed_text_;          // what the user typed, before arrowing over rows
+    bool programmatic_edit_ = false;
     QPointer<QPropertyAnimation> focus_anim_;
 #if defined(Q_OS_WIN)
     QAbstractNativeEventFilter* native_guard_ = nullptr;

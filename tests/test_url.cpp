@@ -68,3 +68,21 @@ TEST_CASE("a single word with no dot is a search query") {
     Url u("weather");
     CHECK(u.is_search_query());
 }
+
+TEST_CASE("view-source of a web page is a real navigation, not a search") {
+    Url u("view-source:https://example.com/a?b=1");
+    CHECK(u.is_valid());
+    CHECK_FALSE(u.is_search_query());
+    CHECK(u.scheme() == "view-source");
+    CHECK(u.host() == "example.com");
+    // The engine needs the exact typed form back, not "view-source://...".
+    CHECK(u.display() == "view-source:https://example.com/a?b=1");
+    CHECK(resolve_navigation(u) == "view-source:https://example.com/a?b=1");
+}
+
+TEST_CASE("view-source of anything but http(s) keeps being a search query") {
+    CHECK(Url("view-source:foo").is_search_query());
+    CHECK(Url("view-source:javascript:alert(1)").is_search_query());
+    CHECK(Url("view-source:aurora://settings").is_search_query());
+    CHECK(Url("view-source:view-source:https://example.com").is_search_query());
+}

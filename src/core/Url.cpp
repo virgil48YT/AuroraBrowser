@@ -97,6 +97,21 @@ Url::Url(std::string_view input) : raw_(trim(input)) {
                               ? scheme_end + 3
                               : scheme_end + 1);
 
+    // "view-source:<web url>" shows a page's markup. It is only meaningful in
+    // front of a real http(s) document, so anything else keeps falling
+    // through to "this is a search query" exactly as before.
+    if (scheme_ == "view-source" && scheme_end != std::string::npos) {
+        const Url inner(raw_.substr(scheme_end + 1));
+        if (inner.valid_ && !inner.search_query_ &&
+            (inner.scheme_ == "http" || inner.scheme_ == "https")) {
+            host_ = inner.host_;
+            path_ = inner.path_;
+            query_ = inner.query_;
+            valid_ = true;
+            return;
+        }
+    }
+
     if (scheme_ == "about" || scheme_ == "chrome" || scheme_ == "data" ||
         scheme_ == "aurora") {
         path_ = auth_start == std::string::npos ? raw_.substr(scheme_end + 1)
@@ -165,6 +180,9 @@ Url::Url(std::string_view input) : raw_(trim(input)) {
 
 std::string Url::display() const {
     if (search_query_) return raw_;
+    // Rebuilding "view-source:" from parts would give "view-source://host/..."
+    // which the engine does not understand; the typed form is already exact.
+    if (scheme_ == "view-source") return raw_;
     std::ostringstream os;
     if (!scheme_.empty()) os << scheme_ << "://";
     os << host_ << path_;

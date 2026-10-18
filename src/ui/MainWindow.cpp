@@ -5,6 +5,7 @@
 #include <QCloseEvent>
 #include <QShowEvent>
 #include <QClipboard>
+#include <QImage>
 #include <QCursor>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -200,6 +201,7 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "session/SessionRestore.hpp"
 #include "searchengines/SearchEngine.hpp"
 #include "searchengines/SearchEngineService.hpp"
+#include "ui/OmniboxSuggestController.hpp"
 #include "session/SessionService.hpp"
 #include "settings/Settings.hpp"
 #include "settings/SiteZoomStore.hpp"
@@ -396,6 +398,17 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
                 open_site_initiated_tab(std::move(url));
             });
             return true;
+        });
+    // Right-click menu actions only the host can perform (clipboard, search the
+    // selection, inspect, ...). Deferred a turn: several open dialogs or run
+    // nested event loops, which must not happen inside an engine callback.
+    webview_->set_context_action_callback(
+        [this](core::TabId tab,
+               webview::WebViewController::ContextActionRequest req) {
+            QTimer::singleShot(
+                0, this, [this, tab, req = std::move(req)]() mutable {
+                    handle_context_action(tab, std::move(req));
+                });
         });
     // Downloads: files go to the OS Downloads folder and every download's
     // lifecycle is recorded in DownloadService so the Downloads page can show
@@ -712,7 +725,9 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
                 // recorded because nothing called add_visit on navigation.
                 if (services_.history && !is_internal) {
                     const core::Url visited(u);
-                    if (visited.is_valid()) {
+                    // "view-source:" pages are a view of a page already in
+                    // history, not a visit of their own.
+                    if (visited.is_valid() && visited.scheme() != "view-source") {
                         services_.history->add_visit(
                             visited, info.title, std::string{}, false);
                     }
@@ -2255,6 +2270,28 @@ bool MainWindow::forward_engine_key(const webview::EngineKeyEvent& ev) {
 void MainWindow::setup_connections() {
     connect(omnibox_, &Omnibox::navigate_requested, this,
             [this](const core::Url& url) { navigate_active_tab(url); });
+
+    // Address-bar suggestions: history, bookmarks and open tabs plus the
+    // default engine's completions. Parented to the window; torn down with it.
+    {
+        OmniboxSuggestController::Sources sources;
+        sources.history = services_.history;
+        sources.bookmarks = services_.bookmarks;
+        sources.prefs = services_.prefs;
+        sources.tabs = &tabs_;
+        sources.engine = [this] { return resolved_search_engine(); };
+        omnibox_suggest_ = new OmniboxSuggestController(omnibox_, std::move(sources), this);
+    }
+    // A suggested query is searched verbatim, even if it looks like an address.
+    connect(omnibox_, &Omnibox::search_requested, this, [this](const QString& terms) {
+        const auto engine = resolved_search_engine();
+        navigate_active_tab(core::Url(
+            searchengines::expand_template(engine.url_template, terms.toStdString())));
+    });
+    connect(omnibox_, &Omnibox::switch_tab_requested, this, [this](quint64 id) {
+        const core::TabId tab(id);
+        if (tabs_.contains(tab)) tabs_.set_active(tab);
+    });
     // Trailing star in the omnibox toggles a bookmark for the current page.
     connect(omnibox_, &Omnibox::bookmark_requested, this,
             &MainWindow::on_bookmark_page);
@@ -3272,6 +3309,68 @@ void MainWindow::changeEvent(QEvent* e) {
         // Frameless window: the maximize button becomes a restore button.
         update_window_control_icons();
         sync_active_host_geometry();
+    }
+}
+
+void MainWindow::handle_context_action(
+    core::TabId tab, webview::WebViewController::ContextActionRequest req) {
+    using Action = webview::WebViewController::ContextAction;
+    if (privacy_exit_started_ || !tabs_.find(tab)) return;
+
+    switch (req.action) {
+        case Action::CopyText:
+            if (auto* cb = QGuiApplication::clipboard()) {
+                cb->setText(QString::fromStdString(req.text));
+                flash_status(QStringLiteral("Copied to clipboard"));
+            }
+            return;
+        case Action::CopyImage: {
+            QImage image;
+            if (!req.data.empty() &&
+                image.loadFromData(req.data.data(),
+                                   static_cast<uint>(req.data.size()), "PNG") &&
+                !image.isNull()) {
+                if (auto* cb = QGuiApplication::clipboard()) {
+                    cb->setImage(image);
+                    flash_status(QStringLiteral("Image copied to clipboard"));
+                    return;
+                }
+            }
+            flash_status(QStringLiteral("Could not copy the image"));
+            return;
+        }
+        case Action::SearchSelection: {
+            if (req.text.empty()) return;
+            // Opens in a new tab through the user's default engine, like
+            // Chrome's "Search Google for ...": the page the text came from
+            // stays where it is.
+            const auto engine = resolved_search_engine();
+            open_url_in_new_tab(core::Url(
+                searchengines::expand_template(engine.url_template, req.text)));
+            return;
+        }
+        default: break;
+    }
+
+    // The remaining actions operate on the active tab. The menu is modal, so
+    // the tab it was opened on is still active; if the user somehow switched
+    // away first, do nothing rather than act on the wrong page.
+    if (tabs_.active() != tab) return;
+    switch (req.action) {
+        case Action::Back: on_back(); break;
+        case Action::Forward: on_forward(); break;
+        case Action::Reload: on_reload(); break;
+        case Action::SavePageAsPdf: on_save_as_pdf(); break;
+        case Action::Print: on_print(); break;
+        case Action::Inspect:
+            // Toggles the dock, and a right-click on an already-inspected tab
+            // should open it, not close it.
+            if (!(devtools_dock_ && devtools_dock_->isVisible() &&
+                  devtools_tab_ == tab)) {
+                on_devtools();
+            }
+            break;
+        default: break;
     }
 }
 

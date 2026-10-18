@@ -28,6 +28,8 @@ add_executable(aurora_tests
     test_sha256.cpp
     test_build_id.cpp
     test_cef_layout.cpp
+    test_omnibox_suggest.cpp
+    test_context_menu_text.cpp
 )
 
 target_include_directories(aurora_tests PRIVATE

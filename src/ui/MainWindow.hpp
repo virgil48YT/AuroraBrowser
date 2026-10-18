@@ -49,6 +49,9 @@
 #include "ui/FindBar.hpp"
 #include "ui/IconButton.hpp"
 #include "ui/Omnibox.hpp"
+
+// Forward declaration; the controller is only used from MainWindow.cpp.
+namespace aurora::ui { class OmniboxSuggestController; }
 #include "core/IncognitoPolicy.hpp"
 #include "searchengines/SearchEngine.hpp"
 #include "ui/ServiceBundle.hpp"
@@ -320,6 +323,10 @@ private slots:
     // Delete a host widget whose web view has finished closing.
     void finish_closing_host(core::TabId tab);
     void on_devtools();
+    // Host-side half of the page right-click menu (clipboard, search the
+    // selection, back/forward/reload, print, save as PDF, inspect).
+    void handle_context_action(
+        core::TabId tab, webview::WebViewController::ContextActionRequest req);
     void close_devtools_dock();
     void on_bookmark_page();
     // Menu action / preference: show or hide the bookmarks bar under the
@@ -540,6 +547,7 @@ private:
     QWidget* tab_strip_ = nullptr;
     IconButton* new_tab_btn_ = nullptr;
     Omnibox* omnibox_ = nullptr;
+    OmniboxSuggestController* omnibox_suggest_ = nullptr;
     // The toolbar row is a plain widget (not a QToolBar) so the layout — not
     // QMainWindow's dock areas — decides that it sits *below* the tab strip.
     QWidget* toolbar_ = nullptr;

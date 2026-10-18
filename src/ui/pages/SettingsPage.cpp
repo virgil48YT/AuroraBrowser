@@ -257,6 +257,38 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         engine_row->add_search_text(qs(builtin.name));
     }
     add_divider(container, search_body);
+    // Query completions from the engine while typing. Persisted by the same
+    // generic loader/saver as the privacy toggles (auroraPrivacyKey).
+    {
+        auto* suggest = new ToggleSwitch(container);
+        suggest->setObjectName(QStringLiteral("PageCheck"));
+        suggest->setProperty(
+            "auroraPrivacyKey",
+            QString::fromStdString(
+                std::string(settings::PrefKeys::kSearchSuggestions)));
+        suggest->setProperty("auroraPrivacyDefault",
+                             settings::PrefDefaults::kSearchSuggestions);
+        suggest->setEnabled(prefs_ != nullptr);
+        suggest->setChecked(prefs_
+            ? prefs_->get_bool(settings::PrefKeys::kSearchSuggestions,
+                               settings::PrefDefaults::kSearchSuggestions)
+            : settings::PrefDefaults::kSearchSuggestions);
+        SettingsRow* suggest_row = add_row(
+            search_body, QStringLiteral("Show search suggestions"),
+            QStringLiteral("As you type, the address bar asks your search "
+                           "engine for completions, so it sees what you type. "
+                           "History, bookmark and open-tab matches stay on "
+                           "this computer either way"),
+            suggest);
+        suggest_row->add_search_text(
+            QStringLiteral("autocomplete suggestions address bar omnibox "
+                           "completions typing"));
+        connect(suggest, &QCheckBox::toggled, this, [this, suggest](bool on) {
+            if (loading_ || !prefs_ || !suggest->isEnabled()) return;
+            prefs_->set_bool(settings::PrefKeys::kSearchSuggestions, on);
+        });
+        add_divider(container, search_body);
+    }
     // Custom engines: an "Add" row whose subtitle states the template rule
     // (or why management is unavailable here), followed by one row per
     // engine, rebuilt by reload_search_engines().

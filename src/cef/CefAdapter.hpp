@@ -93,6 +93,7 @@ public:
                                    std::string_view title,
                                    std::string_view url) override;
     void set_permission_callback(PermissionCallback cb) override;
+    void set_context_action_callback(ContextActionCallback cb) override;
 
     void set_page_info_callback(PageInfoCallback cb) override;
     void set_tab_closed_callback(TabClosedCallback cb) override;
@@ -173,6 +174,10 @@ private:
     PermissionCallback permission_callback_;
     std::mutex permission_mutex_;
 
+    // Right-click menu actions the host performs (clipboard, search, inspect).
+    ContextActionCallback context_action_callback_;
+    std::mutex context_action_mutex_;
+
     // Docked DevTools state. One DevTools browser at a time. devtools_session_
     // invalidates stale OnAfterCreated/OnBeforeClose closures from a DevTools
     // browser we replaced, so its async close cannot clobber the new one.
@@ -234,6 +239,8 @@ private:
                                        std::string_view bridge_request = {});
     // Called from TabClient's permission handlers on the UI thread.
     void on_permission_request(webview::PermissionRequest req);
+    // Called from TabClient's context-menu handler on the UI thread.
+    void on_context_action(TabId tab, webview::WebViewController::ContextActionRequest req);
     // Called from TabClient::OnBeforeClose on the UI thread (during a pump).
     void on_browser_closed(TabId tab);
     // Called from TabClient::OnBeforePopup on the UI thread. Returns true only

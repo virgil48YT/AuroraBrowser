@@ -1,7 +1,6 @@
 #include "ui/Omnibox.hpp"
 
 #include <QApplication>
-#include <QCompleter>
 #include <QFocusEvent>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -9,7 +8,6 @@
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QStringListModel>
 #include <QTimer>
 
 #if defined(Q_OS_WIN)
@@ -25,6 +23,7 @@
 
 #include "ui/IconButton.hpp"
 #include "ui/Icons.hpp"
+#include "ui/OmniboxPopup.hpp"
 #include "ui/ThemeState.hpp"
 #include "core/InternalUrl.hpp"
 #include "core/Url.hpp"
@@ -72,6 +71,9 @@ protected:
         }
     }
     void keyPressEvent(QKeyEvent* e) override {
+        if (auto* w = qobject_cast<Omnibox*>(parentWidget())) {
+            if (w->handle_edit_key(e)) return;
+        }
         if (e->key() == Qt::Key_Escape) {
             clearFocus();
             return;
@@ -119,14 +121,12 @@ Omnibox::Omnibox(QWidget* parent) : QWidget(parent) {
     edit_->setObjectName("OmniboxEdit");
     edit_->setPlaceholderText("Search or enter address");
 
-    // Autocomplete populated off-thread by the window; the omnibox does no DB
-    // work on the UI thread.
-    auto* model = new QStringListModel(this);
-    auto* completer = new QCompleter(model, this);
-    completer->setCaseSensitivity(Qt::CaseInsensitive);
-    completer->setFilterMode(Qt::MatchContains);
-    completer->setCompletionMode(QCompleter::PopupCompletion);
-    edit_->setCompleter(completer);
+    // Suggestion dropdown. Created once, filled by set_suggestions(); the
+    // omnibox itself never touches history, bookmarks or the network.
+    popup_ = new OmniboxPopup(this);
+    popup_->hide();
+    connect(popup_, &OmniboxPopup::row_activated, this,
+            [this](int i) { activate_row(i); });
 
     // Trailing bookmark star (Chrome-style). Hidden until the window wires up
     // a bookmarks service and a current page.
@@ -181,6 +181,11 @@ Omnibox::Omnibox(QWidget* parent) : QWidget(parent) {
     });
 
     connect(edit_, &QLineEdit::returnPressed, this, [this] {
+        if (popup_ && popup_->isVisible() && popup_->selected() >= 0) {
+            activate_row(popup_->selected());
+            return;
+        }
+        hide_suggestions();
         const std::string typed = edit_->text().toStdString();
         // aurora://history|downloads|bookmarks|settings|extensions address the
         // browser's own native pages. They are navigable even though they are
@@ -196,8 +201,25 @@ Omnibox::Omnibox(QWidget* parent) : QWidget(parent) {
             edit_->clearFocus();
         }
     });
-    connect(edit_, &QLineEdit::textChanged, this, [this](const QString&) {
+    connect(edit_, &QLineEdit::textChanged, this, [this](const QString& t) {
         update();  // refresh leading indicator (search vs security)
+        // Cleared (including via the clear button, which does not emit
+        // textEdited): nothing left to suggest for.
+        if (!programmatic_edit_ && t.trimmed().isEmpty()) {
+            typed_text_.clear();
+            hide_suggestions();
+        }
+    });
+    // textEdited fires only for the user's own typing, never for setText(), so
+    // arrowing over rows (which rewrites the text) cannot re-trigger a lookup.
+    connect(edit_, &QLineEdit::textEdited, this, [this](const QString& t) {
+        typed_text_ = t;
+        if (popup_) popup_->set_selected(-1);
+        if (t.trimmed().isEmpty()) {
+            hide_suggestions();
+            return;
+        }
+        emit query_changed(t);
     });
 
     apply_layout();
@@ -255,6 +277,7 @@ void Omnibox::setFocusProgress(qreal v) {
 }
 
 void Omnibox::animate_focus(bool focused) {
+    if (!focused) hide_suggestions();
     // Never stack competing animations: stop the in-flight one first. It was
     // started with DeleteWhenStopped, so stop() also frees it and clears the
     // QPointer.
@@ -285,6 +308,14 @@ void Omnibox::on_native_focus_lost() {
 bool Omnibox::eventFilter(QObject* obj, QEvent* e) {
     Q_UNUSED(obj);
     const auto t = e->type();
+    // The dropdown is a separate top-level window, so it does not follow the
+    // main window around: close it when the window moves, resizes or loses
+    // activation instead of leaving it floating.
+    if (popup_ && popup_->isVisible() &&
+        (((t == QEvent::Move || t == QEvent::Resize) && obj == window()) ||
+         t == QEvent::WindowDeactivate)) {
+        hide_suggestions();
+    }
     if ((t == QEvent::MouseButtonPress || t == QEvent::FocusOut) &&
         focus_progress_ > 0.0) {
         // Defer one event-loop turn: the press we are seeing may be the one
@@ -299,7 +330,9 @@ void Omnibox::set_current_url(const QString& url, bool select_all) {
     // progress) must NEVER light the focus glow — this method intentionally
     // performs no focus work at all.
     last_url_ = url;
-    edit_->setText(url);
+    typed_text_.clear();
+    hide_suggestions();
+    set_edit_text_quietly(url);
     if (select_all) edit_->selectAll();
     // Derive the security indicator from the URL scheme.
     if (url.startsWith("https://", Qt::CaseInsensitive)) {
@@ -313,6 +346,106 @@ void Omnibox::set_current_url(const QString& url, bool select_all) {
         security_ = Security::None;
     }
     update();
+}
+
+void Omnibox::set_edit_text_quietly(const QString& text) {
+    programmatic_edit_ = true;
+    edit_->setText(text);
+    programmatic_edit_ = false;
+}
+
+void Omnibox::set_suggestions(const QString& query,
+                              std::vector<omnibox::Suggestion> rows,
+                              const QString& engine_name) {
+    if (!popup_) return;
+    // Only show results for what is in the box right now, and only while the
+    // user is still typing there.
+    if (!edit_->hasFocus() || query.trimmed() != typed_text_.trimmed() ||
+        typed_text_.trimmed().isEmpty()) {
+        return;
+    }
+    // A lone default row is just the typed text again; not worth a dropdown.
+    if (rows.size() < 2) {
+        hide_suggestions();
+        return;
+    }
+    popup_->set_rows(std::move(rows), engine_name);
+    popup_->present();
+}
+
+void Omnibox::hide_suggestions() {
+    if (popup_ && (popup_->isVisible() || popup_->has_rows())) popup_->clear_rows();
+}
+
+bool Omnibox::suggestions_visible() const {
+    return popup_ && popup_->isVisible();
+}
+
+bool Omnibox::handle_edit_key(QKeyEvent* e) {
+    if (!popup_) return false;
+    const int key = e->key();
+    const bool plain = !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier |
+                                           Qt::MetaModifier | Qt::ShiftModifier));
+    const bool open = popup_->isVisible();
+
+    if (key == Qt::Key_Escape && open) {
+        // First Escape closes the list and puts back what the user typed.
+        set_edit_text_quietly(typed_text_);
+        edit_->setCursorPosition(typed_text_.size());
+        hide_suggestions();
+        return true;
+    }
+    if ((key == Qt::Key_Down || key == Qt::Key_Up) && plain) {
+        if (!open) {
+            // Down on a closed list asks for suggestions again.
+            const QString t = edit_->text();
+            if (key == Qt::Key_Down && !t.trimmed().isEmpty() && edit_->hasFocus()) {
+                typed_text_ = t;
+                emit query_changed(t);
+                return true;
+            }
+            return false;
+        }
+        const int idx = popup_->move_selection(key == Qt::Key_Down ? 1 : -1);
+        const auto* row = popup_->row(idx);
+        // Preview the highlighted row in the bar; arrowing back past the first
+        // row restores the typed text.
+        if (!row || row->kind == omnibox::Kind::Search ||
+            (row->kind == omnibox::Kind::Navigate && idx == 0)) {
+            set_edit_text_quietly(typed_text_);
+        } else {
+            set_edit_text_quietly(QString::fromStdString(row->fill));
+        }
+        edit_->setCursorPosition(edit_->text().size());
+        return true;
+    }
+    return false;
+}
+
+void Omnibox::activate_row(int index) {
+    const omnibox::Suggestion* row = popup_ ? popup_->row(index) : nullptr;
+    if (!row) return;
+    // Copy: hiding the popup invalidates the row storage.
+    const omnibox::Suggestion s = *row;
+    hide_suggestions();
+    edit_->clearFocus();
+
+    switch (s.kind) {
+        case omnibox::Kind::OpenTab:
+            emit switch_tab_requested(static_cast<quint64>(s.tab_id));
+            return;
+        case omnibox::Kind::RemoteSearch:
+            emit search_requested(QString::fromStdString(s.fill));
+            return;
+        default: break;
+    }
+    const std::string target = s.fill;
+    if (core::parse_internal_url(target).has_value()) {
+        emit navigate_requested(core::Url(target));
+        return;
+    }
+    const auto url = core::parse_omnibox_input(target);
+    if (url.is_valid()) emit navigate_requested(url);
 }
 
 void Omnibox::setSecurity(Security s) {

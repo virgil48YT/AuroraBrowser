@@ -372,6 +372,32 @@ public:
     using PermissionCallback = std::function<void(PermissionRequest)>;
     virtual void set_permission_callback(PermissionCallback cb) { (void)cb; }
 
+    // Right-click menu actions only the host can perform: the engine has no
+    // portable clipboard, and "search for the selection" or "inspect" need the
+    // host's search engine and DevTools dock. Fired on the UI thread from the
+    // engine's context-menu command handler; the host should defer anything
+    // that opens a dialog or runs a nested event loop (post it to its own
+    // loop) rather than doing it inside the engine callback.
+    enum class ContextAction {
+        CopyText,        // `text` -> the system clipboard
+        CopyImage,       // `data` is PNG bytes -> the system clipboard
+        Back,            // the same as the toolbar button for the active tab
+        Forward,
+        Reload,
+        SavePageAsPdf,
+        Print,
+        SearchSelection, // `text` is the selected text (already trimmed)
+        Inspect,         // open DevTools for the tab
+    };
+    struct ContextActionRequest {
+        ContextAction action = ContextAction::CopyText;
+        std::string text;
+        std::vector<uint8_t> data;
+    };
+    using ContextActionCallback =
+        std::function<void(core::TabId, ContextActionRequest)>;
+    virtual void set_context_action_callback(ContextActionCallback cb) { (void)cb; }
+
     // Docked DevTools. open_devtools_docked parents the DevTools browser to the
     // given native window handle (a Qt widget's winId) so it renders inside the
     // app instead of a separate OS window. resize_devtools mirrors the host's
