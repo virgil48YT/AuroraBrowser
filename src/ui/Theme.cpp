@@ -2,7 +2,8 @@
 
 namespace aurora::ui {
 
-// Aurora palette — warm-neutral surfaces, one restrained teal accent.
+// Aurora palette — cool blue-grey neutrals with a cyan/violet/magenta accent
+// family: neon on navy in dark mode, the same hues darkened for light mode.
 //
 // Both themes are hand-tuned; dark mode is NOT an inversion of light mode.
 // Each has its own surface ladder, its own accent lightness, and its own
@@ -29,66 +30,72 @@ Theme light_theme() {
 
     ThemeColors c;
 
-    // Surfaces — warm off-whites. Four close shades, not one flat white:
-    // the warmth (a few points of yellow/red) is what keeps it from feeling
-    // like a clinical Qt utility dialog.
-    c.background       = QColor("#FAF9F6"); // content backdrop
-    c.surface          = QColor("#F5F3EE"); // chrome plate
-    c.surface_alt      = QColor("#EDEAE3"); // recessed fill (omnibox at rest)
+    // Light is the daylight counterpart of the dark theme, not a separate
+    // look: the same cyan -> violet -> magenta accent family, darkened until
+    // it reads on white, over cool blue-grey neutrals that echo the dark
+    // theme's navy. (An earlier warm-beige ladder fought the teal and violet
+    // accents; every accent looked pasted onto the wrong background.)
+    //
+    // Surfaces — four close cool shades, white reserved for things that float.
+    c.background       = QColor("#F2F5FA"); // content backdrop
+    c.surface          = QColor("#F8FAFD"); // chrome plate (toolbar + active tab)
+    c.surface_alt      = QColor("#E9EEF6"); // recessed fill (omnibox at rest)
     c.surface_raised   = QColor("#FFFFFF"); // menus, tooltips
-    c.surface_hover    = QColor("#E8E5DD");
-    c.surface_selected = QColor("#E1ECEC"); // faint teal tint for selection
+    c.surface_hover    = QColor("#E3E9F3");
+    c.surface_selected = QColor("#DCEAF7"); // faint blue tint for selection
 
     // Lines — two weights. `border` defines shape, `border_subtle` only hints.
-    c.border           = QColor("#D7D3CA");
-    c.border_subtle    = QColor("#E5E1D9");
-    c.divider          = QColor("#E5E1D9");
+    c.border           = QColor("#CBD5E3");
+    c.border_subtle    = QColor("#DDE4EF");
+    c.divider          = QColor("#DDE4EF");
 
-    // Text — near-black warm ink, never #000.
-    c.text             = QColor("#1F1D18");
-    c.text_muted       = QColor("#6E6B64");
-    c.text_faint       = QColor("#A9A59D");
+    // Text — deep slate ink, never #000. muted is 6:1 on the chrome plate;
+    // faint (placeholders, disabled) stays above 3:1 so it is still legible.
+    c.text             = QColor("#0F172A");
+    c.text_muted       = QColor("#51607A");
+    c.text_faint       = QColor("#7A889F");
 
-    // Accent — deep teal. 5.5:1 on the chrome plate, so it passes WCAG AA
-    // for body-size text and is safe for focus rings and active indicators.
-    c.accent           = QColor("#0A6E75");
-    c.accent_hover     = QColor("#08585E");
-    c.accent_soft      = QColor(10, 110, 117, 26);  // ~10% wash for hovers
+    // Accent — deep sky blue, the dark theme's electric cyan made readable on
+    // light. 5.7:1 on the chrome plate, so it passes WCAG AA for body text and
+    // is safe for focus rings and active indicators.
+    c.accent           = QColor("#0369A1");
+    c.accent_hover     = QColor("#075985");
+    c.accent_soft      = QColor(3, 105, 161, 26);  // ~10% wash for hovers
 
-    // The light theme keeps a single accent; the aurora-glass tokens exist
-    // so the dark theme can be restyled per-surface without new struct
-    // members breaking this hand-authored ladder.
-    c.accent2          = QColor("#7C3AED");         // deep violet (light bg)
-    c.accent2_soft     = QColor(124, 58, 237, 22);
-    c.accent3          = QColor("#A21CAF");         // deep fuchsia
+    // Secondary pair (toggle tracks, radio rings, glow edges), the dark
+    // theme's neon purple and magenta toned down for white backgrounds.
+    c.accent2          = QColor("#6D43E0");         // violet
+    c.accent2_soft     = QColor(109, 67, 224, 22);
+    c.accent3          = QColor("#B02BBF");         // magenta
     c.card_bg          = QColor("#FFFFFF");
     c.card_raised      = QColor("#FFFFFF");
-    c.toggle_track_off = QColor("#D7D3CA");
-    c.toggle_border_off= QColor("#C6C1B7");
+    c.toggle_track_off = QColor("#CBD5E3");
+    c.toggle_border_off= QColor("#B6C2D4");
     c.toggle_knob_on   = QColor("#FFFFFF");
     c.toggle_knob_off  = QColor("#FFFFFF");
 
-    // Semantic
+    // Semantic — each at least 4.5:1 on the chrome plate.
     c.danger           = QColor("#B3261E");
-    c.warning          = QColor("#96581A");
-    c.success          = QColor("#2F7A3D");
+    c.warning          = QColor("#92540F");
+    c.success          = QColor("#1A7233");
     c.error            = c.danger; // legacy alias
 
-    // Chrome roles
-    c.tab_strip_bg     = QColor("#E9E6DF");
+    // Chrome roles — the strip is the deepest step, the active tab matches the
+    // toolbar so they read as one surface.
+    c.tab_strip_bg     = QColor("#DFE5EF");
     c.toolbar_bg       = c.surface;
-    c.tab_inactive_bg  = QColor("#EDEAE3");
+    c.tab_inactive_bg  = QColor("#E6EBF3");
     c.tab_active_bg    = c.surface; // fuses with the toolbar below
-    c.tab_hover_bg     = QColor("#F1EEE8");
+    c.tab_hover_bg     = QColor("#EDF1F8");
 
-    // Omnibox — recessed at rest, lifts to white-ish on focus.
-    c.omnibox_bg           = QColor("#EDEAE3");
-    c.omnibox_border       = QColor("#CFCAC0");
+    // Omnibox — recessed at rest, lifts on focus.
+    c.omnibox_bg           = QColor("#E9EEF6");
+    c.omnibox_border       = QColor("#C3CEDF");
     c.omnibox_focus_border = c.accent;
 
-    // Elevation — a soft warm-grey shadow, low alpha. Depth is carried by
+    // Elevation — a soft slate shadow, low alpha. Depth is carried by
     // layering and hairlines; the shadow is only a whisper under menus.
-    c.shadow_color     = QColor(31, 29, 24, 38);
+    c.shadow_color     = QColor(15, 23, 42, 38);
 
     t.colors = c;
     t.body_font_px = 13;

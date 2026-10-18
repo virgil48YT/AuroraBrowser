@@ -1,4 +1,5 @@
 #include "ui/ShortcutDialog.hpp"
+#include "ui/ThemeState.hpp"
 
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -29,7 +30,8 @@ bool prompt_shortcut(QWidget* parent, const QString& heading,
     layout->addLayout(form);
 
     auto* error = new QLabel(&dialog);
-    error->setStyleSheet(QStringLiteral("color: #F87171;"));
+    // Theme danger colour: the old fixed light red was unreadable on white.
+    error->setStyleSheet(QStringLiteral("color: %1;").arg(current_theme().colors.danger.name()));
     error->hide();
     layout->addWidget(error);
 

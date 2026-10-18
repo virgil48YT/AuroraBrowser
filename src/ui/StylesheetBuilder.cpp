@@ -1211,13 +1211,17 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QLabel#HistoryGroupTitle {"
                  "  color: %1; font-size: %2px; font-weight: 600; }")
             .arg(c.text.name()).arg(t.body_font_px + 6);
-    // Count badge: bright blue number on a deep-blue capsule, as in the mock.
+    // Count badge: accent number on an accent-tinted capsule. Built from the
+    // theme accent (not fixed blues) so it stays readable on light and dark.
     s += QString("QLabel#HistoryGroupCount {"
-                 "  color: #4C9BFF; font-size: %1px; font-weight: 600;"
-                 "  background: rgba(30, 80, 220, 70);"
-                 "  border: 1px solid rgba(60, 120, 255, 90);"
+                 "  color: %2; font-size: %1px; font-weight: 600;"
+                 "  background: %3;"
+                 "  border: 1px solid %4;"
                  "  border-radius: 11px; padding: 1px 10px; }")
-            .arg(t.small_font_px + 2);
+            .arg(t.small_font_px + 2)
+            .arg(hex(c.accent))
+            .arg(rgba(c.accent, t.is_dark ? 40 : 26))
+            .arg(rgba(c.accent, t.is_dark ? 90 : 70));
     s += QString("QWidget#HistoryRow {"
                  "  background: transparent; border-radius: %1px; }")
             .arg(Radius::md);
