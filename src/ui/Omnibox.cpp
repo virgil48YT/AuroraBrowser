@@ -32,6 +32,9 @@ namespace aurora::ui {
 
 namespace {
 
+// Corner radius of the address field (a rounded rectangle, see paintEvent).
+constexpr qreal kOmniboxRadius = 10.0;
+
 // A transparent, borderless line edit that delegates focus to the omnibox
 // container so the focus glow animates around it.
 class NakedEdit : public QLineEdit {
@@ -39,7 +42,9 @@ public:
     explicit NakedEdit(QWidget* p) : QLineEdit(p) {
         setFrame(false);
         setAttribute(Qt::WA_MacShowFocusRect, false);
-        setClearButtonEnabled(true);
+        // No clear button: the mockup's bar carries only the trailing star,
+        // and select-all-on-focus already makes replacing the text one step.
+        setClearButtonEnabled(false);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     }
 
@@ -241,8 +246,8 @@ void Omnibox::apply_layout() {
     // The edit itself carries only a small text inset (see the stylesheet),
     // so the text sits close to the glyph like in a real browser.
     QHBoxLayout* l = new QHBoxLayout(this);
-    l->setContentsMargins(34, 0, 5, 0);
-    l->setSpacing(2);
+    l->setContentsMargins(36, 0, 8, 0);
+    l->setSpacing(4);
     l->addWidget(edit_);
     l->addWidget(star_btn_);
 }
@@ -503,12 +508,13 @@ void Omnibox::paintEvent(QPaintEvent*) {
     p.setRenderHint(QPainter::Antialiasing, true);
 
     const auto& c = current_theme().colors;
-    // Inset 3px on every side so the focus glow has room to paint inside the
-    // widget bounds (Qt clips painting to the widget rect).
-    const QRectF r = QRectF(rect()).adjusted(3.0, 3.0, -3.0, -3.0);
-    // True stadium pill: fully rounded ends. A capsule reads as the address
-    // bar of a real browser; a moderate radius reads as a form field.
-    const qreal rad = r.height() / 2.0;
+    // Inset 2px on every side so the soft outer glow has room to paint
+    // inside the widget bounds (Qt clips painting to the widget rect).
+    const QRectF r = QRectF(rect()).adjusted(2.0, 2.0, -2.0, -2.0);
+    // Rounded rectangle, not a stadium: the mockup's address bar is a wide
+    // field with softly rounded corners that spans the toolbar, with the
+    // leading glyph and the trailing star integrated inside it.
+    const qreal rad = qMin<qreal>(kOmniboxRadius, r.height() / 2.0);
 
     const bool hovered = underMouse() && focus_progress_ <= 0.0;
 
@@ -516,61 +522,51 @@ void Omnibox::paintEvent(QPaintEvent*) {
     // a calm lift while focused. Contrast comes from tone, not hard borders.
     QColor bg = c.omnibox_bg;
     if (focus_progress_ > 0.0) {
-        bg = interp(c.omnibox_bg, c.surface_raised, focus_progress_ * 0.55);
+        bg = interp(c.omnibox_bg, c.surface_raised, focus_progress_ * 0.45);
     } else if (hovered) {
-        bg = interp(c.omnibox_bg, c.surface_hover, 0.45);
+        bg = interp(c.omnibox_bg, c.surface_hover, 0.35);
     }
     if (property("incognito").toBool()) bg = incognito_tint(bg);
 
-    // Aurora neon: a soft outer aura ALWAYS hugs the pill (the mockup's
-    // glow), and focusing deepens it. The halo is the same gradient family
-    // as the edge, painted twice at growing spread so it fades like light.
-    const qreal aura = 0.05 + 0.07 * focus_progress_;
-    QColor halo = c.accent2;
-    halo.setAlphaF(static_cast<float>(aura));
-    QPainterPath outer;
-    outer.addRoundedRect(r.adjusted(-3.0, -3.0, 3.0, 3.0), rad + 3.0, rad + 3.0);
-    p.setPen(Qt::NoPen);
-    p.setBrush(halo);
-    p.drawPath(outer);
-    QColor halo2 = c.accent;
-    halo2.setAlphaF(static_cast<float>(aura * 0.8));
-    QPainterPath outer2;
-    outer2.addRoundedRect(r.adjusted(-1.5, -1.5, 1.5, 1.5), rad + 1.5, rad + 1.5);
-    p.setBrush(halo2);
-    p.drawPath(outer2);
+    // A faint outer glow that only really appears on focus, so the idle bar
+    // reads as a calm, integrated field rather than a neon tube.
+    const qreal aura = 0.03 + 0.09 * focus_progress_;
+    if (aura > 0.0) {
+        QColor halo = c.accent2;
+        halo.setAlphaF(static_cast<float>(aura));
+        QPainterPath outer;
+        outer.addRoundedRect(r.adjusted(-2.0, -2.0, 2.0, 2.0), rad + 2.0,
+                             rad + 2.0);
+        p.setPen(Qt::NoPen);
+        p.setBrush(halo);
+        p.drawPath(outer);
+    }
 
     QPainterPath path;
     path.addRoundedRect(r, rad, rad);
-    // Aurora neon: the capsule's edge is the cyan → purple gradient, not a
-    // flat slate. The focus animation still lifts it toward full accent; the
-    // gradient simply rides along underneath.
-    QLinearGradient edge_grad(r.topLeft(), r.bottomRight());
-    QColor edge_start = interp(c.accent, c.accent_hover, focus_progress_ * 0.2);
-    QColor edge_end = interp(c.accent2, c.accent3, focus_progress_ * 0.2);
+    // Edge: a left-to-right cyan → violet gradient like the mockup. Idle it
+    // is softened toward the fill; focus lifts it to the full accents.
+    QLinearGradient edge_grad(r.left(), 0.0, r.right(), 0.0);
+    const qreal edge_t = 0.55 + 0.45 * focus_progress_;
+    QColor edge_start = interp(c.border_subtle, c.accent, edge_t);
+    QColor edge_end = interp(c.border_subtle, c.accent2, edge_t);
     edge_grad.setColorAt(0.0, edge_start);
     edge_grad.setColorAt(1.0, edge_end);
-    QPen edge_pen(QBrush(edge_grad), 1.2);
+    QPen edge_pen(QBrush(edge_grad), 1.0 + 0.3 * focus_progress_);
     p.setPen(edge_pen);
     p.setBrush(bg);
     p.drawPath(path);
-
-    // Faint inner accent wash at full focus.
-    if (focus_progress_ > 0.05) {
-        QColor glow = c.accent;
-        glow.setAlphaF(static_cast<float>(0.05 * focus_progress_));
-        QPainterPath inner;
-        inner.addRoundedRect(r.adjusted(1, 1, -1, -1), rad - 1, rad - 1);
-        p.fillPath(inner, glow);
-    }
 
     // Leading indicator: search glyph while the field is empty, otherwise the
     // security state of the current page.
     const bool empty = edit_->text().isEmpty();
     const icons::Name ic = empty ? icons::Name::Search : security_icon(security_);
     const QColor ic_color = (security_ == Security::NotSecure) ? c.error : c.text_muted;
-    const qreal icon_y = (height() - 16) / 2.0;
-    icons::paint(&p, ic, QRectF(11, icon_y, 16, 16), ic_color);
+    icons::paint(&p, ic, leading_icon_rect(), ic_color);
+}
+
+QRectF Omnibox::leading_icon_rect() const {
+    return QRectF(13, (height() - 16) / 2.0, 16, 16);
 }
 
 } // namespace aurora::ui

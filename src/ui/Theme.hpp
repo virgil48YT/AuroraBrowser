@@ -139,7 +139,7 @@ struct Radius {
 // code agree on the same numbers.
 struct Metrics {
     static constexpr int nav_button = 32;      // back/forward/reload/home
-    static constexpr int omnibox_height = 36;  // premium address bar (pill)
+    static constexpr int omnibox_height = 38;  // address bar (rounded field)
     static constexpr int tab_height = 36;
     static constexpr int tab_min_width = 76;   // favicon + 1-3 chars + close
     static constexpr int tab_max_width = 240;

@@ -1204,16 +1204,17 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     connect(home_btn_, &IconButton::clicked, this, &MainWindow::on_home);
     bl->addWidget(home_btn_);
 
-    // Flexible gap before the omnibox.
-    bl->addStretch(1);
+    // The omnibox spans the toolbar between the navigation buttons and the
+    // trailing controls (as in the mockup) instead of floating between two
+    // flexible gaps.
+    bl->addSpacing(Spacing::sm);
 
     omnibox_ = new Omnibox(this);
     omnibox_->setProperty("incognito", incognito_);
     omnibox_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    bl->addWidget(omnibox_, 4);
+    bl->addWidget(omnibox_, 1);
 
-    // Gap after the omnibox pushes the trailing controls to the edge.
-    bl->addStretch(1);
+    bl->addSpacing(Spacing::sm);
 
     // The downloads button, extensions button and menu button are appended
     // in setup_menu_button() (they need the services + connections).

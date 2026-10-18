@@ -24,8 +24,8 @@ constexpr int kPadX = 12;
 constexpr int kIconSize = 16;
 constexpr int kIconGap = 12;
 constexpr int kVPad = 6;
-constexpr int kRadius = 12;
-constexpr int kSideInset = 6;   // distance the popup sits in from the pill edge
+constexpr int kRadius = 10;    // same corner radius as the address field
+constexpr int kSideInset = 2;   // matches the field's painted inset (Omnibox::paintEvent)
 
 using omnibox::Kind;
 
@@ -118,8 +118,9 @@ void OmniboxPopup::present() {
         return;
     }
     const QSize sz = sizeHint();
-    // The pill is painted 3px inside its widget; sit just under its edge.
-    QPoint below = anchor_->mapToGlobal(QPoint(kSideInset, anchor_->height() - 2));
+    // The field is painted 2px inside its widget; hang the list a hair
+    // below its bottom edge, flush with its left and right edges.
+    QPoint below = anchor_->mapToGlobal(QPoint(kSideInset, anchor_->height() + 2));
     if (const QScreen* screen = anchor_->screen()) {
         const QRect avail = screen->availableGeometry();
         if (below.x() + sz.width() > avail.right()) below.setX(avail.right() - sz.width());

@@ -1,7 +1,8 @@
 // Aurora — the omnibox / address bar.
 //
-// A premium first-class browser control: a true stadium pill painted by us,
-// recessed one step darker than the toolbar plate, with a frameless
+// A premium first-class browser control: a wide rounded field painted by us
+// (cyan -> violet gradient edge, as in the mockup), recessed one step darker
+// than the toolbar plate, with a frameless
 // transparent QLineEdit for the URL text, a painted leading security/search
 // indicator, and a trailing bookmark star. The focus glow animates via a
 // qreal property so focusing the bar feels like a gentle engagement, never a
@@ -22,6 +23,7 @@
 #include <QLineEdit>
 #include <QPointer>
 #include <QPropertyAnimation>
+#include <QRectF>
 #include <QWidget>
 
 #include <vector>
@@ -118,6 +120,7 @@ protected:
 
 private:
     void apply_layout();
+    QRectF leading_icon_rect() const;
     void activate_row(int index);
     void set_edit_text_quietly(const QString& text);
     QColor interp(const QColor& a, const QColor& b, qreal t) const;
