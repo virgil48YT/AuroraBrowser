@@ -19,8 +19,18 @@ namespace {
 // hostile site cannot make us hold a bitmap in memory per host.
 constexpr qint64 kMaxIconBytes = 512 * 1024;
 
-// Favicons are drawn at 16px in every surface that uses them.
+// The tab strip, dock and lists draw favicons at 16px; that is the size of
+// the QIcon handed out by icon_for_url().
 constexpr int kIconSize = 16;
+
+// Larger surfaces (homepage tiles and cards) ask for up to this size through
+// pixmap_for_url(); sources are kept (and persisted) up to this resolution.
+constexpr int kLargeIconSize = 64;
+
+QPixmap cap_size(const QPixmap& pm, int px) {
+    if (pm.width() <= px && pm.height() <= px) return pm;
+    return pm.scaled(px, px, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+}
 
 // A host whose icon could not be fetched is remembered as "no icon" so the
 // request is not repeated on every repaint — but only for this long. Sites go
@@ -108,7 +118,8 @@ bool FaviconCache::load_from_disk(const QString& host, bool* stale) {
     if (path.isEmpty()) return false;
     QPixmap pm;
     if (!pm.load(path)) return false;
-    icons_[host] = QIcon(pm);
+    large_[host] = cap_size(pm, kLargeIconSize);
+    icons_[host] = QIcon(cap_size(pm, kIconSize));
     const QFileInfo info(path);
     const auto age = info.lastModified().msecsTo(QDateTime::currentDateTime());
     if (stale && age > kDiskRefreshMs) *stale = true;
@@ -168,6 +179,25 @@ QIcon FaviconCache::icon_for_url(const QString& page_url) {
     return QIcon();
 }
 
+QPixmap FaviconCache::pixmap_for_url(const QString& page_url, int px,
+                                     qreal dpr) {
+    // Goes through icon_for_url() so the disk lookup / fetch / negative-cache
+    // rules are exactly the same as for the strip icon.
+    const QIcon icon = icon_for_url(page_url);
+    if (icon.isNull() || px <= 0) return QPixmap();
+    if (dpr <= 0.0) dpr = 1.0;
+    QPixmap source = large_.value(host_of(page_url));
+    if (source.isNull()) source = icon.pixmap(QSize(kIconSize, kIconSize));
+    if (source.isNull()) return QPixmap();
+    const int device_px = qMax(1, qRound(px * dpr));
+    // Always scale to the requested size: QIcon::pixmap() never upscales,
+    // which is why a 16px favicon used to sit tiny inside a 40px slot.
+    QPixmap out = source.scaled(device_px, device_px, Qt::KeepAspectRatio,
+                                Qt::SmoothTransformation);
+    out.setDevicePixelRatio(dpr);
+    return out;
+}
+
 void FaviconCache::fetch(const QString& host, const QString& icon_url) {
     const QUrl url(icon_url);
     if (!url.isValid() || url.host().isEmpty()) return;
@@ -206,21 +236,21 @@ void FaviconCache::fetch(const QString& host, const QString& icon_url) {
             pm.loadFromData(reply->readAll());
         }
         if (!pm.isNull()) {
-            if (pm.width() > kIconSize || pm.height() > kIconSize) {
-                pm = pm.scaled(kIconSize, kIconSize, Qt::KeepAspectRatio,
-                               Qt::SmoothTransformation);
-            }
-            icons_[host] = QIcon(pm);
+            const QPixmap large = cap_size(pm, kLargeIconSize);
+            large_[host] = large;
+            icons_[host] = QIcon(cap_size(large, kIconSize));
             const auto path = disk_path(host);
             if (!path.isEmpty()) {
                 // Best effort: a failed write only costs a refetch next run.
-                (void)pm.save(path, "PNG");
+                // The large copy is persisted so tiles stay crisp next run.
+                (void)large.save(path, "PNG");
             }
             failed_at_ms_.remove(host);
         } else {
             // Remember the failure as "no icon" so the fetch is not repeated on
             // every repaint — with a timestamp, so it IS retried later.
             icons_[host] = QIcon();
+            large_.remove(host);
             failed_at_ms_[host] = QDateTime::currentMSecsSinceEpoch();
         }
         emit icon_ready(host);

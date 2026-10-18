@@ -183,6 +183,10 @@ constexpr int kTilesPerRow = 6;
 constexpr int kTileSpacing = 20;   // gap between shortcut tiles
 constexpr int kTileIconPx = 40;    // favicon / badge inside a shortcut tile
 constexpr int kRowIconPx = 32;     // favicon / badge in a history card row
+// Real favicons fill most of their slot (the letter badge is a full disc, a
+// site logo carries its own padding), matching the mockup's proportions.
+constexpr int kTileFaviconPx = 36;
+constexpr int kRowIconFaviconPx = 28;
 constexpr int kMaxShortcuts = 18;
 constexpr int kRowsPerCard = 3;
 
@@ -837,12 +841,14 @@ void HomePage::render_entry(QVBoxLayout* rows, const HistoryEntry& entry) {
     auto* icon_label = new QLabel(row);
     icon_label->setFixedSize(kRowIconPx, kRowIconPx);
     icon_label->setAlignment(Qt::AlignCenter);
-    QIcon site = FaviconCache::instance().icon_for_url(entry.url);
+    // pixmap_for_url() scales the site icon up to the slot: QIcon::pixmap()
+    // never upscales, so a 16px favicon used to sit tiny inside the row.
+    const qreal dpr = devicePixelRatioF();
+    const QPixmap site = FaviconCache::instance().pixmap_for_url(
+        entry.url, kRowIconFaviconPx, dpr);
     if (!site.isNull()) {
-        icon_label->setPixmap(
-            site.pixmap(QSize(kRowIconPx, kRowIconPx), devicePixelRatioF()));
+        icon_label->setPixmap(site);
     } else {
-        const qreal dpr = screen() ? screen()->devicePixelRatio() : 1.0;
         const QString host = FaviconCache::host_of(entry.url);
         icon_label->setPixmap(letter_badge(
             host.isEmpty() ? entry.title : host, brand_color(host), kRowIconPx,
@@ -1018,9 +1024,10 @@ void HomePage::apply_icons() {
         }
         const QString label = tile->property("auroraTileLabel").toString();
         const QString url = tile->property("auroraTileUrl").toString();
-        const QIcon site = FaviconCache::instance().icon_for_url(url);
+        const QPixmap site = FaviconCache::instance().pixmap_for_url(
+            url, kTileFaviconPx, dpr);
         if (!site.isNull()) {
-            tile->setIcon(site);
+            tile->setIcon(QIcon(site));
         } else {
             tile->setIcon(QIcon(letter_badge(
                 label, brand_color(FaviconCache::host_of(url)), kTileIconPx,

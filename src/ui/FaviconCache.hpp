@@ -17,6 +17,7 @@
 #include <QHash>
 #include <QIcon>
 #include <QObject>
+#include <QPixmap>
 #include <QSet>
 #include <QString>
 
@@ -42,6 +43,13 @@ public:
     // The icon for a page URL's host. Returns a null QIcon when the icon is
     // not known yet and starts a fetch; icon_ready() fires when it arrives.
     QIcon icon_for_url(const QString& page_url);
+
+    // The same site icon rendered for a larger surface (homepage shortcut
+    // tiles and history cards): `px` logical pixels at `dpr`, smoothly scaled
+    // from the highest-resolution source we have instead of the 16px strip
+    // icon. Null when the icon is not known yet (a fetch is started, exactly
+    // like icon_for_url()).
+    QPixmap pixmap_for_url(const QString& page_url, int px, qreal dpr);
 
     // Host component of a URL ("" when it has none, e.g. aurora:// pages).
     static QString host_of(const QString& url);
@@ -69,6 +77,9 @@ private:
     // Host -> icon. A null QIcon value means "looked up, none available", so a
     // missing icon is never fetched twice.
     QHash<QString, QIcon> icons_;
+    // Host -> the icon at its original resolution (capped at kLargeIconSize),
+    // kept beside the 16px strip icon so big surfaces are not upscaled blur.
+    QHash<QString, QPixmap> large_;
     // Host -> icon URL reported by the engine.
     QHash<QString, QString> icon_urls_;
     // Icon URL each in-flight request was issued for, so a reply that lands
