@@ -1479,17 +1479,17 @@ QString StylesheetBuilder::build(const Theme& t) {
     // (painted by HomeBrandLabel in C++, which also draws the glowing ribbon
     // "A" logo above it), with the dot-phrase subtitle underneath.
     s += QString("QLabel#HomeSubtitle {"
-                 "  color: %1; font-size: %2px; letter-spacing: 3px;}"
+                 "  color: %1; font-size: %2px; letter-spacing: 2px;}"
                  "QLabel#HomeClock {"
                  "  color: %3; font-size: %4px; font-weight: 300;}"
                  "QLabel#HomeDate, QLabel#HomeWeatherSub {"
                  "  color: %3; font-size: %5px;}"
                  "QFrame#HomeCardDivider { background: %6; border: none; } ")
             .arg(c.text_muted.name())
-            .arg(16)
+            .arg(14)
             .arg(c.text.name())
-            .arg(68)
-            .arg(17)
+            .arg(56)
+            .arg(15)
             .arg(c.divider.name());
 
     s += QString("QLabel#HomeWeatherTemp {"
@@ -1500,11 +1500,11 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "QLabel#HomeRowTitle { color: %1; font-size: %4px;}"
                  "QLabel#HomeRowSub { color: %5; font-size: %6px;}")
             .arg(c.text.name())
-            .arg(28)
-            .arg(19)
-            .arg(17)
+            .arg(24)
+            .arg(16)
+            .arg(15)
             .arg(c.text_muted.name())
-            .arg(14);
+            .arg(13);
 
     // The big centered search pill: a glowing glass capsule with the
     // cyan→purple gradient border. The border lives on the HOST (the pill's
@@ -1521,15 +1521,15 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  selection-background-color: %4; selection-color: %1;}")
             .arg(c.text.name())
             .arg(Spacing::xs)
-            .arg(22)
+            .arg(18)
             .arg(rgba(c.accent, 60));
 
     // In-pill trailing sparkle: chromeless, glows to magenta on hover.
     s += QString("QToolButton#HomeSparkleButton {"
                  "  background: transparent; border: none;"
                  "  border-radius: %1px; padding: 0px; margin: 0px;"
-                 "  min-width: 44px; max-width: 44px;"
-                 "  min-height: 44px; max-height: 44px;}"
+                 "  min-width: 36px; max-width: 36px;"
+                 "  min-height: 36px; max-height: 36px;}"
                  "QToolButton#HomeSparkleButton:hover { background: %2;}"
                  "QToolButton#HomeSparkleButton:pressed { background: %3;}")
             .arg(Radius::pill)
@@ -1540,8 +1540,8 @@ QString StylesheetBuilder::build(const Theme& t) {
     // border to the cyan half of the gradient.
     s += QString("QToolButton#HomeShortcut {"
                  "  background: transparent; border: none;"
-                 "  border-radius: 14px; color: %1;"
-                 "  font-size: 15px; padding: 8px 0px 6px 0px;}"
+                 "  border-radius: 12px; color: %1;"
+                 "  font-size: 13px; padding: 6px 0px 4px 0px;}"
                  "QToolButton#HomeShortcut:hover {"
                  "  background: %2; color: %3;}"
                  "QToolButton#HomeShortcut:pressed { background: %4;}")
@@ -1567,13 +1567,13 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  border-radius: %3px; padding: %4px %5px;}"
                  "QToolButton#HomeActionRow:hover { background: %6; color: %1;}"
                  "QToolButton#HomeActionRow:pressed { background: %7;}"
-                 "QToolButton#HomeActionRow[accent=\"true\"] { color: %8; font-size: 15px;}"
+                 "QToolButton#HomeActionRow[accent=\"true\"] { color: %8; font-size: 13px;}"
                  "QToolButton#HomeActionRow[accent=\"true\"]:hover { color: %9;}")
             .arg(hex(c.text))
-            .arg(17)
+            .arg(15)
             .arg(Radius::md)
+            .arg(Spacing::xs)
             .arg(Spacing::sm)
-            .arg(Spacing::md)
             .arg(rgba(c.accent, 22))
             .arg(rgba(c.accent, 40))
             .arg(hex(c.accent))
