@@ -3,8 +3,11 @@
 // Owns everything the omnibox itself deliberately does not: reading history,
 // bookmarks and open tabs, asking the default search engine for completions,
 // and merging it all through omnibox::build_suggestions(). Local rows are
-// produced synchronously on every keystroke so the list appears instantly;
-// the engine's completions arrive a moment later and the list is rebuilt.
+// produced right after each burst of keystrokes so the list appears
+// instantly; the engine's completions arrive a moment later and the list is
+// updated in place. Until then, the previous completions that still match
+// the typed text are kept, so the dropdown never collapses and reopens
+// between keystrokes.
 #pragma once
 
 #include <QHash>
@@ -49,6 +52,7 @@ public:
 
 private:
     void on_query(const QString& text);
+    void run_query();
     void rebuild(const QString& query);
     void request_remote(const QString& query);
     void on_remote_finished(QNetworkReply* reply, const QString& query,
@@ -60,6 +64,13 @@ private:
     Sources src_;
     QNetworkAccessManager* net_ = nullptr;
     QTimer* debounce_ = nullptr;
+    // Coalesces a burst of keystrokes (key repeat, fast typing) into one
+    // rebuild of the list: zero-interval, so it runs as soon as the queued
+    // input has been processed.
+    QTimer* coalesce_ = nullptr;
+    // True while an engine request for current_query_ is debounced or in
+    // flight: the dropdown is kept as-is instead of collapsing meanwhile.
+    bool remote_pending_ = false;
     QPointer<QNetworkReply> inflight_;
     QString pending_query_;
     QString current_query_;

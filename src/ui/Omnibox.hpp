@@ -88,9 +88,13 @@ public:
     // rows for that exact query (it may do so a moment later, e.g. once the
     // search engine replies). Rows for a query the user has since typed past
     // are dropped here, so a slow reply can never repaint stale results.
+    // `more_pending` says a fuller answer for this query is on its way (the
+    // engine's completions): an open dropdown is then kept as it is rather
+    // than closed for a moment and reopened — the typing flicker.
     void set_suggestions(const QString& query,
                          std::vector<omnibox::Suggestion> rows,
-                         const QString& engine_name);
+                         const QString& engine_name,
+                         bool more_pending = false);
     void hide_suggestions();
     bool suggestions_visible() const;
 
@@ -131,6 +135,7 @@ private:
     OmniboxPopup* popup_ = nullptr;
     QString typed_text_;          // what the user typed, before arrowing over rows
     bool programmatic_edit_ = false;
+    bool painted_empty_ = true;   // emptiness the leading glyph was drawn for
     QPointer<QPropertyAnimation> focus_anim_;
 #if defined(Q_OS_WIN)
     QAbstractNativeEventFilter* native_guard_ = nullptr;

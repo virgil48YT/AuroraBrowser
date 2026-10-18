@@ -78,8 +78,9 @@ void OmniboxPopup::set_rows(std::vector<omnibox::Suggestion> rows,
         hide();
         return;
     }
-    if (isVisible()) present();
-    update();
+    // No present() here: the owner calls it once after replacing the rows,
+    // so a keystroke costs one geometry check and one repaint of this popup.
+    if (isVisible()) update();
 }
 
 void OmniboxPopup::clear_rows() {
@@ -126,9 +127,16 @@ void OmniboxPopup::present() {
         if (below.x() + sz.width() > avail.right()) below.setX(avail.right() - sz.width());
         if (below.x() < avail.left()) below.setX(avail.left());
     }
-    setGeometry(QRect(below, sz));
-    if (!isVisible()) show();
-    update();
+    // Reuse the window: touch the native geometry only when it actually
+    // changes (a same-size setGeometry still round-trips to the platform),
+    // and never hide/re-show between updates.
+    const QRect target(below, sz);
+    if (geometry() != target) setGeometry(target);
+    if (!isVisible()) {
+        show();
+    } else {
+        update();
+    }
 }
 
 int OmniboxPopup::row_at(const QPoint& pos) const {

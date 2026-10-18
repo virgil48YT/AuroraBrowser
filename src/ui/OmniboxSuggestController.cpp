@@ -44,6 +44,11 @@ OmniboxSuggestController::OmniboxSuggestController(Omnibox* omnibox, Sources sou
     debounce_->setInterval(kDebounceMs);
     connect(debounce_, &QTimer::timeout, this, [this] { request_remote(pending_query_); });
 
+    coalesce_ = new QTimer(this);
+    coalesce_->setSingleShot(true);
+    coalesce_->setInterval(0);
+    connect(coalesce_, &QTimer::timeout, this, &OmniboxSuggestController::run_query);
+
     if (omnibox_) {
         connect(omnibox_, &Omnibox::query_changed, this, &OmniboxSuggestController::on_query);
     }
@@ -108,9 +113,7 @@ omnibox::Inputs OmniboxSuggestController::gather_local(const QString& query) con
 }
 
 void OmniboxSuggestController::on_query(const QString& text) {
-    const QString query = text.trimmed();
-    current_query_ = query;
-    remote_current_.clear();
+    current_query_ = text.trimmed();
 
     if (inflight_) {
         inflight_->disconnect(this);
@@ -119,6 +122,18 @@ void OmniboxSuggestController::on_query(const QString& text) {
     }
     debounce_->stop();
 
+    if (current_query_.isEmpty()) {
+        coalesce_->stop();
+        remote_current_.clear();
+        remote_pending_ = false;
+        return;
+    }
+    // One rebuild per burst of keystrokes, not one per key.
+    coalesce_->start();
+}
+
+void OmniboxSuggestController::run_query() {
+    const QString query = current_query_;
     if (query.isEmpty()) return;
 
     // Anything already fetched for this exact text is reused immediately, so
@@ -126,13 +141,31 @@ void OmniboxSuggestController::on_query(const QString& text) {
     const auto engine = src_.engine ? src_.engine() : searchengines::ResolvedEngine{};
     const QString key = QString::fromStdString(engine.key) + QLatin1Char('\n') + query;
     const auto cached = remote_cache_.constFind(key);
-    if (cached != remote_cache_.constEnd()) remote_current_ = cached.value();
+    if (cached != remote_cache_.constEnd()) {
+        remote_current_ = cached.value();
+    } else {
+        // No answer for this exact text yet: keep the previous completions
+        // that still extend what is typed (Chrome does the same). Dropping
+        // them all made the list shrink to the lone default row, which hid
+        // the dropdown on every keystroke and showed it again when the
+        // engine replied — the disappear/reappear flicker.
+        QStringList still_matching;
+        for (const QString& r : remote_current_) {
+            if (r.startsWith(query, Qt::CaseInsensitive) &&
+                r.compare(query, Qt::CaseInsensitive) != 0) {
+                still_matching << r;
+            }
+        }
+        remote_current_ = still_matching;
+    }
+
+    remote_pending_ = cached == remote_cache_.constEnd() && remote_enabled() &&
+                      omnibox::should_request_remote(query.toStdString()) &&
+                      !omnibox::suggest_url_template(engine.key).empty();
 
     rebuild(query);
 
-    if (cached == remote_cache_.constEnd() && remote_enabled() &&
-        omnibox::should_request_remote(query.toStdString()) &&
-        !omnibox::suggest_url_template(engine.key).empty()) {
+    if (remote_pending_) {
         pending_query_ = query;
         debounce_->start();
     }
@@ -143,15 +176,22 @@ void OmniboxSuggestController::rebuild(const QString& query) {
     omnibox::Inputs in = gather_local(query);
     for (const auto& r : remote_current_) in.remote.push_back(r.toStdString());
     auto rows = omnibox::build_suggestions(in);
-    omnibox_->set_suggestions(query, std::move(rows), QString::fromStdString(in.engine_name));
+    omnibox_->set_suggestions(query, std::move(rows), QString::fromStdString(in.engine_name),
+                              remote_pending_);
 }
 
 void OmniboxSuggestController::request_remote(const QString& query) {
-    if (query != current_query_ || query.isEmpty() || !remote_enabled()) return;
-    if (!src_.engine) return;
+    if (query != current_query_ || query.isEmpty()) return;
+    // Whatever happens below, this query's list must not stay "pending"
+    // forever: if no request goes out, settle the list with what we have.
+    const auto settle = [this, &query] {
+        remote_pending_ = false;
+        rebuild(query);
+    };
+    if (!remote_enabled() || !src_.engine) return settle();
     const auto engine = src_.engine();
     const std::string tmpl = omnibox::suggest_url_template(engine.key);
-    if (tmpl.empty()) return;
+    if (tmpl.empty()) return settle();
 
     // The query is the only thing sent. Percent-encode it fully so nothing in
     // the typed text can alter the request.
@@ -159,7 +199,7 @@ void OmniboxSuggestController::request_remote(const QString& query) {
     QString url_text = QString::fromStdString(tmpl);
     url_text.replace(QStringLiteral("%s"), QString::fromLatin1(encoded));
     const QUrl url(url_text, QUrl::StrictMode);
-    if (!url.isValid() || url.scheme() != QLatin1String("https")) return;
+    if (!url.isValid() || url.scheme() != QLatin1String("https")) return settle();
 
     QNetworkRequest req(url);
     req.setRawHeader("Accept", "application/json");
@@ -185,9 +225,15 @@ void OmniboxSuggestController::on_remote_finished(QNetworkReply* reply, const QS
                                                   const QString& cache_key) {
     reply->deleteLater();
     if (inflight_ == reply) inflight_.clear();
-    if (reply->error() != QNetworkReply::NoError) return;
     // The user has typed on; this answer is for text that is gone.
     if (query != current_query_) return;
+    if (reply->error() != QNetworkReply::NoError) {
+        // No completions after all: settle the list with the local rows (and
+        // any carried-over completions) instead of leaving it stale.
+        remote_pending_ = false;
+        rebuild(query);
+        return;
+    }
 
     // Bounded read: a misbehaving endpoint cannot make us buffer a huge body.
     const QByteArray body = reply->read(64 * 1024 + 1);
@@ -201,6 +247,7 @@ void OmniboxSuggestController::on_remote_finished(QNetworkReply* reply, const QS
     remote_cache_.insert(cache_key, list);
 
     remote_current_ = list;
+    remote_pending_ = false;
     rebuild(query);
 }
 

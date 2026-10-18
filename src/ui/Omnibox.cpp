@@ -207,7 +207,15 @@ Omnibox::Omnibox(QWidget* parent) : QWidget(parent) {
         }
     });
     connect(edit_, &QLineEdit::textChanged, this, [this](const QString& t) {
-        update();  // refresh leading indicator (search vs security)
+        // The leading indicator (search vs security glyph) only depends on
+        // whether the field is empty. Repaint just that glyph, and only when
+        // the emptiness flips: repainting the whole bar (glow, gradient edge)
+        // on every keystroke was part of the typing flicker. The line edit
+        // repaints its own text.
+        if (t.isEmpty() != painted_empty_) {
+            painted_empty_ = t.isEmpty();
+            update(leading_icon_rect().toAlignedRect().adjusted(-2, -2, 2, 2));
+        }
         // Cleared (including via the clear button, which does not emit
         // textEdited): nothing left to suggest for.
         if (!programmatic_edit_ && t.trimmed().isEmpty()) {
@@ -316,8 +324,10 @@ bool Omnibox::eventFilter(QObject* obj, QEvent* e) {
     // The dropdown is a separate top-level window, so it does not follow the
     // main window around: close it when the window moves, resizes or loses
     // activation instead of leaving it floating.
-    if (popup_ && popup_->isVisible() &&
-        (((t == QEvent::Move || t == QEvent::Resize) && obj == window()) ||
+    // Only the browser window's own deactivation counts: any other window
+    // (a tooltip, the hover card) deactivating must not close the list.
+    if (popup_ && popup_->isVisible() && obj == window() &&
+        (t == QEvent::Move || t == QEvent::Resize ||
          t == QEvent::WindowDeactivate)) {
         hide_suggestions();
     }
@@ -338,6 +348,7 @@ void Omnibox::set_current_url(const QString& url, bool select_all) {
     typed_text_.clear();
     hide_suggestions();
     set_edit_text_quietly(url);
+    painted_empty_ = edit_->text().isEmpty();
     if (select_all) edit_->selectAll();
     // Derive the security indicator from the URL scheme.
     if (url.startsWith("https://", Qt::CaseInsensitive)) {
@@ -361,7 +372,8 @@ void Omnibox::set_edit_text_quietly(const QString& text) {
 
 void Omnibox::set_suggestions(const QString& query,
                               std::vector<omnibox::Suggestion> rows,
-                              const QString& engine_name) {
+                              const QString& engine_name,
+                              bool more_pending) {
     if (!popup_) return;
     // Only show results for what is in the box right now, and only while the
     // user is still typing there.
@@ -371,9 +383,17 @@ void Omnibox::set_suggestions(const QString& query,
     }
     // A lone default row is just the typed text again; not worth a dropdown.
     if (rows.size() < 2) {
+        // ...but while the engine's completions for this text are still on
+        // their way, keep an open list on screen as it is. Closing it now
+        // and reopening it a moment later is the disappear/reappear flicker
+        // (and every hide/show of the native popup window makes the window
+        // beneath it repaint). The reply, or its failure, settles the list.
+        if (more_pending && popup_->isVisible()) return;
         hide_suggestions();
         return;
     }
+    // Same popup window, updated in place: new rows, resized if needed,
+    // shown only if it was not already visible.
     popup_->set_rows(std::move(rows), engine_name);
     popup_->present();
 }
