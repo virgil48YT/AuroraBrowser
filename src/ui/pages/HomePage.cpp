@@ -17,6 +17,8 @@
 #include <QPixmap>
 #include <QRadialGradient>
 #include <QScreen>
+#include <QScrollArea>
+#include <QSizePolicy>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -29,6 +31,7 @@
 #include "history/HistoryService.hpp"
 #include "settings/Settings.hpp"
 #include "ui/FaviconCache.hpp"
+#include "ui/GlowFrame.hpp"
 #include "ui/Icons.hpp"
 #include "ui/PageBackground.hpp"
 #include "ui/ShortcutDialog.hpp"
@@ -40,25 +43,6 @@ namespace aurora::ui {
 
 namespace {
 
-// One soft radial wash of color, saturated only at the core: beyond it the
-// gradient fades to fully transparent so overlapping blobs additively stack
-// into the nebula instead of drawing hard circles.
-void paint_blob(QPainter& p, const QPointF& center, qreal radius,
-                const QColor& color, int alpha) {
-    if (radius <= 0.0) return;
-    QColor core(color);
-    core.setAlpha(alpha);
-    QColor edge(color);
-    edge.setAlpha(0);
-    QRadialGradient g(center, radius);
-    g.setColorAt(0.0, core);
-    g.setColorAt(0.45, QColor(core.red(), core.green(), core.blue(),
-                              alpha / 2));
-    g.setColorAt(1.0, edge);
-    p.fillRect(QRectF(center.x() - radius, center.y() - radius,
-                      radius * 2.0, radius * 2.0), g);
-}
-
 // The Aurora logo (emblem + wordmark) from the brand artwork, scaled to fit
 // and drawn crisply at any device pixel ratio. The artwork is a transparent
 // PNG, so it sits directly on the cosmic backdrop.
@@ -67,9 +51,13 @@ public:
     explicit BrandLabel(QWidget* parent = nullptr) : QWidget(parent) {
         setAttribute(Qt::WA_TranslucentBackground, true);
         logo_.load(QStringLiteral(":/brand/aurora_logo_full.png"));
+        set_width(400);
+    }
+
+    void set_width(int width) {
         const qreal aspect = logo_.isNull()
             ? 0.78 : static_cast<qreal>(logo_.height()) / logo_.width();
-        setFixedSize(300, static_cast<int>(300 * aspect));
+        setFixedSize(width, qRound(width * aspect));
     }
 
     void paintEvent(QPaintEvent*) override {
@@ -83,41 +71,74 @@ private:
     QPixmap logo_;
 };
 
-// The search pill's capsule host: paints the glassy fill and the cyan →
-// purple gradient border (QSS cannot gradient-stroke a border), with the
-// field and its icons as transparent children on top.
-class PillHost : public QWidget {
+// Reuse History's actual painted frame, including its outer aura, rather
+// than approximating a glow with a flat QSS border. Only homepage instances
+// get these sizes and theme-aware fills; History itself is unchanged.
+class HomeGlass : public GlowFrame {
 public:
-    explicit PillHost(QWidget* parent = nullptr) : QWidget(parent) {
-        setAttribute(Qt::WA_StyledBackground, false);
-        setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    enum class Kind { Card, Shortcut, Search };
+
+    HomeGlass(QWidget* parent, Kind kind) : GlowFrame(parent), kind_(kind) {
+        apply_theme();
     }
 
+    void apply_theme() {
+        const Theme& theme = current_theme();
+        const auto& c = theme.colors;
+        apply_card_style(18, 6);
+        Edge rim = edge();
+        QColor plate = fill();
+        if (!theme.is_dark) {
+            plate = c.card_bg;
+            plate.setAlpha(242);
+            rim.color1 = c.accent;
+            rim.color2 = c.accent2;
+            rim.glow = c.accent2;
+            rim.glow.setAlpha(85);
+        }
+        int radius = 18;
+        if (kind_ == Kind::Search) {
+            rim.color1 = c.accent;
+            rim.color2 = c.accent2;
+            rim.glow = c.accent2;
+            rim.glow.setAlpha(145);
+            rim.glow_extent = 8;
+            radius = 999;
+            if (theme.is_dark) plate = QColor(5, 9, 30, 220);
+        } else if (kind_ == Kind::Shortcut) {
+            rim.color1.setAlpha(105);
+            rim.color2.setAlpha(125);
+            rim.glow.setAlpha(65);
+            rim.glow_extent = 4;
+            radius = 16;
+        }
+        set_style(rim, plate, radius);
+    }
+
+private:
+    Kind kind_;
+};
+
+// Let rows use the card's actual width instead of truncating every title at
+// a fixed 190px. The full value stays available in the tooltip.
+class HomeElidedLabel : public QLabel {
+public:
+    HomeElidedLabel(const QString& text, QWidget* parent)
+        : QLabel(text, parent) {
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        setMinimumWidth(0);
+        setToolTip(text);
+        setTextFormat(Qt::PlainText);
+    }
+
+protected:
     void paintEvent(QPaintEvent*) override {
-        const ThemeColors& c = current_theme().colors;
         QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
-        // Inset 2px so the outer glow pass has room inside the widget bounds.
-        const QRectF r = QRectF(rect()).adjusted(2.0, 2.0, -2.0, -2.0);
-        const qreal rad = r.height() / 2.0;
-
-        QLinearGradient grad(r.topLeft(), r.bottomRight());
-        grad.setColorAt(0.0, c.accent);
-        grad.setColorAt(1.0, c.accent2);
-
-        // Soft outer aura, then the capsule.
-        QColor aura = c.accent2;
-        aura.setAlpha(46);
-        p.setPen(Qt::NoPen);
-        p.setBrush(aura);
-        p.drawRoundedRect(r.adjusted(-1.5, -1.5, 1.5, 1.5), rad + 1.5,
-                          rad + 1.5);
-
-        QColor fill(c.surface_alt);
-        fill.setAlpha(216);
-        p.setBrush(fill);
-        p.setPen(QPen(QBrush(grad), 1.6));
-        p.drawRoundedRect(r, rad, rad);
+        p.setFont(font());
+        p.setPen(palette().color(QPalette::WindowText));
+        p.drawText(contentsRect(), Qt::AlignLeft | Qt::AlignVCenter,
+                   fontMetrics().elidedText(text(), Qt::ElideRight,
+                                            contentsRect().width()));
     }
 };
 
@@ -200,6 +221,9 @@ HomePage::HomePage(QWidget* parent) : QWidget(parent) {
 
     // Keep every glyph in step with the live theme.
     theme_observer_ = add_theme_observer([this](const Theme&) {
+        for (GlowFrame* frame : findChildren<GlowFrame*>()) {
+            static_cast<HomeGlass*>(frame)->apply_theme();
+        }
         apply_icons();
         update();
     });
@@ -263,32 +287,47 @@ void HomePage::set_prefs(settings::Settings* prefs) {
 // ---------------------------------------------------------------------------
 
 void HomePage::build_ui() {
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(Spacing::xl, Spacing::lg, Spacing::xl,
-                             Spacing::lg);
+    auto* page_layout = new QVBoxLayout(this);
+    page_layout->setContentsMargins(0, 0, 0, 0);
+    content_scroll_ = new QScrollArea(this);
+    content_scroll_->setObjectName(QStringLiteral("HomeScroll"));
+    content_scroll_->setFrameShape(QFrame::NoFrame);
+    content_scroll_->setWidgetResizable(true);
+    content_scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    content_scroll_->viewport()->setAutoFillBackground(false);
+    content_ = new QWidget;
+    content_->setObjectName(QStringLiteral("HomeContent"));
+    content_scroll_->setWidget(content_);
+    page_layout->addWidget(content_scroll_);
+
+    auto* root = new QVBoxLayout(content_);
+    root->setContentsMargins(32, 32, 32, 32);
     root->setSpacing(0);
 
-    // --- Top overlay row: weather chip (left), clock + date (right) -------
-    auto* top_row = new QHBoxLayout;
-    top_row->setContentsMargins(Spacing::sm, 0, Spacing::sm, 0);
+    // The weather and clock share the brand's top band, as in the reference,
+    // rather than taking a full extra row above it.
+    header_ = new QWidget(content_);
+    header_->setObjectName(QStringLiteral("HomeHeader"));
+    auto* top_row = new QHBoxLayout(header_);
+    top_row->setContentsMargins(8, 0, 8, 0);
     top_row->addWidget(build_weather_chip(), 0, Qt::AlignTop);
     top_row->addStretch(1);
     top_row->addWidget(build_clock_block(), 0, Qt::AlignTop);
-    root->addLayout(top_row);
 
-    root->addStretch(4);
+    root->addStretch(1);
 
     // --- Center column: brand, pill, tiles --------------------------------
-    auto* column = new QWidget(this);
+    auto* column = new QWidget(content_);
+    column_ = column;
     column->setObjectName(QStringLiteral("HomeColumn"));
     column->setAttribute(Qt::WA_TranslucentBackground, true);
-    column->setMaximumWidth(780);
+    column->setFixedWidth(1060);
     auto* column_layout = new QVBoxLayout(column);
     column_layout->setContentsMargins(0, 0, 0, 0);
-    column_layout->setSpacing(Spacing::xl);
+    column_layout->setSpacing(20);
 
-    auto* brand = new BrandLabel(column);
-    column_layout->addWidget(brand, 0, Qt::AlignHCenter);
+    brand_ = new BrandLabel(column);
+    column_layout->addWidget(brand_, 0, Qt::AlignHCenter);
 
     auto* subtitle = new QLabel(
         QStringLiteral("B R O W S E .   F O C U S .   A U R O R A ."),
@@ -299,18 +338,19 @@ void HomePage::build_ui() {
 
     // Search pill: leading search glyph, the field, then the trailing
     // sparkle — all inside one capsule host.
-    auto* pill = new PillHost(column);
+    auto* pill = new HomeGlass(column, HomeGlass::Kind::Search);
+    search_host_ = pill;
+    pill->setFixedSize(840, 80);
     pill->setObjectName(QStringLiteral("HomeSearchPillHost"));
-    pill->setAttribute(Qt::WA_TranslucentBackground, true);
     auto* pill_layout = new QHBoxLayout(pill);
-    pill_layout->setContentsMargins(0, 0, 0, 0);
+    pill_layout->setContentsMargins(14, 6, 14, 6);
     pill_layout->setSpacing(0);
 
     search_btn_ = new QToolButton(pill);
     search_btn_->setObjectName(QStringLiteral("HomeSparkleButton"));
     search_btn_->setCursor(Qt::PointingHandCursor);
     search_btn_->setToolTip(QStringLiteral("Search"));
-    search_btn_->setIconSize(QSize(18, 18));
+    search_btn_->setIconSize(QSize(26, 26));
     connect(search_btn_, &QToolButton::clicked, this, [this] {
         search_->setFocus(Qt::ShortcutFocusReason);
     });
@@ -321,7 +361,7 @@ void HomePage::build_ui() {
     search_->setObjectName(QStringLiteral("HomeSearchPill"));
     search_->setPlaceholderText(QStringLiteral("Search or enter address"));
     search_->setClearButtonEnabled(true);
-    search_->setMinimumHeight(52);
+    search_->setMinimumHeight(36);
     connect(search_, &QLineEdit::returnPressed, this, &HomePage::submit);
     pill_layout->addWidget(search_, 1);
 
@@ -329,12 +369,12 @@ void HomePage::build_ui() {
     sparkle_btn_->setObjectName(QStringLiteral("HomeSparkleButton"));
     sparkle_btn_->setCursor(Qt::PointingHandCursor);
     sparkle_btn_->setToolTip(QStringLiteral("Search"));
-    sparkle_btn_->setIconSize(QSize(18, 18));
+    sparkle_btn_->setIconSize(QSize(28, 28));
     connect(sparkle_btn_, &QToolButton::clicked, this, &HomePage::submit);
     pill_layout->addWidget(sparkle_btn_, 0, Qt::AlignVCenter);
     pill_layout->addSpacing(Spacing::sm);
 
-    column_layout->addWidget(pill);
+    column_layout->addWidget(pill, 0, Qt::AlignHCenter);
 
     // --- Shortcut tiles: the user's own sites, none by default ------------
     tiles_host_ = new QWidget(column);
@@ -346,32 +386,35 @@ void HomePage::build_ui() {
     rebuild_shortcuts();
 
     root->addWidget(column, 0, Qt::AlignHCenter);
-    root->addStretch(3);
+    root->addSpacing(24);
+    root->addStretch(1);
 
     // --- Bottom cards -------------------------------------------------------
-    cards_row_ = new QWidget(this);
+    cards_row_ = new QWidget(content_);
     cards_row_->setObjectName(QStringLiteral("HomeCardsRow"));
     cards_row_->setAttribute(Qt::WA_TranslucentBackground, true);
     auto* cards_layout = new QHBoxLayout(cards_row_);
     cards_layout->setContentsMargins(0, 0, 0, 0);
-    cards_layout->setSpacing(Spacing::lg);
-    cards_row_->setMaximumWidth(1120);
+    cards_layout->setSpacing(20);
+    cards_row_->setFixedWidth(1440);
 
     QWidget* resume = build_history_card(
         cards_row_, QStringLiteral("Continue where you left off"));
     resume_rows_ = resume->findChild<QVBoxLayout*>(
         QStringLiteral("HomeRows"));
-    cards_layout->addWidget(resume, 1);
+    cards_layout->addWidget(resume, 4);
 
     QWidget* recent = build_history_card(
         cards_row_, QStringLiteral("Recently visited"));
     recent_rows_ = recent->findChild<QVBoxLayout*>(
         QStringLiteral("HomeRows"));
-    cards_layout->addWidget(recent, 1);
+    cards_layout->addWidget(recent, 4);
 
-    cards_layout->addWidget(build_actions_card(cards_row_), 1);
+    cards_layout->addWidget(build_actions_card(cards_row_), 2);
 
     root->addWidget(cards_row_, 0, Qt::AlignHCenter);
+    header_->raise();
+    update_home_layout();
 }
 
 QWidget* HomePage::build_weather_chip() {
@@ -389,7 +432,7 @@ QWidget* HomePage::build_weather_chip() {
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(Spacing::sm);
     weather_icon_ = new QLabel(chip);
-    weather_icon_->setFixedSize(26, 26);
+    weather_icon_->setFixedSize(48, 48);
     row->addWidget(weather_icon_, 0, Qt::AlignVCenter);
     auto* texts = new QVBoxLayout;
     texts->setContentsMargins(0, 0, 0, 0);
@@ -504,18 +547,25 @@ QWidget* HomePage::build_clock_block() {
 QWidget* HomePage::build_shortcut_tile(QWidget* parent, const QString& label,
                                        const QString& target_url, bool is_add,
                                        int index) {
-    auto* tile = new QToolButton(parent);
+    auto* frame = new HomeGlass(parent, HomeGlass::Kind::Shortcut);
+    frame->setObjectName(QStringLiteral("HomeShortcutFrame"));
+    frame->setFixedSize(tile_width_, tile_height_);
+    auto* frame_layout = new QVBoxLayout(frame);
+    frame_layout->setContentsMargins(7, 7, 7, 7);
+    auto* tile = new QToolButton(frame);
     tile->setObjectName(QStringLiteral("HomeShortcut"));
     tile->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
     tile->setCursor(Qt::PointingHandCursor);
-    tile->setFixedSize(106, 84);
-    tile->setIconSize(QSize(30, 30));
+    tile->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    tile->setIconSize(QSize(48, 48));
+    frame_layout->addWidget(tile);
     tile->setProperty("auroraTileAdd", is_add);
     tile->setProperty("auroraTileLabel", label);
     tile->setProperty("auroraTileUrl", target_url);
     // Long names must not stretch the tile: elide to the tile's width.
+    tile->ensurePolished();
     const QFontMetrics fm(tile->font());
-    tile->setText(fm.elidedText(label, Qt::ElideRight, 94));
+    tile->setText(fm.elidedText(label, Qt::ElideRight, tile_width_ - 26));
     tile->setToolTip(is_add ? QStringLiteral("Add a shortcut") : target_url);
     connect(tile, &QToolButton::clicked, this, [this, target_url, is_add] {
         if (is_add) {
@@ -537,7 +587,7 @@ QWidget* HomePage::build_shortcut_tile(QWidget* parent, const QString& label,
                 });
     }
     shortcut_buttons_.append(tile);
-    return tile;
+    return frame;
 }
 
 void HomePage::rebuild_shortcuts() {
@@ -557,12 +607,12 @@ void HomePage::rebuild_shortcuts() {
     // The final slot is always the "Add shortcut" tile (until the cap).
     const int total = shortcuts_.size() +
                       (shortcuts_.size() < kMaxShortcuts ? 1 : 0);
-    for (int start = 0; start < total; start += kTilesPerRow) {
+    for (int start = 0; start < total; start += tiles_per_row_) {
         auto* row = new QHBoxLayout;
         row->setContentsMargins(0, 0, 0, 0);
-        row->setSpacing(Spacing::md);
+        row->setSpacing(24);
         row->addStretch(1);
-        for (int i = start; i < qMin(total, start + kTilesPerRow); ++i) {
+        for (int i = start; i < qMin(total, start + tiles_per_row_); ++i) {
             if (i < shortcuts_.size()) {
                 row->addWidget(build_shortcut_tile(
                     tiles_host_, shortcuts_[i].title, shortcuts_[i].url,
@@ -609,20 +659,18 @@ void HomePage::remove_shortcut(int index) {
 }
 
 QWidget* HomePage::build_history_card(QWidget* parent, const QString& heading) {
-    auto* card = new QWidget(parent);
+    auto* card = new HomeGlass(parent, HomeGlass::Kind::Card);
     card->setObjectName(QStringLiteral("HomeCard"));
-    card->setAttribute(Qt::WA_StyledBackground, true);
+    card->setMinimumWidth(0);
     auto* card_layout = new QVBoxLayout(card);
-    card_layout->setContentsMargins(Spacing::lg, Spacing::md, Spacing::lg,
-                                    Spacing::md);
-    card_layout->setSpacing(Spacing::xs);
+    card_layout->setContentsMargins(26, 22, 26, 22);
+    card_layout->setSpacing(6);
 
     auto* header_row = new QHBoxLayout;
     header_row->setContentsMargins(0, 0, 0, 0);
-    auto* title = new QLabel(heading, card);
+    auto* title = new HomeElidedLabel(heading, card);
     title->setObjectName(QStringLiteral("HomeCardTitle"));
-    header_row->addWidget(title);
-    header_row->addStretch(1);
+    header_row->addWidget(title, 1);
     auto* show_all = new QToolButton(card);
     show_all->setObjectName(QStringLiteral("HomeActionRow"));
     show_all->setProperty("accent", true);   // the cyan "Show all" link
@@ -644,7 +692,7 @@ QWidget* HomePage::build_history_card(QWidget* parent, const QString& heading) {
     auto* rows = new QVBoxLayout;
     rows->setObjectName(QStringLiteral("HomeRows"));
     rows->setContentsMargins(0, 0, 0, 0);
-    rows->setSpacing(Spacing::xs);
+    rows->setSpacing(10);
     card_layout->addLayout(rows);
     card_layout->addStretch(1);
 
@@ -652,13 +700,12 @@ QWidget* HomePage::build_history_card(QWidget* parent, const QString& heading) {
 }
 
 QWidget* HomePage::build_actions_card(QWidget* parent) {
-    auto* card = new QWidget(parent);
+    auto* card = new HomeGlass(parent, HomeGlass::Kind::Card);
     card->setObjectName(QStringLiteral("HomeCard"));
-    card->setAttribute(Qt::WA_StyledBackground, true);
+    card->setMinimumWidth(0);
     auto* card_layout = new QVBoxLayout(card);
-    card_layout->setContentsMargins(Spacing::lg, Spacing::md, Spacing::lg,
-                                    Spacing::md);
-    card_layout->setSpacing(Spacing::xs);
+    card_layout->setContentsMargins(26, 22, 26, 22);
+    card_layout->setSpacing(6);
 
     auto* title = new QLabel(QStringLiteral("Quick actions"), card);
     title->setObjectName(QStringLiteral("HomeCardTitle"));
@@ -687,7 +734,8 @@ QWidget* HomePage::build_actions_card(QWidget* parent) {
         row->setObjectName(QStringLiteral("HomeActionRow"));
         row->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
         row->setText(QString::fromUtf8(action.label));
-        row->setIconSize(QSize(16, 16));
+        row->setIconSize(QSize(24, 24));
+        row->setMinimumHeight(36);
         row->setCursor(Qt::PointingHandCursor);
         row->setProperty("auroraActionIcon",
                          static_cast<int>(action.icon));
@@ -784,29 +832,26 @@ void HomePage::render_entry(QVBoxLayout* rows, const HistoryEntry& entry) {
 
     // Favicon: the shared cache when it has one, a letter badge otherwise.
     auto* icon_label = new QLabel(row);
-    icon_label->setFixedSize(28, 28);
+    icon_label->setFixedSize(40, 40);
     icon_label->setAlignment(Qt::AlignCenter);
     QIcon site = FaviconCache::instance().icon_for_url(entry.url);
     if (!site.isNull()) {
-        icon_label->setPixmap(site.pixmap(28, 28));
+        icon_label->setPixmap(site.pixmap(QSize(40, 40), devicePixelRatioF()));
     } else {
         const qreal dpr = screen() ? screen()->devicePixelRatio() : 1.0;
         const QString host = FaviconCache::host_of(entry.url);
         icon_label->setPixmap(letter_badge(
-            host.isEmpty() ? entry.title : host, brand_color(host), 28, dpr));
+            host.isEmpty() ? entry.title : host, brand_color(host), 40, dpr));
     }
     row_layout->addWidget(icon_label, 0, Qt::AlignTop);
 
     auto* texts = new QVBoxLayout;
     texts->setContentsMargins(0, 0, 0, 0);
     texts->setSpacing(Spacing::xxs);
-    auto* title = new QLabel(row);
+    auto* title = new HomeElidedLabel(entry.title, row);
     title->setObjectName(QStringLiteral("HomeRowTitle"));
-    title->setToolTip(entry.title);
-    title->setText(QFontMetrics(title->font()).elidedText(
-        entry.title, Qt::ElideRight, 190));
     texts->addWidget(title);
-    auto* sub = new QLabel(FaviconCache::host_of(entry.url), row);
+    auto* sub = new HomeElidedLabel(FaviconCache::host_of(entry.url), row);
     sub->setObjectName(QStringLiteral("HomeRowSub"));
     texts->addWidget(sub);
     row_layout->addLayout(texts, 1);
@@ -886,6 +931,55 @@ void HomePage::paintEvent(QPaintEvent* event) {
 void HomePage::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     bg_ = {};  // repaint lazily via paintEvent's empty-cache check
+    update_home_layout();
+}
+
+void HomePage::update_home_layout() {
+    if (!column_ || !cards_row_) return;
+    // Leave room for a vertical scrollbar without changing the grid width
+    // when it appears. Crucially, these are explicit widths: AlignHCenter
+    // alone makes Qt shrink a widget back to its content's sizeHint.
+    const int available = qMax(240, width() - 84);
+    const qreal scale = qBound<qreal>(0.72, height() / 1040.0, 1.0);
+    column_->setFixedWidth(qMin(available, 1060));
+    search_host_->setFixedSize(qMin(available, 840), qRound(80 * scale));
+    static_cast<BrandLabel*>(brand_)->set_width(
+        qMin(available, qRound(400 * scale)));
+    cards_row_->setFixedWidth(qMin(available, 1640));
+    cards_row_->setMinimumHeight(qRound(300 * scale));
+
+    // Stack cards only when there is no longer room for readable columns.
+    auto* cards = static_cast<QBoxLayout*>(cards_row_->layout());
+    const auto direction = available < 1050
+        ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight;
+    if (cards->direction() != direction) cards->setDirection(direction);
+
+    const int tile_width = qRound(144 * scale);
+    const int tile_height = qRound(126 * scale);
+    const int per_row = qBound(1, (available + 24) / (tile_width + 24),
+                              kTilesPerRow);
+    const bool reflow = per_row != tiles_per_row_;
+    tile_width_ = tile_width;
+    tile_height_ = tile_height;
+    tiles_per_row_ = per_row;
+    if (reflow) {
+        rebuild_shortcuts();
+    } else {
+        for (QToolButton* tile : shortcut_buttons_) {
+            tile->parentWidget()->setFixedSize(tile_width_, tile_height_);
+            tile->setText(QFontMetrics(tile->font()).elidedText(
+                tile->property("auroraTileLabel").toString(), Qt::ElideRight,
+                tile_width_ - 26));
+        }
+    }
+
+    header_->setGeometry(qMax(0, (width() - available) / 2), 32, available,
+                       header_->sizeHint().height());
+    // On narrow windows the corner widgets get their own band, so neither
+    // can cover the centered logo. Extra shortcuts/cards scroll, not shrink.
+    auto* root = static_cast<QVBoxLayout*>(content_->layout());
+    root->setContentsMargins(32, available < 850
+        ? header_->sizeHint().height() + 52 : 32, 32, 32);
 }
 
 void HomePage::apply_icons() {
@@ -893,11 +987,11 @@ void HomePage::apply_icons() {
     const qreal dpr = screen() ? screen()->devicePixelRatio() : 1.0;
     if (search_btn_) {
         search_btn_->setIcon(icons::icon(icons::Name::Search,
-                                         theme.colors.text_muted, 18, dpr));
+                                         theme.colors.text_muted, 26, dpr));
     }
     if (sparkle_btn_) {
         sparkle_btn_->setIcon(icons::icon(icons::Name::Sparkle,
-                                          theme.colors.accent2, 18, dpr));
+                                          theme.colors.accent2, 28, dpr));
     }
     if (weather_icon_) {
         const WeatherInfo& w = WeatherService::instance().current();
@@ -905,12 +999,12 @@ void HomePage::apply_icons() {
             ? WeatherService::icon_for(w.code, w.is_day)
             : icons::Name::CloudSun;
         weather_icon_->setPixmap(icons::pixmap(
-            glyph, 26, theme.colors.accent, dpr));
+            glyph, 48, theme.colors.accent, dpr));
     }
     for (QToolButton* tile : shortcut_buttons_) {
         if (tile->property("auroraTileAdd").toBool()) {
             tile->setIcon(icons::icon(icons::Name::Plus,
-                                      theme.colors.text_muted, 22, dpr));
+                                      theme.colors.text_muted, 36, dpr));
             continue;
         }
         const QString label = tile->property("auroraTileLabel").toString();
@@ -920,13 +1014,13 @@ void HomePage::apply_icons() {
             tile->setIcon(site);
         } else {
             tile->setIcon(QIcon(letter_badge(
-                label, brand_color(FaviconCache::host_of(url)), 30, dpr)));
+                label, brand_color(FaviconCache::host_of(url)), 48, dpr)));
         }
     }
     for (QToolButton* row : action_buttons_) {
         const auto icon = static_cast<icons::Name>(
             row->property("auroraActionIcon").toInt());
-        row->setIcon(icons::icon(icon, theme.colors.text_muted, 16, dpr));
+        row->setIcon(icons::icon(icon, theme.colors.text_muted, 24, dpr));
     }
 }
 

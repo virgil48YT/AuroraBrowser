@@ -29,6 +29,7 @@
 
 class QEvent;
 class QLabel;
+class QScrollArea;
 class QLineEdit;
 class QPaintEvent;
 class QResizeEvent;
@@ -104,8 +105,18 @@ private:
     void render_entry(QVBoxLayout* rows, const HistoryEntry& entry);
     QString time_ago(std::int64_t epoch_seconds) const;
     void apply_icons();   // re-stamp every glyph from the live theme
+    void update_home_layout();   // size-aware widths, columns and tiles
 
     QWidget* cards_row_ = nullptr;            // the three bottom cards
+    QScrollArea* content_scroll_ = nullptr;
+    QWidget* content_ = nullptr;
+    QWidget* header_ = nullptr;               // weather + clock overlay
+    QWidget* column_ = nullptr;
+    QWidget* brand_ = nullptr;
+    QWidget* search_host_ = nullptr;
+    int tile_width_ = 144;
+    int tile_height_ = 126;
+    int tiles_per_row_ = 6;
     QVBoxLayout* resume_rows_ = nullptr;
     QVBoxLayout* recent_rows_ = nullptr;
 

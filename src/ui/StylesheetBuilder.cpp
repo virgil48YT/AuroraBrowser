@@ -1471,6 +1471,7 @@ QString StylesheetBuilder::build(const Theme& t) {
     // interactive so the C++ stays a layout and a canvas.
     s += QString("QWidget#HomePage { background: transparent; }"
                  "QWidget#HomeColumn, QWidget#HomeCardsRow,"
+                 "QWidget#HomeContent, QWidget#HomeHeader, QWidget#HomeScroll,"
                  "QWidget#HomeShortcutTile, QWidget#HomeRow {"
                  "  background: transparent; }");
 
@@ -1478,17 +1479,17 @@ QString StylesheetBuilder::build(const Theme& t) {
     // (painted by HomeBrandLabel in C++, which also draws the glowing ribbon
     // "A" logo above it), with the dot-phrase subtitle underneath.
     s += QString("QLabel#HomeSubtitle {"
-                 "  color: %1; font-size: %2px;}"
+                 "  color: %1; font-size: %2px; letter-spacing: 3px;}"
                  "QLabel#HomeClock {"
-                 "  color: %3; font-size: %4px; font-weight: 600;}"
+                 "  color: %3; font-size: %4px; font-weight: 300;}"
                  "QLabel#HomeDate, QLabel#HomeWeatherSub {"
-                 "  color: %1; font-size: %5px;}"
+                 "  color: %3; font-size: %5px;}"
                  "QFrame#HomeCardDivider { background: %6; border: none; } ")
             .arg(c.text_muted.name())
-            .arg(t.body_font_px)
+            .arg(16)
             .arg(c.text.name())
-            .arg(t.body_font_px + 9)
-            .arg(t.small_font_px + 1)
+            .arg(68)
+            .arg(17)
             .arg(c.divider.name());
 
     s += QString("QLabel#HomeWeatherTemp {"
@@ -1499,11 +1500,11 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "QLabel#HomeRowTitle { color: %1; font-size: %4px;}"
                  "QLabel#HomeRowSub { color: %5; font-size: %6px;}")
             .arg(c.text.name())
-            .arg(t.title_font_px)
-            .arg(t.body_font_px + 1)
-            .arg(t.body_font_px)
+            .arg(28)
+            .arg(19)
+            .arg(17)
             .arg(c.text_muted.name())
-            .arg(t.small_font_px + 1);
+            .arg(14);
 
     // The big centered search pill: a glowing glass capsule with the
     // cyan→purple gradient border. The border lives on the HOST (the pill's
@@ -1520,15 +1521,15 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  selection-background-color: %4; selection-color: %1;}")
             .arg(c.text.name())
             .arg(Spacing::xs)
-            .arg(t.title_font_px + 2)
+            .arg(22)
             .arg(rgba(c.accent, 60));
 
     // In-pill trailing sparkle: chromeless, glows to magenta on hover.
     s += QString("QToolButton#HomeSparkleButton {"
                  "  background: transparent; border: none;"
                  "  border-radius: %1px; padding: 0px; margin: 0px;"
-                 "  min-width: 34px; max-width: 34px;"
-                 "  min-height: 34px; max-height: 34px;}"
+                 "  min-width: 44px; max-width: 44px;"
+                 "  min-height: 44px; max-height: 44px;}"
                  "QToolButton#HomeSparkleButton:hover { background: %2;}"
                  "QToolButton#HomeSparkleButton:pressed { background: %3;}")
             .arg(Radius::pill)
@@ -1538,34 +1539,23 @@ QString StylesheetBuilder::build(const Theme& t) {
     // Shortcut tiles: dark-blue cards with slate hairlines; hover lifts the
     // border to the cyan half of the gradient.
     s += QString("QToolButton#HomeShortcut {"
-                 "  background: %1; border: %2px solid %3;"
-                 "  border-radius: %4px; color: %5;"
-                 "  font-size: %6px; padding: %7px 0px %8px 0px;}"
+                 "  background: transparent; border: none;"
+                 "  border-radius: 14px; color: %1;"
+                 "  font-size: 15px; padding: 8px 0px 6px 0px;}"
                  "QToolButton#HomeShortcut:hover {"
-                 "  background: %9; border-color: %10; color: %5;}"
-                 "QToolButton#HomeShortcut:pressed { background: %11;}")
-            .arg(rgba(c.card_raised, 210))
-            .arg(Metrics::hairline)
-            .arg(hex(c.border))
-            .arg(Radius::xl)
+                 "  background: %2; color: %3;}"
+                 "QToolButton#HomeShortcut:pressed { background: %4;}")
             .arg(hex(c.text_muted))
-            .arg(t.small_font_px + 1)
-            .arg(Spacing::sm)
-            .arg(Spacing::xs)
-            .arg(rgba(c.card_raised, 250))
-            .arg(rgba(c.accent, 140))
+            .arg(rgba(c.accent2, 34))
+            .arg(hex(c.text))
             .arg(hex(c.surface_selected));
 
     // Bottom three-column cards share the settings-card recipe; the rows
     // inside them are flat until hovered.
-    s += QString("QWidget#HomeCard {"
-                 "  background: %1; border: %2px solid %3;"
-                 "  border-radius: %4px;}")
-            .arg(rgba(c.card_bg, 170))
-            .arg(Metrics::hairline)
-            .arg(glow_edge)
-            .arg(Radius::xl);
-    s += QString("QWidget#HomeRow { border-radius: %1px; padding: 0px %2px;}"
+    // The card plate, gradient rim and outer glow are painted by GlowFrame
+    // (the History page's recipe), so no QSS background or border here.
+    s += QString("QWidget#HomeCard { background: transparent; border: none; }");
+    s += QString("QWidget#HomeRow { border-radius: %1px; padding: 4px %2px;}"
                  "QWidget#HomeRow:hover { background: %3;}")
             .arg(Radius::md)
             .arg(Spacing::xs)
@@ -1577,13 +1567,13 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  border-radius: %3px; padding: %4px %5px;}"
                  "QToolButton#HomeActionRow:hover { background: %6; color: %1;}"
                  "QToolButton#HomeActionRow:pressed { background: %7;}"
-                 "QToolButton#HomeActionRow[accent=\"true\"] { color: %8;}"
+                 "QToolButton#HomeActionRow[accent=\"true\"] { color: %8; font-size: 15px;}"
                  "QToolButton#HomeActionRow[accent=\"true\"]:hover { color: %9;}")
             .arg(hex(c.text))
-            .arg(t.body_font_px)
+            .arg(17)
             .arg(Radius::md)
-            .arg(Spacing::xs)
             .arg(Spacing::sm)
+            .arg(Spacing::md)
             .arg(rgba(c.accent, 22))
             .arg(rgba(c.accent, 40))
             .arg(hex(c.accent))
