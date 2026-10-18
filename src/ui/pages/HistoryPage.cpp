@@ -72,9 +72,9 @@ void HistoryPage::build_ui() {
 
     const ThemeColors& c = current_theme().colors;
     auto* clock = new QLabel(header);
-    clock->setPixmap(icons::pixmap(icons::Name::History, 34, c.accent,
+    clock->setPixmap(icons::pixmap(icons::Name::History, 38, c.accent,
                                    current_dpr(this)));
-    clock->setFixedSize(38, 38);
+    clock->setFixedSize(42, 42);
     header_row->addWidget(clock, 0, Qt::AlignVCenter);
 
     auto* title = new QLabel(QStringLiteral("History"), header);
@@ -103,12 +103,12 @@ void HistoryPage::build_ui() {
         edge.glow_extent = 3;
         search_wrap->set_style(edge, QColor(5, 9, 30, 200), 14);
         auto* l = new QHBoxLayout(search_wrap);
-        l->setContentsMargins(14, 7, 14, 7);
-        l->setSpacing(8);
+        l->setContentsMargins(16, 10, 16, 10);
+        l->setSpacing(10);
         auto* mag = new QLabel(search_wrap);
-        mag->setPixmap(icons::pixmap(icons::Name::Search, 16, c.text_muted,
+        mag->setPixmap(icons::pixmap(icons::Name::Search, 20, c.text_muted,
                                      current_dpr(this)));
-        mag->setFixedSize(18, 18);
+        mag->setFixedSize(22, 22);
         l->addWidget(mag);
         l->addWidget(search_, 1);
     }
@@ -119,12 +119,12 @@ void HistoryPage::build_ui() {
     clear_wrap->apply_danger_style(10, 3);
     {
         auto* l = new QHBoxLayout(clear_wrap);
-        l->setContentsMargins(14, 7, 14, 7);
+        l->setContentsMargins(16, 10, 16, 10);
         l->setSpacing(8);
         auto* trash = new QLabel(clear_wrap);
-        trash->setPixmap(icons::pixmap(icons::Name::Trash, 15, c.accent3,
+        trash->setPixmap(icons::pixmap(icons::Name::Trash, 17, c.accent3,
                                        current_dpr(this)));
-        trash->setFixedSize(18, 18);
+        trash->setFixedSize(20, 20);
         l->addWidget(trash);
         clear_button_ = new QPushButton(QStringLiteral("Clear browsing data"),
                                         clear_wrap);
@@ -178,9 +178,9 @@ void HistoryPage::build_ui() {
     panel->setObjectName(QStringLiteral("HistoryPanel"));
     panel->apply_card_style(14, 3);
     panel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Maximum);
-    panel->setFixedWidth(300);
+    panel->setFixedWidth(320);
     auto* panel_layout = new QVBoxLayout(panel);
-    panel_layout->setContentsMargins(16, 14, 16, 14);
+    panel_layout->setContentsMargins(20, 18, 20, 18);
     panel_layout->setSpacing(14);
 
     auto add_heading = [this, panel, panel_layout](icons::Name icon_name,
@@ -189,8 +189,8 @@ void HistoryPage::build_ui() {
         auto* head = new QHBoxLayout;
         head->setSpacing(10);
         auto* icon = new QLabel(panel);
-        icon->setPixmap(icons::pixmap(icon_name, 16, tint, current_dpr(this)));
-        icon->setFixedSize(18, 18);
+        icon->setPixmap(icons::pixmap(icon_name, 20, tint, current_dpr(this)));
+        icon->setFixedSize(22, 22);
         head->addWidget(icon);
         auto* label = new QLabel(text, panel);
         label->setObjectName(QStringLiteral("HistoryPanelHeading"));
@@ -250,7 +250,7 @@ void HistoryPage::build_ui() {
             row->setProperty(kHistoryActionProperty, a.second);
             row->installEventFilter(this);
             auto* rl = new QHBoxLayout(row);
-            rl->setContentsMargins(10, 8, 10, 8);
+            rl->setContentsMargins(12, 9, 12, 9);
             rl->setSpacing(10);
             auto* text = new QLabel(a.first, row);
             text->setObjectName(QStringLiteral("HistoryActionLabel"));

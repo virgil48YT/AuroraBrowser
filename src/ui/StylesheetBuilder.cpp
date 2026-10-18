@@ -1191,12 +1191,14 @@ QString StylesheetBuilder::build(const Theme& t) {
     // the GlowFrame, so the gradient rim on the host reads as uninterrupted.
     s += QString("QLineEdit#HistorySearch, QLineEdit#HistorySiteSearch {"
                  "  background: transparent; color: %1; border: none;"
+                 "  font-size: %3px;"
                  "  selection-background-color: %2; selection-color: %1; }")
             .arg(c.text.name())
-            .arg(rgba(c.accent, 60));
+            .arg(rgba(c.accent, 60))
+            .arg(t.body_font_px + 2);
     s += QString("QLineEdit#HistorySiteSearch {"
                  "  background: %1; border: 1px solid %2;"
-                 "  border-radius: %3px; padding: 6px 10px; min-height: 22px; }")
+                 "  border-radius: %3px; padding: 8px 12px; min-height: 24px; }")
             .arg(rgba(c.surface_alt, 150))
             .arg(glow_edge_soft)
             .arg(Radius::md);
@@ -1204,8 +1206,8 @@ QString StylesheetBuilder::build(const Theme& t) {
     // magenta rim marks the destructive action; the button itself is flat.
     s += QString("QPushButton#HistoryClearButton {"
                  "  background: transparent; color: %1; border: none;"
-                 "  font-weight: 500; padding: 0px; }")
-            .arg(c.text.name());
+                 "  font-size: %2px; font-weight: 500; padding: 0px; }")
+            .arg(c.text.name()).arg(t.body_font_px + 1);
     // Group cards: bold header, the count as a blue badge, rows on a hover
     // wash. The chevron glyph is a QLabel pixmap so tint comes from C++.
     s += QString("QLabel#HistoryGroupTitle {"
@@ -1227,12 +1229,14 @@ QString StylesheetBuilder::build(const Theme& t) {
             .arg(Radius::md);
     s += QString("QWidget#HistoryRow:hover { background: %1; }")
             .arg(rgba(c.accent, 22));
+    // Rows scaled up to the mockup: 15px titles, 14px domain (in the accent,
+    // as in the reference) and time.
     s += QString("QLabel#HistoryRowTitle { color: %1; font-size: %2px; }")
-            .arg(c.text.name()).arg(t.body_font_px + 1);
+            .arg(c.text.name()).arg(t.body_font_px + 2);
     s += QString("QLabel#HistoryRowDomain { color: %1; font-size: %2px; }")
-            .arg(c.text_muted.name()).arg(t.small_font_px + 2);
+            .arg(c.accent.name()).arg(t.body_font_px + 1);
     s += QString("QLabel#HistoryRowTime { color: %1; font-size: %2px; }")
-            .arg(c.text_muted.name()).arg(t.small_font_px + 2);
+            .arg(c.text_muted.name()).arg(t.body_font_px + 1);
     // Filter panel rows: the purple highlight bar and radio dot appear only
     // on the selected row, so the left of the list reads as one column.
     s += QString("QWidget#HistoryFilterItem {"
@@ -1246,17 +1250,18 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QFrame#HistoryFilterBar {"
                  "  background: %1; border: none; border-radius: 2px; }")
             .arg(c.accent2.name());
+    s += QString("QLabel#HistoryFilterLabel { color: %1; font-size: %2px; }")
+            .arg(c.text.name()).arg(t.body_font_px + 2);
     s += QString("QLabel#HistoryPanelHeading {"
-                 "  color: %1; font-size: %2px; font-weight: 600;"
-                 "  letter-spacing: 0.2px; }")
-            .arg(c.text.name()).arg(t.body_font_px);
+                 "  color: %1; font-size: %2px; font-weight: 600; }")
+            .arg(c.text.name()).arg(t.body_font_px + 3);
     s += QString("QWidget#HistoryActionRow {"
                  "  background: transparent; border-radius: %1px; }")
             .arg(Radius::md);
     s += QString("QWidget#HistoryActionRow:hover { background: %1; }")
             .arg(rgba(c.accent, 20));
     s += QString("QLabel#HistoryActionLabel { color: %1; font-size: %2px; }")
-            .arg(c.text.name()).arg(t.body_font_px);
+            .arg(c.text.name()).arg(t.body_font_px + 2);
     s += QString("QLabel#HistorySyncNote {"
                  "  color: %1; font-size: %2px; font-style: italic; }")
             .arg(c.text_faint.name()).arg(t.small_font_px + 1);

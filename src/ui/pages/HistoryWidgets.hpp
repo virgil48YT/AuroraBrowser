@@ -35,11 +35,13 @@ inline constexpr const char* kHistoryActionProperty = "history_action";
 // Square-ish checkbox with a painted tick. The global #PageCheck sheet turns
 // every QCheckBox into a pill switch (right for Settings, wrong for a list
 // of rows), so history rows draw their own indicator.
+inline constexpr int kCheckPx = 22;
+
 class RoundCheck : public QCheckBox {
 public:
     explicit RoundCheck(QWidget* parent = nullptr);
-    QSize sizeHint() const override { return {20, 20}; }
-    QSize minimumSizeHint() const override { return {20, 20}; }
+    QSize sizeHint() const override { return {kCheckPx, kCheckPx}; }
+    QSize minimumSizeHint() const override { return {kCheckPx, kCheckPx}; }
 
 protected:
     void paintEvent(QPaintEvent* event) override;

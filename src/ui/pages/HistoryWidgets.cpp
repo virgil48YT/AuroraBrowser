@@ -34,12 +34,25 @@ inline qreal current_dpr(const QWidget* w) {
     return w && w->screen() ? w->screen()->devicePixelRatio() : 1.0;
 }
 
+// Row metrics, scaled up to the mockup: larger favicons and text, roomier
+// rows. The favicon is rendered at kFaviconPx inside a kFaviconSlotPx box.
+constexpr int kFaviconSlotPx = 28;
+constexpr int kFaviconPx = 24;
+constexpr int kGlobePx = 20;
+
+QPixmap row_favicon(const QString& url, const QWidget* w) {
+    // pixmap_for_url() scales up from the high-resolution source; the old
+    // QIcon::pixmap(22) never upscaled, so rows showed 16px icons.
+    return FaviconCache::instance().pixmap_for_url(url, kFaviconPx,
+                                                   current_dpr(w));
+}
+
 } // namespace
 
 // RoundCheck ----------------------------------------------------------------
 RoundCheck::RoundCheck(QWidget* parent) : QCheckBox(parent) {
     setObjectName(QStringLiteral("HistoryCheck"));
-    setFixedSize(20, 20);
+    setFixedSize(kCheckPx, kCheckPx);
     setCursor(Qt::PointingHandCursor);
     setFocusPolicy(Qt::NoFocus);
 }
@@ -93,7 +106,7 @@ void ElidedLabel::paintEvent(QPaintEvent*) {
 
 // FilterRadio ---------------------------------------------------------------
 FilterRadio::FilterRadio(QWidget* parent) : QWidget(parent) {
-    setFixedSize(16, 16);
+    setFixedSize(18, 18);
     // Clicks belong to the row that hosts this dot.
     setAttribute(Qt::WA_TransparentForMouseEvents, true);
 }
@@ -130,8 +143,8 @@ FilterRow::FilterRow(const QString& label, QWidget* parent) : QWidget(parent) {
     setCursor(Qt::PointingHandCursor);
     setAttribute(Qt::WA_StyledBackground, true);
     auto* row = new QHBoxLayout(this);
-    row->setContentsMargins(10, 7, 10, 7);
-    row->setSpacing(10);
+    row->setContentsMargins(12, 8, 12, 8);
+    row->setSpacing(12);
     bar_ = new QFrame(this);
     bar_->setObjectName(QStringLiteral("HistoryFilterBar"));
     bar_->setFixedWidth(3);
@@ -139,6 +152,7 @@ FilterRow::FilterRow(const QString& label, QWidget* parent) : QWidget(parent) {
     radio_ = new FilterRadio(this);
     row->addWidget(radio_);
     auto* text = new QLabel(label, this);
+    text->setObjectName(QStringLiteral("HistoryFilterLabel"));
     row->addWidget(text, 1);
     setSelected(false);
 }
@@ -162,14 +176,14 @@ HistoryRow::HistoryRow(QString url, QWidget* parent)
     setAttribute(Qt::WA_StyledBackground, true);
     setCursor(Qt::PointingHandCursor);
     auto* row = new QHBoxLayout(this);
-    row->setContentsMargins(12, 7, 12, 7);
-    row->setSpacing(12);
+    row->setContentsMargins(14, 7, 14, 7);
+    row->setSpacing(16);
 
     check_ = new RoundCheck(this);
     row->addWidget(check_);
 
     favicon_ = new QLabel(this);
-    favicon_->setFixedSize(24, 24);
+    favicon_->setFixedSize(kFaviconSlotPx, kFaviconSlotPx);
     favicon_->setAlignment(Qt::AlignCenter);
     row->addWidget(favicon_);
 
@@ -186,7 +200,7 @@ HistoryRow::HistoryRow(QString url, QWidget* parent)
     time_ = new QLabel(this);
     time_->setObjectName(QStringLiteral("HistoryRowTime"));
     time_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    time_->setFixedWidth(76);
+    time_->setFixedWidth(96);
     row->addWidget(time_);
 }
 
@@ -201,21 +215,20 @@ void HistoryRow::set_visit(const history::Visit& v) {
     setProperty(kHistoryIdProperty, QVariant::fromValue(v.id));
     // The favicon cache resolves asynchronously; icon_ready re-stamps the
     // row later, so paint a neutral globe until then instead of a blank.
-    const QIcon icon =
-        FaviconCache::instance().icon_for_url(QString::fromStdString(v.url));
+    const QPixmap icon = row_favicon(QString::fromStdString(v.url), this);
     if (icon.isNull()) {
-        favicon_->setPixmap(icons::pixmap(icons::Name::Globe, 16,
+        favicon_->setPixmap(icons::pixmap(icons::Name::Globe, kGlobePx,
                                           current_theme().colors.text_muted,
                                           current_dpr(this)));
     } else {
-        favicon_->setPixmap(icon.pixmap(22));
+        favicon_->setPixmap(icon);
     }
 }
 
 void HistoryRow::refresh_icon(const QString& host) {
     if (FaviconCache::host_of(url_) != host) return;
-    const QIcon icon = FaviconCache::instance().icon_for_url(url_);
-    if (!icon.isNull()) favicon_->setPixmap(icon.pixmap(22));
+    const QPixmap icon = row_favicon(url_, this);
+    if (!icon.isNull()) favicon_->setPixmap(icon);
 }
 
 qint64 HistoryRow::id() const {
@@ -234,8 +247,8 @@ HistoryGroupCard::HistoryGroupCard(const QString& title, QWidget* parent)
     apply_card_style(14, 3);
 
     auto* outer = new QVBoxLayout(this);
-    outer->setContentsMargins(18, 14, 18, 12);
-    outer->setSpacing(4);
+    outer->setContentsMargins(20, 16, 20, 14);
+    outer->setSpacing(6);
 
     header_ = new QWidget(this);
     header_->setObjectName(QStringLiteral("HistoryGroupHeader"));
@@ -251,14 +264,14 @@ HistoryGroupCard::HistoryGroupCard(const QString& title, QWidget* parent)
     count_label_ = new QLabel(header_);
     count_label_->setObjectName(QStringLiteral("HistoryGroupCount"));
     count_label_->setAlignment(Qt::AlignCenter);
-    count_label_->setFixedHeight(22);
-    count_label_->setMinimumWidth(38);
+    count_label_->setFixedHeight(24);
+    count_label_->setMinimumWidth(40);
     head->addWidget(count_label_);
 
     head->addStretch(1);
 
     chevron_ = new QLabel(header_);
-    chevron_->setFixedSize(18, 18);
+    chevron_->setFixedSize(20, 20);
     head->addWidget(chevron_);
     update_chevron();
 
@@ -268,7 +281,7 @@ HistoryGroupCard::HistoryGroupCard(const QString& title, QWidget* parent)
     rows_host_->setObjectName(QStringLiteral("HistoryGroupRows"));
     rows_ = new QVBoxLayout(rows_host_);
     rows_->setContentsMargins(0, 6, 0, 0);
-    rows_->setSpacing(1);
+    rows_->setSpacing(2);
     outer->addWidget(rows_host_);
 
     // The whole header strip toggles the group, like the mock's cards.
@@ -323,7 +336,7 @@ void HistoryGroupCard::toggle() { set_collapsed(!collapsed_); }
 void HistoryGroupCard::update_chevron() {
     chevron_->setPixmap(icons::pixmap(
         collapsed_ ? icons::Name::ChevronRight : icons::Name::ChevronDown,
-        16, current_theme().colors.text_muted, current_dpr(this)));
+        18, current_theme().colors.text_muted, current_dpr(this)));
 }
 
 } // namespace aurora::ui
