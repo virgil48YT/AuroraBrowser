@@ -23,9 +23,12 @@ namespace aurora::ui {
 namespace {
 
 constexpr int kPopupWidth = 264;
-// Transparent margin around the panel; the stylesheet paints the rounded
-// corners, the popup window itself stays rectangular.
-constexpr int kPopupMargin = 10;
+// No transparent margin around the panel. The popup used to reserve a 10px
+// see-through band for a shadow that was never painted; on Windows that band
+// (plus the native popup drop shadow drawn around the whole window rect)
+// showed up as an empty, unloaded-looking frame under the Shields panel.
+// The window now hugs the rounded panel; only its corners are transparent.
+constexpr int kPopupMargin = 0;
 
 } // namespace
 
@@ -135,9 +138,19 @@ void ShieldButton::paintEvent(QPaintEvent* e) {
 }
 
 void ShieldButton::build_popup() {
-    popup_ = new QWidget(window(), Qt::Popup | Qt::FramelessWindowHint);
-    popup_->setAttribute(Qt::WA_TranslucentBackground);
+    // NoDropShadowWindowHint: the native popup shadow is drawn around the
+    // window rectangle, not the rounded panel, and read as a stray frame.
+    popup_ = new QWidget(window(), Qt::Popup | Qt::FramelessWindowHint |
+                                       Qt::NoDropShadowWindowHint);
     popup_->setObjectName(QStringLiteral("ShieldPopup"));
+    // Same see-through recipe as DownloadsPopover: translucent, no system
+    // background, and the #ShieldPopup QSS rule (background: transparent)
+    // honored via WA_StyledBackground, so nothing paints a solid square
+    // behind the panel's rounded corners.
+    popup_->setAttribute(Qt::WA_TranslucentBackground);
+    popup_->setAttribute(Qt::WA_NoSystemBackground);
+    popup_->setAttribute(Qt::WA_StyledBackground, true);
+    popup_->setAutoFillBackground(false);
 
     auto* outer = new QVBoxLayout(popup_);
     outer->setContentsMargins(kPopupMargin, kPopupMargin,
@@ -146,6 +159,10 @@ void ShieldButton::build_popup() {
 
     auto* panel = new QWidget(popup_);
     panel->setObjectName(QStringLiteral("ShieldPanel"));
+    // Plain QWidget + QSS: without this the panel's rounded plate is not
+    // painted reliably and the transparent window shows through.
+    panel->setAttribute(Qt::WA_StyledBackground, true);
+    panel->setFixedWidth(kPopupWidth);
     outer->addWidget(panel);
 
     auto* lay = new QVBoxLayout(panel);
@@ -232,9 +249,8 @@ void ShieldButton::refresh_popup() {
 
 void ShieldButton::fit_and_place_popup() {
     popup_->adjustSize();
-    // The panel is inset by the transparent margin, so right-aligning the
-    // WINDOW with the button would leave the panel visually off by that
-    // margin — compensate the same way DownloadsPopover does.
+    // The window hugs the panel (no transparent margin), so right-aligning
+    // the window with the button right-aligns the visible panel too.
     QPoint pos = dropdown_pos(this, popup_->size(),
                               /*align_right=*/true, Spacing::xs);
     pos.setX(pos.x() + kPopupMargin);
