@@ -19,7 +19,7 @@ inline std::string tidy_selection(std::string_view in, size_t max_bytes = 300) {
     std::string out;
     out.reserve(std::min(in.size(), max_bytes + 4));
     bool pending_space = false;
-    for (const unsigned char c : in) {
+    for (const char c : in) {
         if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v') {
             pending_space = !out.empty();
             continue;
@@ -29,7 +29,7 @@ inline std::string tidy_selection(std::string_view in, size_t max_bytes = 300) {
             out.push_back(' ');
             pending_space = false;
         }
-        out.push_back(static_cast<char>(c));
+        out.push_back(c);
     }
     // The byte cap may have cut a multi-byte character in half: drop it.
     size_t lead = out.size();

@@ -307,7 +307,7 @@ void FaviconCache::try_touch_icon(const QString& host,
     if (touch_in_flight_.contains(host)) return;
     touch_in_flight_.insert(host);
 
-    QNetworkRequest req(QUrl(touch_url));
+    QNetworkRequest req{QUrl(touch_url)};
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                      QNetworkRequest::NoLessSafeRedirectPolicy);
     req.setMaximumRedirectsAllowed(3);
