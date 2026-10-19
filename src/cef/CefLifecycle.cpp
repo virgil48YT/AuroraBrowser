@@ -3,6 +3,7 @@
 #include "cef/CefAdapter.hpp"
 #include "cef/GpuPolicy.hpp"
 #include "cef/MediaPolicy.hpp"
+#include "cef/SandboxPolicy.hpp"
 #include "extensions/ExtensionLoadList.hpp"
 #include "util/Log.hpp"
 
@@ -19,9 +20,15 @@
 #include <psapi.h>
 #elif defined(__linux__)
 #include <cstdio>
+#include <cstdlib>
+#include <sched.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #include "cef/CefMacSupport.hpp"
+#include "include/cef_sandbox_mac.h"
 #include "include/wrapper/cef_library_loader.h"
 #endif
 
@@ -38,6 +45,88 @@ namespace {
 // the browser process command line. A plain file-static is correct here: it is
 // written once on the UI thread before CEF exists and only read afterwards.
 std::vector<std::string> g_extension_dirs;
+
+// Windows: the sandbox_info pointer CEF's bootstrap.exe passes to the client
+// DLL's RunWinMain (see src/app/main.cpp). It has to be forwarded to BOTH
+// CefExecuteProcess (so sandboxed subprocesses lower their token) and
+// CefInitialize (so the broker side exists). Null everywhere else, and on a
+// Windows build without AURORA_WIN_SANDBOX. Written once before any CEF call.
+void* g_windows_sandbox_info = nullptr;
+
+const char* env_or_empty(const char* name) {
+    const char* v = std::getenv(name);
+    return v ? v : "";
+}
+
+#if defined(__linux__)
+// Directory of the running executable, from /proc/self/exe.
+std::string executable_dir() {
+    char buf[4096];
+    const ssize_t n = ::readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) return {};
+    std::string path(buf, static_cast<std::size_t>(n));
+    const auto slash = path.rfind('/');
+    return slash == std::string::npos ? std::string() : path.substr(0, slash);
+}
+
+// chrome-sandbox next to the executable is usable when it is owned by root
+// and has the setuid bit with mode 4755 — exactly what Chromium's
+// SetuidSandboxHost checks before it trusts the helper.
+bool linux_suid_helper_usable() {
+    const std::string dir = executable_dir();
+    if (dir.empty()) return false;
+    struct stat st {};
+    if (::stat((dir + "/chrome-sandbox").c_str(), &st) != 0) return false;
+    return st.st_uid == 0 && (st.st_mode & 07777) == 04755;
+}
+
+// Can an unprivileged process create a user namespace? Tested in a forked
+// child so the browser process itself is never moved into one. This runs
+// before CefInitialize and before Qt creates any thread (main.cpp calls
+// cef::initialize first), so fork() is safe here. Only the namespace is
+// created; AppArmor's restriction on Ubuntu 23.10+ denies the *capabilities*
+// inside it rather than the unshare itself, so the child additionally checks
+// it can write its own uid_map — which is what Chromium's namespace sandbox
+// needs and what a restricted namespace refuses.
+bool linux_user_namespaces_usable() {
+    const pid_t pid = ::fork();
+    if (pid < 0) return false;
+    if (pid == 0) {
+        const uid_t uid = ::getuid();
+        if (::unshare(CLONE_NEWUSER) != 0) ::_exit(1);
+        std::FILE* f = std::fopen("/proc/self/uid_map", "w");
+        if (!f) ::_exit(2);
+        const int ok = std::fprintf(f, "0 %u 1\n", static_cast<unsigned>(uid));
+        const int closed = std::fclose(f);
+        ::_exit(ok > 0 && closed == 0 ? 0 : 3);
+    }
+    int status = 0;
+    if (::waitpid(pid, &status, 0) != pid) return false;
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+#endif
+
+// Probe the platform and decide whether the Chromium sandbox can be enabled.
+// See cef/SandboxPolicy.hpp for the per-platform rules.
+SandboxDecision decide_sandbox_for_this_process() {
+    SandboxProbe probe;
+#if defined(_WIN32)
+    probe.platform = SandboxPlatform::Windows;
+    probe.windows_sandbox_info = g_windows_sandbox_info != nullptr;
+#elif defined(__APPLE__)
+    probe.platform = SandboxPlatform::MacOS;
+#else
+    probe.platform = SandboxPlatform::Linux;
+    probe.running_as_root = ::geteuid() == 0;
+    probe.suid_helper_usable = !probe.running_as_root && linux_suid_helper_usable();
+    probe.user_namespaces_usable = !probe.running_as_root &&
+                                   !probe.suid_helper_usable &&
+                                   linux_user_namespaces_usable();
+#endif
+    probe.require_sandbox = env_flag_enabled(env_or_empty("AURORA_REQUIRE_SANDBOX"));
+    probe.developer_opt_out = env_flag_enabled(env_or_empty("AURORA_DISABLE_SANDBOX"));
+    return decide_sandbox(probe);
+}
 
 // Chromium's own switch for loading unpacked extensions. CEF removed the
 // Alloy CefExtension/CefExtensionHandler/RequestContext::LoadExtension API in
@@ -302,9 +391,29 @@ bool initialize(std::string_view cache_path,
 #endif
     CefSettings settings;
     settings.multi_threaded_message_loop = false;  // We pump from Qt.
-    settings.no_sandbox = true;  // Not linking cef_sandbox.lib; the sandbox
-                                // requires its own static lib + process setup
-                                // (tracked separately; see docs/security.md).
+    // The Chromium sandbox. On by default on every platform; the decision
+    // (and why it could not be enabled, when it cannot) comes from
+    // cef/SandboxPolicy.hpp. What remains per platform:
+    //   * Windows: needs the bootstrap.exe build (AURORA_WIN_SANDBOX, the
+    //     default when CEF ships bootstrap.exe). A plain-exe build runs
+    //     unsandboxed and says so here.
+    //   * macOS: always on (helpers initialize it, mac_helper_main.cpp).
+    //   * Linux: on when chrome-sandbox is setuid root or unprivileged user
+    //     namespaces work. Otherwise Chromium would abort with "No usable
+    //     sandbox!", so Aurora falls back to no_sandbox with an Error-level log
+    //     line, unless AURORA_REQUIRE_SANDBOX=1 asks it to refuse to start.
+    // docs/security.md records the same table.
+    const SandboxDecision sandbox = decide_sandbox_for_this_process();
+    if (sandbox.refuse_to_start) {
+        AURORA_LOG(LogLevel::Error, "cef")
+            << "sandbox required (AURORA_REQUIRE_SANDBOX) but unavailable: "
+            << sandbox.reason;
+        return false;
+    }
+    settings.no_sandbox = sandbox.sandbox_enabled ? 0 : 1;
+    AURORA_LOG(sandbox.sandbox_enabled ? LogLevel::Info : LogLevel::Error, "cef")
+        << "chromium sandbox " << (sandbox.sandbox_enabled ? "ENABLED" : "DISABLED")
+        << ": " << sandbox.reason;
 
     // Persistent profile storage. cache_path is where Chromium keeps the
     // profile's Cookies, Local Storage and cache databases, so setting it is
@@ -360,7 +469,7 @@ bool initialize(std::string_view cache_path,
     settings.log_severity = LOGSEVERITY_WARNING;
 
     auto app = CefRefPtr<AuroraApp>(new AuroraApp);
-    if (!CefInitialize(main_args, settings, app, nullptr)) {
+    if (!CefInitialize(main_args, settings, app, g_windows_sandbox_info)) {
         AURORA_LOG(LogLevel::Error, "cef") << "CefInitialize failed";
         return false;
     }
@@ -377,6 +486,29 @@ void pump_message_loop() {
 
 void shutdown() {
     CefShutdown();
+}
+
+bool initialize_helper_sandbox(int argc, char** argv) {
+#if defined(__APPLE__)
+    // AURORA_DISABLE_SANDBOX is the developer override; the browser process
+    // then also passes no_sandbox, so the helpers must not lock themselves
+    // down either (a sandboxed helper talking to a no_sandbox browser fails
+    // its first IPC).
+    if (env_flag_enabled(env_or_empty("AURORA_DISABLE_SANDBOX"))) return true;
+    // Static for the same reason as the library loader below: the context
+    // must outlive everything the helper does.
+    static CefScopedSandboxContext sandbox_context;
+    static const bool ok = sandbox_context.Initialize(argc, argv);
+    return ok;
+#else
+    (void)argc;
+    (void)argv;
+    return true;
+#endif
+}
+
+void set_windows_sandbox_info(void* sandbox_info) {
+    g_windows_sandbox_info = sandbox_info;
 }
 
 bool load_library(bool helper) {
@@ -403,7 +535,7 @@ int run_subprocess(int argc, char** argv) {
     CefMainArgs main_args(argc, argv);
 #endif
     auto app = CefRefPtr<AuroraApp>(new AuroraApp);
-    return CefExecuteProcess(main_args, app, nullptr);
+    return CefExecuteProcess(main_args, app, g_windows_sandbox_info);
 }
 
 std::unique_ptr<webview::WebViewController> make_webview_controller() {

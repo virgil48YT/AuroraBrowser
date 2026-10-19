@@ -108,6 +108,7 @@ target_sources(aurora_core
         src/core/CefMaterialize.cpp
         src/cef/GpuPolicy.cpp
         src/cef/MediaPolicy.cpp
+        src/cef/SandboxPolicy.cpp
         src/util/Log.cpp
         src/util/Perf.cpp
         src/util/Sha256.cpp
@@ -305,6 +306,27 @@ if(AURORA_ENABLE_CEF)
         else()
             target_compile_options(libcef_dll_wrapper PRIVATE -w)
         endif()
+    endif()
+    # Windows Chromium sandbox. Since M138 CEF ships no cef_sandbox.lib that a
+    # non-Chromium toolchain can link; the sandbox comes in a prebuilt
+    # bootstrap.exe that loads "<its own name>.dll" and calls RunWinMain with
+    # the sandbox_info pointer. AURORA_WIN_SANDBOX builds aurora_browser as a
+    # DLL and copies bootstrap.exe in as aurora_browser.exe (src/app). Default
+    # ON whenever the CEF distribution carries bootstrap.exe; OFF builds a
+    # plain executable that runs unsandboxed (and logs that it does).
+    if(WIN32)
+        if(EXISTS "${CEF_ROOT}/Release/bootstrap.exe")
+            set(_aurora_win_sandbox_default ON)
+        else()
+            set(_aurora_win_sandbox_default OFF)
+        endif()
+        option(AURORA_WIN_SANDBOX
+            "Windows: build the browser as a DLL run by CEF's sandboxed bootstrap.exe"
+            ${_aurora_win_sandbox_default})
+        if(AURORA_WIN_SANDBOX AND NOT EXISTS "${CEF_ROOT}/Release/bootstrap.exe")
+            message(FATAL_ERROR "AURORA_WIN_SANDBOX=ON but ${CEF_ROOT}/Release/bootstrap.exe is missing")
+        endif()
+        message(STATUS "Windows Chromium sandbox (bootstrap.exe): ${AURORA_WIN_SANDBOX}")
     endif()
     add_library(aurora_cef STATIC
         src/cef/CefAdapter.cpp

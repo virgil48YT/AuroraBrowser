@@ -2,7 +2,7 @@
 # found (see the top-level CMakeLists.txt). The core library is linked
 # statically so the binary is self-contained.
 
-qt_add_executable(aurora_browser
+set(AURORA_BROWSER_SOURCES
     ../ui/MainWindow.cpp
     ../ui/Omnibox.cpp
     ../ui/OmniboxPopup.cpp
@@ -46,6 +46,34 @@ qt_add_executable(aurora_browser
     main.cpp
 )
 
+# Windows + AURORA_WIN_SANDBOX (see the top-level CMakeLists.txt): the browser
+# is aurora_browser.dll, exporting RunWinMain, and CEF's sandbox-linked
+# bootstrap.exe is copied next to it as aurora_browser.exe. The executable is
+# what users, the SFX and aurora_bootstrap start, so nothing downstream
+# changes its name. Everywhere else it is an ordinary executable.
+if(WIN32 AND AURORA_ENABLE_CEF AND AURORA_WIN_SANDBOX)
+    qt_add_library(aurora_browser SHARED ${AURORA_BROWSER_SOURCES})
+    target_compile_definitions(aurora_browser PRIVATE AURORA_WIN_BOOTSTRAP)
+    # CommandLineToArgvW (shell32) and the LPAC ACL calls (advapi32).
+    target_link_libraries(aurora_browser PRIVATE shell32 advapi32)
+    set(AURORA_BROWSER_EXE "$<TARGET_FILE_DIR:aurora_browser>/aurora_browser.exe")
+    add_custom_command(TARGET aurora_browser POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CEF_ROOT}/Release/bootstrap.exe" "${AURORA_BROWSER_EXE}"
+        # Brand the bootstrap with Aurora's icon and grant the LPAC ACL the
+        # sandboxed network service needs (both best effort; see the script).
+        COMMAND ${CMAKE_COMMAND}
+                -DRCEDIT=${CMAKE_SOURCE_DIR}/rcedit-x64.exe
+                -DEXE=${AURORA_BROWSER_EXE}
+                -DICON=${CMAKE_SOURCE_DIR}/assets/icons/aurora.ico
+                -DLPAC_DIR=$<TARGET_FILE_DIR:aurora_browser>
+                -P ${CMAKE_SOURCE_DIR}/cmake/FinishBootstrapExe.cmake
+        COMMENT "Installing CEF bootstrap.exe as aurora_browser.exe (Windows sandbox)"
+        VERBATIM)
+else()
+    qt_add_executable(aurora_browser ${AURORA_BROWSER_SOURCES})
+endif()
+
 # Brand artwork (logo + emblem) compiled into the executable so the window
 # and the homepage never depend on loose files next to the .exe.
 qt_add_resources(aurora_browser aurora_brand
@@ -78,7 +106,9 @@ if(WIN32)
         ${CMAKE_CURRENT_BINARY_DIR}/aurora.rc
         @ONLY)
     target_sources(aurora_browser PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/aurora.rc)
-    set_target_properties(aurora_browser PROPERTIES WIN32_EXECUTABLE TRUE)
+    if(NOT (AURORA_ENABLE_CEF AND AURORA_WIN_SANDBOX))
+        set_target_properties(aurora_browser PROPERTIES WIN32_EXECUTABLE TRUE)
+    endif()
     # MainWindow's frameless+Aero-Snap support calls GetWindowLongPtrW /
     # SetWindowLongPtrW / SetWindowPos / GetSystemMetrics directly. Qt6::Gui
     # already pulls user32 in transitively, but link it explicitly so the

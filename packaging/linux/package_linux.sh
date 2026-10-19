@@ -42,12 +42,16 @@ mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/share/applications" \
          "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
 
 install -m 0755 "$EXE" "${APPDIR}/usr/bin/aurora_browser"
-# CEF runtime. chrome-sandbox is not shipped: Aurora runs CEF with
-# no_sandbox (see docs/security.md), and a setuid helper inside an
-# AppImage/tarball could not be installed correctly anyway.
+# CEF runtime. chrome-sandbox IS shipped (not setuid — a package cannot
+# grant that): Aurora prefers the user-namespace sandbox, which needs no
+# helper, and uses chrome-sandbox only when an administrator has made it
+# root-owned 4755 (sudo chown root:root chrome-sandbox && sudo chmod 4755
+# chrome-sandbox in an extracted tarball). Inside the AppImage it can never be
+# setuid (FUSE mounts are nosuid), so the AppImage relies on user namespaces.
+# See docs/security.md and src/cef/SandboxPolicy.hpp.
 cp -a "${CEF}/Release/." "${APPDIR}/usr/bin/"
 cp -a "${CEF}/Resources/." "${APPDIR}/usr/bin/"
-rm -f "${APPDIR}/usr/bin/chrome-sandbox" "${APPDIR}/usr/bin/"*.a
+rm -f "${APPDIR}/usr/bin/"*.a
 install -m 0644 "${HERE}/aurora.desktop" "${APPDIR}/usr/share/applications/aurora.desktop"
 install -m 0644 "${ROOT}/assets/icons/aurora_256.png" \
     "${APPDIR}/usr/share/icons/hicolor/256x256/apps/aurora.png"

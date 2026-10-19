@@ -110,12 +110,24 @@ jobs:
           mkdir -p package
           cp build/bin/aurora_browser.exe package/
           cp build/bin/aurora_bootstrap.exe package/
+          # Windows sandbox build (AURORA_WIN_SANDBOX, the default with CEF):
+          # aurora_browser.exe is CEF's sandbox-linked bootstrap.exe and the
+          # browser itself is aurora_browser.dll, so that is what windeployqt
+          # must inspect for Qt dependencies.
+          QT_TARGET=package/aurora_browser.exe
+          if [ -f build/bin/aurora_browser.dll ]; then
+            cp build/bin/aurora_browser.dll package/
+            QT_TARGET=package/aurora_browser.dll
+          fi
           windeployqt --release --no-translations --no-system-d3d-compiler \
-                     --no-opengl-sw package/aurora_browser.exe
+                     --no-opengl-sw "$QT_TARGET"
           cp -r third_party/cef/Resources/* package/ 2>/dev/null || true
           cp -r third_party/cef/Release/* package/ 2>/dev/null || true
           # Drop build-only files so the artifact only carries runtime bits.
           rm -f package/*.lib package/*.exp package/*.pdb
+          # The unrenamed bootstrap copies from the CEF distribution are not
+          # needed (aurora_browser.exe already is one).
+          rm -f package/bootstrap.exe package/bootstrapc.exe
         shell: bash
 
       - name: Stamp the build ID into the package

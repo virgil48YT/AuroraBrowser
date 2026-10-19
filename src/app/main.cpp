@@ -30,6 +30,11 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <cstdio>
+#if defined(AURORA_WIN_BOOTSTRAP)
+#include <aclapi.h>
+#include <sddl.h>
+#include <shellapi.h>
+#endif
 #endif
 
 #include "bookmarks/BookmarkService.hpp"
@@ -248,7 +253,75 @@ std::vector<std::string> enabled_extension_dirs(const QString& profile,
 
 } // namespace
 
-int main(int argc, char** argv) {
+#if defined(AURORA_HAS_CEF) && defined(AURORA_WIN_BOOTSTRAP)
+// Windows sandbox, LPAC: Chromium runs its network service in a Less
+// Privileged AppContainer, which can only read files whose ACL grants "ALL
+// RESTRICTED APPLICATION PACKAGES" (S-1-15-2-2). Program Files grants that by
+// default; %LOCALAPPDATA%\Aurora (where the SFX extracts) and an unzipped
+// artifact folder do not, and the sandboxed network service then fails to
+// start. CEF's own samples run `icacls <dir> /grant *S-1-15-2-2:(OI)(CI)(RX)`
+// at build time (SET_LPAC_ACLS); a user install has to do it at runtime, once.
+// Idempotent: returns early when an allow ACE for the SID is already present,
+// so the (inheritance-propagating) DACL write happens on first run only.
+static bool ensure_lpac_read_access(const std::string& utf8_dir) {
+    if (utf8_dir.empty()) return false;
+    const int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8_dir.c_str(), -1, nullptr, 0);
+    if (wlen <= 0) return false;
+    std::wstring dir(static_cast<std::size_t>(wlen), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8_dir.c_str(), -1, dir.data(), wlen);
+    dir.resize(static_cast<std::size_t>(wlen - 1));
+
+    PSID sid = nullptr;
+    if (!ConvertStringSidToSidW(L"S-1-15-2-2", &sid)) return false;
+    constexpr DWORD kReadExecute = FILE_GENERIC_READ | FILE_GENERIC_EXECUTE;
+    PACL dacl = nullptr;
+    PSECURITY_DESCRIPTOR sd = nullptr;
+    bool ok = false;
+    if (GetNamedSecurityInfoW(dir.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+                              nullptr, nullptr, &dacl, nullptr, &sd) == ERROR_SUCCESS) {
+        bool present = false;
+        ACL_SIZE_INFORMATION info{};
+        if (dacl && GetAclInformation(dacl, &info, sizeof(info), AclSizeInformation)) {
+            for (DWORD i = 0; i < info.AceCount && !present; ++i) {
+                void* ace = nullptr;
+                if (!GetAce(dacl, i, &ace)) continue;
+                if (static_cast<ACE_HEADER*>(ace)->AceType != ACCESS_ALLOWED_ACE_TYPE)
+                    continue;
+                auto* allowed = static_cast<ACCESS_ALLOWED_ACE*>(ace);
+                const bool reads = (allowed->Mask & GENERIC_READ) != 0 ||
+                                   (allowed->Mask & kReadExecute) == kReadExecute;
+                present = reads && EqualSid(&allowed->SidStart, sid);
+            }
+        }
+        if (present) {
+            ok = true;
+        } else {
+            EXPLICIT_ACCESSW ea{};
+            ea.grfAccessPermissions = kReadExecute;
+            ea.grfAccessMode = GRANT_ACCESS;
+            ea.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+            ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+            ea.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+            ea.Trustee.ptstrName = static_cast<LPWSTR>(sid);
+            PACL updated = nullptr;
+            if (SetEntriesInAclW(1, &ea, dacl, &updated) == ERROR_SUCCESS) {
+                ok = SetNamedSecurityInfoW(dir.data(), SE_FILE_OBJECT,
+                                           DACL_SECURITY_INFORMATION, nullptr,
+                                           nullptr, updated, nullptr) == ERROR_SUCCESS;
+                LocalFree(updated);
+            }
+        }
+        LocalFree(sd);
+    }
+    LocalFree(sid);
+    return ok;
+}
+#endif
+
+// The real entry point. On Windows with AURORA_WIN_SANDBOX the browser is a
+// DLL and this is reached from RunWinMain (bottom of this file); everywhere
+// else from main().
+static int aurora_main(int argc, char** argv) {
 #if defined(_WIN32)
     // --shell: allocate a console for diagnostics. The exe is a GUI-subsystem
     // app (WIN32_EXECUTABLE), so no console appears unless the user explicitly
@@ -361,6 +434,17 @@ int main(int argc, char** argv) {
             (cef_paths.build_id.empty() ? std::string()
                                         : " (build " + cef_paths.build_id + ")"));
 
+#if defined(AURORA_WIN_BOOTSTRAP)
+    // Sandboxed network service (LPAC) must be able to read the runtime.
+    for (const std::string& dir : {exe_dir, cef_paths.dir}) {
+        if (!dir.empty() && !ensure_lpac_read_access(dir)) {
+            util::Logger::instance().log(
+                util::LogLevel::Warn, "app",
+                "could not grant LPAC read access to " + dir +
+                    "; the sandboxed network service may fail to start");
+        }
+    }
+#endif
     if (!cef::initialize((profile_dir + "/cef_cache").toStdString(),
                          enabled_extension_dirs(profile_dir, argc, argv),
                          cef_paths.dir)) {
@@ -626,3 +710,45 @@ int main(int argc, char** argv) {
 #endif
     return rc;
 }
+
+#if defined(AURORA_WIN_BOOTSTRAP)
+// Windows sandbox entry point. CEF's prebuilt bootstrap.exe — shipped as
+// aurora_browser.exe and linked with Chromium's sandbox, which has to live in
+// the executable image — loads aurora_browser.dll from its own directory and
+// calls this export for the browser process AND for every subprocess, with
+// the sandbox_info that CefExecuteProcess/CefInitialize need. Signature from
+// include/cef_sandbox_win.h; the last parameter is cef_version_info_t*, which
+// Aurora does not use (declared void* so this TU needs no CEF headers — the
+// export is extern "C", so the name, not the C++ type, is what binds).
+extern "C" __declspec(dllexport) int RunWinMain(HINSTANCE /*instance*/,
+                                                LPWSTR /*command_line*/,
+                                                int /*show*/,
+                                                void* sandbox_info,
+                                                void* /*version_info*/) {
+    aurora::cef::set_windows_sandbox_info(sandbox_info);
+    // Rebuild a UTF-8 argv from the full command line (bootstrap passes the
+    // tail only). Static storage: QApplication keeps pointers into argv.
+    static std::vector<std::string> storage;
+    static std::vector<char*> pointers;
+    int wargc = 0;
+    LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+    for (int i = 0; wargv && i < wargc; ++i) {
+        const int n = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, nullptr, 0,
+                                          nullptr, nullptr);
+        std::string arg(n > 0 ? static_cast<std::size_t>(n - 1) : 0, '\0');
+        if (n > 1)
+            WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, arg.data(), n, nullptr,
+                                nullptr);
+        storage.push_back(std::move(arg));
+    }
+    if (wargv) LocalFree(wargv);
+    if (storage.empty()) storage.emplace_back("aurora_browser.exe");
+    for (auto& arg : storage) pointers.push_back(arg.data());
+    pointers.push_back(nullptr);
+    return aurora_main(static_cast<int>(storage.size()), pointers.data());
+}
+#else
+int main(int argc, char** argv) {
+    return aurora_main(argc, argv);
+}
+#endif

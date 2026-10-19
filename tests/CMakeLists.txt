@@ -19,6 +19,7 @@ add_executable(aurora_tests
     test_list_updater.cpp
     test_gpu_policy.cpp
     test_media_policy.cpp
+    test_sandbox_policy.cpp
     test_incognito.cpp
     test_privacy.cpp
     test_cookie_site.cpp

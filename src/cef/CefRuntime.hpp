@@ -47,6 +47,19 @@ void shutdown();
 // libcef is linked normally.
 bool load_library(bool helper);
 
+// macOS helpers only: enter the Chromium seatbelt sandbox for this helper
+// process (CefScopedSandboxContext). Must run first in the helper's main(),
+// before load_library(). Returns false when the sandbox library is missing or
+// refuses to initialize; the helper must then exit rather than run
+// unsandboxed. A no-op returning true on Windows and Linux.
+bool initialize_helper_sandbox(int argc, char** argv);
+
+// Windows: hand over the `sandbox_info` that CEF's bootstrap.exe passed to the
+// exported RunWinMain of aurora_browser.dll (see src/app/main.cpp). Must be
+// called before run_subprocess() and initialize(); both forward it to CEF.
+// A null value (plain-exe build, other platforms) means "no Windows sandbox".
+void set_windows_sandbox_info(void* sandbox_info);
+
 // Dispatch a CEF subprocess (renderer/GPU/utility). Returns >= 0 for a
 // subprocess (which should then exit), -1 for the browser process.
 int run_subprocess(int argc, char** argv);
