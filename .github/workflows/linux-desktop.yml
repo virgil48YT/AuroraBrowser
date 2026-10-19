@@ -1,0 +1,100 @@
+# Build the full Linux desktop browser (Qt 6 + CEF) on every push, run the
+# unit tests, start the packaged browser headlessly under Xvfb, and upload the
+# AppImage + portable tarball. Built on Ubuntu 22.04 so the bundle runs on
+# glibc 2.35+ distributions, not only on the newest one.
+name: Linux desktop
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - "android/**"
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - "android/**"
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cef:
+    name: Full browser + CEF (Linux x86_64)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build and runtime dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build libsqlite3-dev libx11-dev \
+            libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 libfuse2 patchelf \
+            xvfb xauth libnss3 libatk-bridge2.0-0 libgbm1 libxcomposite1 \
+            libxdamage1 libxrandr2 libasound2 libcups2 libpango-1.0-0 \
+            libxshmfence1 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
+            libxcb-shape0 libxcb-xinerama0 libxcb-randr0 libxcb-render-util0 \
+            libxcb-image0
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Fetch CEF (Linux)
+        run: bash scripts/fetch_cef.sh
+        env:
+          PLATFORM: linux64
+
+      - name: Configure with CEF
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON
+          -DCEF_ROOT=${{ github.workspace }}/third_party/cef
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package (AppImage + tarball)
+        run: |
+          VERSION="0.0.0-ci.${GITHUB_RUN_NUMBER}"
+          QMAKE="$(command -v qmake6 || command -v qmake)" \
+            bash packaging/linux/package_linux.sh build third_party/cef dist "$VERSION"
+
+      - name: Smoke test the packaged browser (Xvfb)
+        run: |
+          set -e
+          mkdir -p smoke && tar -C smoke -xzf dist/*.tar.gz
+          APP="$(ls -d smoke/Aurora-*)"
+          HOME="$RUNNER_TEMP/smoke-home" AURORA_GPU=software \
+            timeout 180 xvfb-run -a -s "-screen 0 1280x800x24" \
+            "$APP/aurora" --smoke-test 2>&1 | tee smoke.log
+          grep -q "context initialized" smoke.log
+          grep -q "internal pages and tab strip exercised" smoke.log
+          HOME="$RUNNER_TEMP/smoke-home-appimage" AURORA_GPU=software \
+            timeout 180 xvfb-run -a dist/*.AppImage --smoke-test 2>&1 | tee smoke-appimage.log
+          grep -q "internal pages and tab strip exercised" smoke-appimage.log
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-browser-linux-x86_64
+          path: |
+            dist/*.AppImage
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30

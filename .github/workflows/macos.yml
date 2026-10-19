@@ -1,0 +1,141 @@
+# Build Aurora for macOS (Apple silicon) on every push.
+#   qt-shell: the Qt 6 browser chrome without CEF; guaranteed to build and
+#             runs the unit tests and the headless --smoke-test.
+#   cef:      the full browser with the CEF framework and helper bundles,
+#             packaged into a DMG (ad-hoc signed unless signing secrets exist).
+name: macOS build
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - "android/**"
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - "android/**"
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qt-shell:
+    name: Qt6 shell (macOS arm64)
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DAURORA_BUILD_TESTS=ON -DAURORA_BUILD_APP=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Headless smoke test
+        run: |
+          QT_QPA_PLATFORM=offscreen HOME="$RUNNER_TEMP/smoke-home" \
+            build/bin/Aurora.app/Contents/MacOS/Aurora --smoke-test
+
+  cef:
+    name: Full browser + CEF (macOS arm64)
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      - name: Fetch CEF (macOS arm64)
+        run: bash scripts/fetch_cef.sh
+        env:
+          PLATFORM: macosarm64
+
+      - name: Configure with CEF
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON
+          -DCEF_ROOT=${{ github.workspace }}/third_party/cef
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Check bundle layout
+        run: |
+          set -e
+          APP=build/bin/Aurora.app
+          test -x "$APP/Contents/MacOS/Aurora"
+          test -d "$APP/Contents/Frameworks/Chromium Embedded Framework.framework"
+          for s in "" " (GPU)" " (Renderer)" " (Plugin)" " (Alerts)"; do
+            test -x "$APP/Contents/Frameworks/Aurora Helper$s.app/Contents/MacOS/Aurora Helper$s"
+          done
+          test -f "$APP/Contents/Resources/Aurora.icns"
+          plutil -lint "$APP/Contents/Info.plist"
+
+      - name: Package DMG
+        run: |
+          VERSION="0.0.0-ci.${GITHUB_RUN_NUMBER}"
+          bash packaging/macos/package_macos.sh build/bin/Aurora.app dist "$VERSION" arm64
+
+      # The runner has a window server, so the real engine can start. Kept
+      # non-blocking until macOS runtime behaviour has been confirmed on a
+      # physical Mac; the log is uploaded either way.
+      - name: Smoke test the packaged app (best effort)
+        continue-on-error: true
+        run: |
+          set -e
+          hdiutil attach dist/*.dmg -mountpoint "$RUNNER_TEMP/aurora-dmg" -nobrowse
+          cp -R "$RUNNER_TEMP/aurora-dmg/Aurora.app" "$RUNNER_TEMP/Aurora.app"
+          hdiutil detach "$RUNNER_TEMP/aurora-dmg"
+          HOME="$RUNNER_TEMP/smoke-home" AURORA_GPU=software \
+            perl -e 'alarm 180; exec @ARGV' "$RUNNER_TEMP/Aurora.app/Contents/MacOS/Aurora" --smoke-test 2>&1 | tee smoke.log
+          grep -q "internal pages and tab strip exercised" smoke.log
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-browser-macos-arm64
+          path: |
+            dist/*.dmg
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-browser-macos-smoke-log
+          path: smoke.log
+          if-no-files-found: ignore
+          retention-days: 14
