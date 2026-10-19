@@ -103,6 +103,12 @@ enum class Name {
     Funnel,    // filter panel header
     Link,      // "search by site" glyph
     CloudOff,  // sync unavailable (honest disabled placeholder)
+    // --- Settings rail + card headers (aurora://settings) ---
+    Palette,     // appearance
+    Language,    // languages / spell check (translate glyph)
+    Sliders,     // advanced
+    Power,       // startup
+    WindowTabs,  // tabs & browsing (a window with a tab strip)
 };
 
 // Paint an icon centered within `rect` using `color`. The pixmap is cached.

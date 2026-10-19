@@ -288,6 +288,29 @@ QString svg_markup(Name n) {
             // placeholder icon says "no cloud", not a fake sign-in flow.
             return doc("<path d=\"M7 17h9.5a4 4 0 0 0 1.2-7.82 5 5 0 0 0-9.1-1.7A4.5 4.5 0 0 0 7 17z\"/>"
                        "<path d=\"M4 4l16 16\"/>");
+        // --- Settings rail + card headers ---
+        case Name::Palette:
+            return doc("<path d=\"M12 3a9 9 0 1 0 0 18c1 0 1.6-.8 1.6-1.7 0-.5-.2-.9-.5-1.2"
+                       "-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5"
+                       "c0-4-4-7.3-9-7.3z\"/>"
+                       "<circle cx=\"7.5\" cy=\"11\" r=\"1\"/>"
+                       "<circle cx=\"10\" cy=\"7\" r=\"1\"/>"
+                       "<circle cx=\"15\" cy=\"7.5\" r=\"1\"/>");
+        case Name::Language:
+            return doc("<path d=\"M4 5h8\"/><path d=\"M8 3v2\"/>"
+                       "<path d=\"M10.5 5c-.8 3.5-3 6.3-6 8\"/>"
+                       "<path d=\"M5.5 8.5c1 2 2.6 3.5 4.5 4.5\"/>"
+                       "<path d=\"M12 21l4-9 4 9\"/><path d=\"M13.5 18h5\"/>");
+        case Name::Sliders:
+            return doc("<path d=\"M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12\"/>"
+                       "<circle cx=\"16\" cy=\"6\" r=\"2\"/>"
+                       "<circle cx=\"10\" cy=\"12\" r=\"2\"/>"
+                       "<circle cx=\"18\" cy=\"18\" r=\"2\"/>");
+        case Name::Power:
+            return doc("<path d=\"M12 3v8\"/><path d=\"M6.3 6.8a8 8 0 1 0 11.4 0\"/>");
+        case Name::WindowTabs:
+            return doc("<rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"2\"/>"
+                       "<path d=\"M3 9h18\"/><path d=\"M9 4v5\"/>");
         default:
             return doc("<rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"3\"/>");
     }
