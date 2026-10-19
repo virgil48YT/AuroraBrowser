@@ -79,12 +79,25 @@ for lib in "${APPDIR}"/usr/bin/*.so "${APPDIR}"/usr/bin/*.so.*; do
     [ -e "$lib" ] && EXCLUDES+=(--exclude-library "$(basename "$lib")")
 done
 
+# System libraries Chromium must take from the host, never from the bundle:
+# NSS loads libsoftokn3/libfreebl3 with dlopen from its own directory, so a
+# bundled libnss3 without them aborts at startup (FATAL nss_util.cc); GBM/DRM,
+# ALSA, CUPS and AT-SPI must match the host's drivers and daemons. They are
+# listed in the README as runtime requirements, like for any Chromium build.
+HOST_LIBS=(libnss3.so libnssutil3.so libsmime3.so libssl3.so libsoftokn3.so
+           libfreebl3.so libnspr4.so libplc4.so libplds4.so libgbm.so.1
+           libdrm.so.2 libasound.so.2 libcups.so.2 libatk-1.0.so.0
+           libatk-bridge-2.0.so.0 libatspi.so.0 libdbus-1.so.3)
+for lib in "${HOST_LIBS[@]}"; do EXCLUDES+=(--exclude-library "${lib}*"); done
+
 "$LD_BIN" --appdir "$APPDIR" \
     --executable "${APPDIR}/usr/bin/aurora_browser" \
     --desktop-file "${APPDIR}/usr/share/applications/aurora.desktop" \
     --icon-file "${APPDIR}/usr/share/icons/hicolor/256x256/apps/aurora.png" \
     "${EXCLUDES[@]}" \
     --plugin qt
+
+for lib in "${HOST_LIBS[@]}"; do rm -f "${APPDIR}/usr/lib/${lib}"*; done
 
 # linuxdeploy rewrites the executable's RUNPATH to $ORIGIN/../lib; CEF also
 # needs $ORIGIN (libcef.so lives beside the binary).
