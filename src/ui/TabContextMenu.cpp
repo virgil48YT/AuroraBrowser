@@ -6,10 +6,13 @@
 #include <QFont>
 #include <QFontInfo>
 #include <QIcon>
-
-#if defined(AURORA_HAS_CEF)
+// QPointer/QTimer are used unconditionally: the "Share as QR Code…" entry
+// defers its dialog the same way the CEF-only PiP entry does, and exists in
+// the Qt-only shell build too.
 #include <QPointer>
 #include <QTimer>
+
+#if defined(AURORA_HAS_CEF)
 #include "ui/MainWindow.hpp"
 #include "ui/PipWindow.hpp"
 #endif
