@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="GlowFrameLayout">
+        <attr name="glowCornerRadius" format="dimension" />
+        <attr name="glowSpread" format="dimension" />
+        <attr name="glowStrokeWidth" format="dimension" />
+        <attr name="glowFill" format="color" />
+        <attr name="glowAlpha" format="integer" />
+    </declare-styleable>
+</resources>

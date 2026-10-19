@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Aurora light palette (mirrors src/ui/Theme.cpp light theme). -->
+<resources>
+    <color name="aurora_background">#F2F5FA</color>
+    <color name="aurora_surface">#F8FAFD</color>
+    <color name="aurora_surface_raised">#FFFFFF</color>
+    <color name="aurora_card">#FFFFFF</color>
+    <color name="aurora_border">#CBD5E3</color>
+    <color name="aurora_text">#0F172A</color>
+    <color name="aurora_text_muted">#51607A</color>
+    <color name="aurora_text_faint">#7A889F</color>
+    <color name="aurora_accent">#0369A1</color>
+    <color name="aurora_accent2">#6D43E0</color>
+    <color name="aurora_accent3">#B02BBF</color>
+    <color name="aurora_on_accent">#FFFFFF</color>
+    <color name="aurora_omnibox_bg">#E9EEF6</color>
+    <color name="aurora_shield_off">#7A889F</color>
+    <!-- Incognito chrome is always dark, in both themes. -->
+    <color name="incognito_surface">#1B1530</color>
+    <color name="incognito_omnibox">#2A2145</color>
+    <color name="incognito_text">#EDE9FE</color>
+    <!-- Home page (always the deep-navy aurora backdrop). -->
+    <color name="home_card">#CC0E1626</color>
+    <color name="home_text">#F1F5F9</color>
+    <color name="home_text_muted">#94A3B8</color>
+    <color name="home_cyan">#00E5FF</color>
+    <color name="home_purple">#A855F7</color>
+    <color name="home_magenta">#D946EF</color>
+    <color name="home_pill">#E6070D1A</color>
+    <color name="launcher_background">#050811</color>
+</resources>
