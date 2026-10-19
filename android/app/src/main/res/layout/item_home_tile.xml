@@ -15,8 +15,7 @@
         android:background="@drawable/bg_tile"
         android:gravity="center"
         android:textColor="@color/home_text"
-        android:textSize="18sp"
-        android:textStyle="bold" />
+        android:textSize="18sp" />
 
     <TextView
         android:id="@+id/tileLabel"

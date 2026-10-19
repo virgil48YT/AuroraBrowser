@@ -92,11 +92,11 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
     private lateinit var toolbar: LinearLayout
     private lateinit var omniboxFrame: View
     private lateinit var omnibox: EditText
-    private lateinit var siteIcon: ImageView
-    private lateinit var btnClearOmnibox: ImageButton
-    private lateinit var btnHome: ImageButton
-    private lateinit var btnMenu: ImageButton
-    private lateinit var shieldIcon: ImageView
+    private lateinit var siteIcon: FaIconView
+    private lateinit var btnClearOmnibox: FaIconView
+    private lateinit var btnHome: FaIconView
+    private lateinit var btnMenu: FaIconView
+    private lateinit var shieldIcon: FaIconView
     private lateinit var shieldBadge: TextView
     private lateinit var tabCount: TextView
     private lateinit var progress: LinearProgressIndicator
@@ -632,24 +632,25 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
     private fun updateToolbar() {
         val tab = tabs.active ?: return
         val incognito = tab.incognito
-        val surface = ContextCompat.getColor(this, if (incognito) R.color.incognito_surface else R.color.aurora_surface)
-        val textColor = ContextCompat.getColor(this, if (incognito) R.color.incognito_text else R.color.aurora_text)
-        val iconColor = if (incognito) textColor else ContextCompat.getColor(this, R.color.aurora_text_muted)
+        val surface = ContextCompat.getColor(this, if (incognito) R.color.incognito_surface else R.color.chrome_bg)
+        val textColor = ContextCompat.getColor(this, if (incognito) R.color.incognito_text else R.color.chrome_text)
+        val iconColor = if (incognito) textColor else textColor
         toolbar.setBackgroundColor(surface)
         root.setBackgroundColor(surface)
         omniboxFrame.backgroundTintList =
             if (incognito) ColorStateList.valueOf(ContextCompat.getColor(this, R.color.incognito_omnibox)) else null
         omnibox.setTextColor(textColor)
         omnibox.setHint(if (incognito) R.string.omnibox_hint_incognito else R.string.omnibox_hint)
-        val tint = ColorStateList.valueOf(iconColor)
-        btnHome.imageTintList = tint
-        btnMenu.imageTintList = tint
-        btnClearOmnibox.imageTintList = tint
+        btnHome.setTextColor(iconColor)
+        btnMenu.setTextColor(iconColor)
+        btnClearOmnibox.setTextColor(iconColor)
         tabCount.setTextColor(iconColor)
         tabCount.background?.mutate()?.setTint(iconColor)
         val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         WindowInsetsControllerCompat(window, root).apply {
-            isAppearanceLightStatusBars = !incognito && !night
+            // The chrome is always the deep-navy aurora toolbar, so status-bar
+            // icons are always light, like the desktop build.
+            isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = !night
         }
 
@@ -658,15 +659,15 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
             omnibox.setText(if (tab.showingHome) "" else Omnibox.displayUrl(tab.url))
             ignoreOmniboxChanges = false
         }
-        siteIcon.setImageResource(
+        siteIcon.setFa(
             when {
-                tab.showingHome && incognito -> R.drawable.ic_incognito
-                tab.showingHome -> R.drawable.ic_search
-                tab.url.startsWith("https://") -> R.drawable.ic_lock
-                else -> R.drawable.ic_globe
+                tab.showingHome && incognito -> FaIcons.USER_SECRET
+                tab.showingHome -> FaIcons.MAGNIFYING_GLASS
+                tab.url.startsWith("https://") -> FaIcons.LOCK
+                else -> FaIcons.GLOBE
             },
         )
-        siteIcon.imageTintList = tint
+        siteIcon.setTextColor(iconColor)
 
         val sameMode = tabs.tabs.count { it.incognito == incognito }
         tabCount.text = if (sameMode > 99) ":D" else sameMode.toString()
@@ -680,13 +681,13 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
         val tab = tabs.active ?: return
         val web = !tab.showingHome && Omnibox.isWebUrl(tab.url)
         val up = web && adblock.shieldsUp(tab.pageHost)
-        shieldIcon.setImageResource(if (up || !web) R.drawable.ic_shield else R.drawable.ic_shield_outline)
+        shieldIcon.setFa(if (up || !web) FaIcons.SHIELD_HALVED else FaIcons.SHIELD)
         val color = when {
-            up -> R.color.aurora_accent
-            web -> R.color.aurora_shield_off
-            else -> if (tab.incognito) R.color.incognito_text else R.color.aurora_text_muted
+            up -> R.color.chrome_cyan
+            web -> R.color.chrome_shield_off
+            else -> if (tab.incognito) R.color.incognito_text else R.color.chrome_text
         }
-        shieldIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(this, color))
+        shieldIcon.setTextColor(ContextCompat.getColor(this, color))
         val count = tab.blockedOnPage.get()
         shieldBadge.isVisible = up && count > 0
         shieldBadge.text = if (count > 99) "99+" else count.toString()
@@ -907,14 +908,14 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
         val toggle = view.findViewById<MaterialSwitch>(R.id.shieldsSwitch)
         val count = view.findViewById<TextView>(R.id.shieldsCount)
         val total = view.findViewById<TextView>(R.id.shieldsTotal)
-        val icon = view.findViewById<ImageView>(R.id.shieldsIcon)
+        val icon = view.findViewById<FaIconView>(R.id.shieldsIcon)
         total.text = getString(R.string.blocked_total, UiUtil.compactCount(adblock.totalBlocked()))
         fun refresh() {
             val up = adblock.shieldsUp(tab.pageHost)
             state.setText(if (up) R.string.shields_up else R.string.shields_down)
-            icon.setImageResource(if (up) R.drawable.ic_shield else R.drawable.ic_shield_outline)
-            icon.imageTintList = ColorStateList.valueOf(
-                ContextCompat.getColor(this, if (up) R.color.aurora_accent else R.color.aurora_shield_off),
+            icon.setFa(if (up) FaIcons.SHIELD_HALVED else FaIcons.SHIELD)
+            icon.setTextColor(
+                ContextCompat.getColor(this, if (up) R.color.chrome_cyan else R.color.aurora_shield_off),
             )
         }
         when {

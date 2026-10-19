@@ -15,4 +15,12 @@
     <color name="aurora_on_accent">#04060E</color>
     <color name="aurora_omnibox_bg">#070D1A</color>
     <color name="aurora_shield_off">#64748B</color>
+    <!-- Browser chrome: the deep-navy neon toolbar, like the desktop build. -->
+    <color name="chrome_bg">#0B1220</color>
+    <color name="chrome_omnibox">#070D1A</color>
+    <color name="chrome_text">#E2E8F0</color>
+    <color name="chrome_muted">#94A3B8</color>
+    <color name="chrome_cyan">#22D3EE</color>
+    <color name="chrome_magenta">#E879F9</color>
+    <color name="chrome_shield_off">#64748B</color>
 </resources>

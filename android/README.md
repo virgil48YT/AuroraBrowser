@@ -87,3 +87,14 @@ Project facts: package `com.aurora.browser`, minSdk 26, targetSdk/compileSdk
   suggestion API is used, which is deliberate for privacy.
 - Only the debug APK is built in CI. A release build needs a signing key
   (not included).
+
+## Icon set
+
+Chrome and home-page icons are rendered from **Font Awesome Free 6** (solid +
+brands TTFs bundled in `res/font`), so the mobile iconography matches the
+desktop build's tinted icon language and the shortcuts / recently visited rows
+show real brand marks (Google, YouTube, Wikipedia, ...) with a globe fallback.
+
+Font Awesome Free is © Fonticons, Inc., licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (icons) and the
+[SIL OFL 1.1](https://scripts.sil.org/OFL) (fonts).

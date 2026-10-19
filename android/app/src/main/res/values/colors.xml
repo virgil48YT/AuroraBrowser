@@ -28,4 +28,12 @@
     <color name="home_magenta">#D946EF</color>
     <color name="home_pill">#E6070D1A</color>
     <color name="launcher_background">#050811</color>
+    <!-- Browser chrome: the deep-navy neon toolbar, like the desktop build. -->
+    <color name="chrome_bg">#0B1220</color>
+    <color name="chrome_omnibox">#070D1A</color>
+    <color name="chrome_text">#E2E8F0</color>
+    <color name="chrome_muted">#94A3B8</color>
+    <color name="chrome_cyan">#22D3EE</color>
+    <color name="chrome_magenta">#E879F9</color>
+    <color name="chrome_shield_off">#64748B</color>
 </resources>

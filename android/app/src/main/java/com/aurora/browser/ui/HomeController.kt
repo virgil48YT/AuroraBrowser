@@ -108,7 +108,8 @@ class HomeController(
         shortcutsEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
         for ((url, title) in items) {
             val tile = inflater.inflate(R.layout.item_home_tile, shortcuts, false)
-            tile.findViewById<TextView>(R.id.tileLetter).text = UiUtil.tileLetter(url, title)
+            val glyph = SiteBrand.forUrl(url)
+            FaIcons.applyTo(tile.findViewById(R.id.tileLetter), glyph.codepoint, glyph.brands)
             tile.findViewById<TextView>(R.id.tileLabel).text =
                 title.ifBlank { Omnibox.hostOf(url)?.removePrefix("www.") ?: url }
             tile.setOnClickListener { callbacks.onHomeOpen(url) }
@@ -124,7 +125,8 @@ class HomeController(
         recentEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
         for (h in items) {
             val row = inflater.inflate(R.layout.item_home_row, recent, false)
-            row.findViewById<TextView>(R.id.rowLetter).text = UiUtil.tileLetter(h.url, h.title)
+            val glyph = SiteBrand.forUrl(h.url)
+            FaIcons.applyTo(row.findViewById(R.id.rowLetter), glyph.codepoint, glyph.brands)
             row.findViewById<TextView>(R.id.rowTitle).text = h.title.ifBlank { h.url }
             row.findViewById<TextView>(R.id.rowSubtitle).text =
                 "${Omnibox.hostOf(h.url)?.removePrefix("www.") ?: ""} · ${UiUtil.relativeTime(h.lastVisit)}"
@@ -135,15 +137,15 @@ class HomeController(
 
     private fun buildActions() {
         val defs = listOf(
-            Triple(Action.INCOGNITO, R.drawable.ic_incognito, R.string.incognito),
-            Triple(Action.HISTORY, R.drawable.ic_history, R.string.history),
-            Triple(Action.BOOKMARKS, R.drawable.ic_bookmark, R.string.bookmarks),
-            Triple(Action.DOWNLOADS, R.drawable.ic_download, R.string.downloads),
-            Triple(Action.SETTINGS, R.drawable.ic_settings, R.string.settings),
+            Triple(Action.INCOGNITO, FaIcons.USER_SECRET, R.string.incognito),
+            Triple(Action.HISTORY, FaIcons.CLOCK_ROTATE_LEFT, R.string.history),
+            Triple(Action.BOOKMARKS, FaIcons.BOOKMARK, R.string.bookmarks),
+            Triple(Action.DOWNLOADS, FaIcons.DOWNLOAD, R.string.downloads),
+            Triple(Action.SETTINGS, FaIcons.GEAR, R.string.settings),
         )
-        for ((action, icon, label) in defs) {
+        for ((action, glyph, label) in defs) {
             val v = inflater.inflate(R.layout.item_home_action, actions, false)
-            v.findViewById<ImageView>(R.id.actionIcon).setImageResource(icon)
+            v.findViewById<FaIconView>(R.id.actionIcon).setFa(glyph)
             v.findViewById<TextView>(R.id.actionLabel).setText(label)
             v.setOnClickListener { callbacks.onHomeAction(action) }
             actions.addView(v)

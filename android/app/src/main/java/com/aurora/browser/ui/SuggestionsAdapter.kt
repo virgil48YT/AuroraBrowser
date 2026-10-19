@@ -62,7 +62,7 @@ class SuggestionsAdapter(
     }
 
     class Holder(v: View) : RecyclerView.ViewHolder(v) {
-        val icon: ImageView = v.findViewById(R.id.suggestionIcon)
+        val icon: FaIconView = v.findViewById(R.id.suggestionIcon)
         val title: TextView = v.findViewById(R.id.suggestionTitle)
         val url: TextView = v.findViewById(R.id.suggestionUrl)
         val fill: ImageButton = v.findViewById(R.id.suggestionFill)
@@ -76,12 +76,12 @@ class SuggestionsAdapter(
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val s = items[position]
         val ctx = holder.itemView.context
-        holder.icon.setImageResource(
+        holder.icon.setFa(
             when (s.kind) {
-                Suggestion.Kind.SEARCH -> R.drawable.ic_search
-                Suggestion.Kind.URL -> R.drawable.ic_globe
-                Suggestion.Kind.BOOKMARK -> R.drawable.ic_bookmark
-                Suggestion.Kind.HISTORY -> R.drawable.ic_history
+                Suggestion.Kind.SEARCH -> FaIcons.MAGNIFYING_GLASS
+                Suggestion.Kind.URL -> FaIcons.GLOBE
+                Suggestion.Kind.BOOKMARK -> FaIcons.BOOKMARK
+                Suggestion.Kind.HISTORY -> FaIcons.CLOCK_ROTATE_LEFT
             },
         )
         holder.title.text = s.title

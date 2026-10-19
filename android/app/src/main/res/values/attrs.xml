@@ -7,4 +7,8 @@
         <attr name="glowFill" format="color" />
         <attr name="glowAlpha" format="integer" />
     </declare-styleable>
+    <declare-styleable name="FaIconView">
+        <attr name="faGlyph" format="integer" />
+        <attr name="faBrands" format="boolean" />
+    </declare-styleable>
 </resources>

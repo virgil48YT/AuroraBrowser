@@ -14,12 +14,12 @@
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <ImageView
+        <com.aurora.browser.ui.FaIconView
             android:id="@+id/shieldsIcon"
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:importantForAccessibility="no"
-            android:src="@drawable/ic_shield" />
+            android:textSize="26sp" />
 
         <LinearLayout
             android:layout_width="0dp"

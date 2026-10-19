@@ -10,12 +10,13 @@
     android:paddingTop="6dp"
     android:paddingBottom="6dp">
 
-    <ImageView
+    <com.aurora.browser.ui.FaIconView
         android:id="@+id/actionIcon"
         android:layout_width="26dp"
         android:layout_height="26dp"
         android:importantForAccessibility="no"
-        app:tint="@color/home_cyan" />
+        android:textColor="@color/home_cyan"
+        android:textSize="18sp" />
 
     <TextView
         android:id="@+id/actionLabel"

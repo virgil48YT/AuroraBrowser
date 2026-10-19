@@ -92,12 +92,14 @@
                     android:paddingStart="18dp"
                     android:paddingEnd="18dp">
 
-                    <ImageView
+                    <com.aurora.browser.ui.FaIconView
                         android:layout_width="22dp"
                         android:layout_height="22dp"
+                        app:faGlyph="0xF002"
+                        android:gravity="center"
                         android:importantForAccessibility="no"
-                        android:src="@drawable/ic_search"
-                        app:tint="@color/home_cyan" />
+                        android:textColor="@color/home_cyan"
+                        android:textSize="15sp" />
 
                     <TextView
                         android:id="@+id/homeSearchHint"

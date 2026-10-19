@@ -16,8 +16,7 @@
         android:background="@drawable/bg_tile"
         android:gravity="center"
         android:textColor="@color/home_text"
-        android:textSize="13sp"
-        android:textStyle="bold" />
+        android:textSize="13sp" />
 
     <LinearLayout
         android:layout_width="0dp"
