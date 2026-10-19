@@ -4638,8 +4638,17 @@ int MainWindow::open_startup_tabs() {
             // same page the Home button shows.
             return 0;
         case settings::StartupMode::Specific: {
-            const std::string text = services_.prefs->get_string(
-                settings::PrefKeys::kStartupHomeUrl, "");
+            // Settings > Startup keeps one address or a set of them,
+            // separated by commas or whitespace.
+            static const QRegularExpression kSeparators(
+                QStringLiteral("[\\s,]+"));
+            const QStringList entries =
+                QString::fromStdString(services_.prefs->get_string(
+                                           settings::PrefKeys::kStartupHomeUrl, ""))
+                    .split(kSeparators, Qt::SkipEmptyParts);
+            if (entries.size() > 1) return open_startup_pages(entries);
+            const std::string text =
+                entries.isEmpty() ? std::string() : entries.front().toStdString();
             if (auto page = core::parse_internal_url(text)) {
                 // aurora://home is what the seed tab already shows.
                 if (*page == core::InternalPage::Home) return 0;
@@ -4666,6 +4675,52 @@ int MainWindow::open_startup_tabs() {
         }
     }
     return 0;
+}
+
+int MainWindow::open_startup_pages(const QStringList& entries) {
+    // Several startup pages open through the same bulk path as a restored
+    // session (session::run_restore): every tab is opened dormant, the seed
+    // tab is closed, and only the first page gets a web host right away.
+    const bool https_only = services_.prefs
+        ? services_.prefs->get_bool(settings::PrefKeys::kHttpsOnly,
+                                    settings::PrefDefaults::kHttpsOnly)
+        : settings::PrefDefaults::kHttpsOnly;
+    session::RestorePlan plan;
+    for (const QString& entry : entries) {
+        if (plan.tabs.size() >= session::kMaxRestoredTabs) break;
+        const std::string text = entry.toStdString();
+        session::SavedTab tab;
+        if (core::parse_internal_url(text).has_value()) {
+            // Internal pages reach the tab lifecycle verbatim, exactly like
+            // open_url_in_new_tab().
+            tab.url = text;
+        } else {
+            const core::Url url = core::parse_omnibox_input(text);
+            if (!url.is_valid()) {
+                AURORA_LOG(util::LogLevel::Warn, "session")
+                    << "startup page '" << text
+                    << "' is not a valid address; skipping it";
+                continue;
+            }
+            tab.url = core::Url(core::resolve_navigation(
+                                    url, resolved_search_engine().url_template,
+                                    https_only))
+                          .raw();
+        }
+        tab.tab_index = static_cast<int>(plan.tabs.size());
+        plan.tabs.push_back(std::move(tab));
+    }
+    if (plan.tabs.empty()) return 0;
+    const auto outcome = session::run_restore(
+        tabs_, plan, tabs_.active(),
+        [this](bool on) {
+            bulk_open_ = on;
+            if (on) bulk_hosts_created_ = 0;
+        },
+        [this](core::TabId id) { show_host_for(id); });
+    AURORA_LOG(util::LogLevel::Info, "session")
+        << "opened " << outcome.opened << " startup page(s)";
+    return outcome.opened;
 }
 
 int MainWindow::restore_session() {

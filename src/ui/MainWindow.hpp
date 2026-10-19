@@ -30,6 +30,7 @@
 #include <QPointer>
 #include <QSize>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 #include <chrono>
 #include <cstdint>
@@ -150,9 +151,11 @@ public:
     //   Continue -> restore_session() (the seed home tab stays if there is
     //               nothing valid to restore);
     //   Home     -> keep the seed tab, which already shows new_tab_url();
-    //   Specific -> navigate the seed tab to the stored startup.home_url.
-    // Returns the number of restored tabs (0 unless Continue restored some),
-    // which the smoke test checks.
+    //   Specific -> navigate the seed tab to the stored startup.home_url;
+    //               several addresses (comma/space separated) open one tab
+    //               each through the bulk restore path.
+    // Returns the number of tabs opened in bulk (Continue's restored tabs or
+    // a set of startup pages; 0 otherwise), which the smoke test checks.
     int open_startup_tabs();
 
     // Persist the open tabs so the next launch can restore them.
@@ -423,6 +426,9 @@ private:
     bool forward_engine_key(const webview::EngineKeyEvent& ev);
     void apply_theme();
     void show_host_for(core::TabId id);
+    // Specific startup with several pages: open them dormant through
+    // session::run_restore, show the first. Returns the tabs opened.
+    int open_startup_pages(const QStringList& entries);
     // The content widget a tab should show (its internal page, or its web
     // host), or nullptr when the tab has neither. Pure: shows nothing.
     QWidget* content_for(core::TabId id);
