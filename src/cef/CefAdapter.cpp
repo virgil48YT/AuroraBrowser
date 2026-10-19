@@ -3507,6 +3507,82 @@ void apply_cookie_controls_preference(bool block_3p) {
     applied = wanted;
 }
 
+// "ro-RO" -> "ro-RO,ro,en-US,en": the preferred tag, its base language, and
+// English as the usual last resort, which is how Chrome builds the list when a
+// user picks one language.
+std::string accept_language_list(const std::string& tag) {
+    std::string out = tag;
+    const auto dash = tag.find('-');
+    const std::string base = dash == std::string::npos ? tag : tag.substr(0, dash);
+    if (base != tag) out += "," + base;
+    if (base != "en") out += ",en-US,en";
+    return out;
+}
+
+// Settings > Language: the preferred content language and the spell-check
+// switch, written as Chromium profile prefs on the global request context —
+// the same mechanism (and the same verify-at-runtime caution) as the cookie
+// pref above:
+//   - "intl.accept_languages" (string, comma list): the Accept-Language
+//     header and navigator.languages;
+//   - "spellcheck.dictionaries" (list of tags): the dictionary the checker
+//     uses (Chromium fetches a missing Hunspell dictionary itself);
+//   - "browser.enable_spellchecking" (bool): the checker on/off.
+// An empty language restores Chromium's defaults (a null value). A name this
+// CEF build does not register is reported once and then left alone.
+void apply_language_preferences(const std::string& language, bool spellcheck) {
+    static std::string applied_language = "\x01";  // sentinel: never applied
+    static int applied_spellcheck = -1;
+    static std::unordered_set<std::string> reported;
+    const int wanted_spellcheck = spellcheck ? 1 : 0;
+    if (language == applied_language && wanted_spellcheck == applied_spellcheck)
+        return;
+    if (!CefCurrentlyOn(TID_UI)) return;
+    const auto context = CefRequestContext::GetGlobalContext();
+    if (!context) return;  // engine not up yet: retry on the next tick
+
+    const auto write = [&context](const char* name, CefRefPtr<CefValue> value) {
+        if (!context->CanSetPreference(name)) {
+            if (reported.insert(name).second) {
+                AURORA_LOG(util::LogLevel::Warn, "settings")
+                    << name << " is not settable in this CEF build";
+            }
+            return;
+        }
+        CefString error;
+        if (!context->SetPreference(name, value, error) &&
+            reported.insert(name).second) {
+            AURORA_LOG(util::LogLevel::Warn, "settings")
+                << "could not set " << name << ": " << error.ToString();
+        }
+    };
+
+    if (language != applied_language) {
+        applied_language = language;
+        CefRefPtr<CefValue> accept;        // null: restore the default
+        CefRefPtr<CefValue> dictionaries;  // null: restore the default
+        if (!language.empty()) {
+            accept = CefValue::Create();
+            accept->SetString(accept_language_list(language));
+            CefRefPtr<CefListValue> list = CefListValue::Create();
+            list->SetString(0, language);
+            dictionaries = CefValue::Create();
+            dictionaries->SetList(list);
+        }
+        write("intl.accept_languages", accept);
+        write("spellcheck.dictionaries", dictionaries);
+        AURORA_LOG(util::LogLevel::Info, "settings")
+            << "content language "
+            << (language.empty() ? std::string("reset to default") : language);
+    }
+    if (wanted_spellcheck != applied_spellcheck) {
+        applied_spellcheck = wanted_spellcheck;
+        CefRefPtr<CefValue> value = CefValue::Create();
+        value->SetBool(spellcheck);
+        write("browser.enable_spellchecking", value);
+    }
+}
+
 } // namespace
 
 void refresh_privacy_preferences() {
@@ -3526,6 +3602,14 @@ void refresh_privacy_preferences() {
     g_block_3p_cookies.store(block_3p);
 
     apply_cookie_controls_preference(block_3p);
+
+    apply_language_preferences(
+        g_privacy_prefs ? g_privacy_prefs->get_string(
+                              settings::PrefKeys::kLanguage,
+                              settings::PrefDefaults::kLanguage)
+                        : std::string(settings::PrefDefaults::kLanguage),
+        read(settings::PrefKeys::kSpellCheck,
+             settings::PrefDefaults::kSpellCheck));
 }
 
 void configure_privacy_preferences(settings::Settings* prefs,
