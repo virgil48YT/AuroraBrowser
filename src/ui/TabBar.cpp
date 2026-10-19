@@ -133,14 +133,6 @@ public:
         setParent(owner);
     }
 
-    // Per-tab hover-share animations live on the style so the state machine
-    // can start them while painting.
-    qreal hover_share(int index) const {
-        return hover_prog_.value(index, nullptr)
-                   ? hover_prog_[index]->currentValue().toReal()
-                   : 0.0;
-    }
-
     void drawControl(ControlElement element, const QStyleOption* option,
                      QPainter* painter, const QWidget* widget) const override {
         if (element != CE_TabBarTab || !owner_) {
@@ -154,7 +146,8 @@ public:
             return;
         }
 
-        const ThemeColors& c = current_theme().colors;
+        const Theme& theme = current_theme();
+        const ThemeColors& c = theme.colors;
         const int idx = opt->tabIndex;
         const bool selected = opt->state.testFlag(State_Selected);
         const QRectF r(opt->rect);
@@ -188,19 +181,24 @@ public:
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
 
-        // Aurora glass: tabs are minimal dark pills floating on the strip —
-        // fully rounded capsules inset from the tab cell, never the old
-        // folder-tab shape fused to a toolbar plate. Active is the surface
-        // token, hover is the same pill in the tab-hover tint.
+        // Aurora glass, per the mockup: tabs are separate rounded capsules
+        // floating on the strip with a real gap between neighbours (the 4px
+        // horizontal inset on each side adds up to an 8px gutter). The active
+        // pill is a translucent wash the strip shows through, outlined with
+        // the nebula purple; inactive tabs are fully transparent until
+        // hovered, and the gap alone separates them — no dividers.
+        const QRectF pill = r.adjusted(4, 4, -4, -4);
         if (selected) {
-            const QRectF pill = r.adjusted(2, 4, -2, -4);
-            // Aurora neon: the active pill carries a whisper of the nebula
-            // on its edge (purple at low alpha) so it reads as lit glass
-            // rather than a plain plate.
-            painter->setBrush(bar->property("incognito").toBool()
-                                 ? incognito_tint(c.surface) : c.surface);
+            // A faint light wash over the dark strip (a faint dark wash over
+            // the light strip) instead of an opaque plate, so the pill reads
+            // as lit glass rather than a solid chip.
+            QColor fill = theme.is_dark ? QColor(255, 255, 255)
+                                        : QColor(15, 23, 42);
+            fill.setAlpha(theme.is_dark ? 22 : 26);
+            if (bar->property("incognito").toBool()) fill = incognito_tint(fill);
+            painter->setBrush(fill);
             QColor edge = c.accent2;
-            edge.setAlpha(70);
+            edge.setAlpha(90);
             painter->setPen(QPen(edge, 1.0));
             painter->drawRoundedRect(pill, pill.height() / 2.0,
                                      pill.height() / 2.0);
@@ -208,28 +206,10 @@ public:
             // Hover lift: a subtly raised pill, fully inside the tab.
             QColor fill = c.tab_hover_bg;
             fill.setAlphaF(fill.alphaF() * static_cast<float>(h));
-            const QRectF pill = r.adjusted(2, 4, -2, -4);
             painter->setPen(Qt::NoPen);
             painter->setBrush(fill);
             painter->drawRoundedRect(pill, pill.height() / 2.0,
                                      pill.height() / 2.0);
-        }
-
-        // Hairline divider between two calm adjacent tabs. A divider is only
-        // drawn on this tab's right edge when neither side draws attention to
-        // itself (selected or hovered), so accents never collide with it.
-        if (!selected && h < 0.35) {
-            const bool next_claims_attention =
-                (idx + 1 == bar->currentIndex()) ||
-                (idx + 1 == hovered && hover_share(idx + 1) > 0.35);
-            if (!next_claims_attention && idx + 1 < bar->count()) {
-                QColor dc = c.divider;
-                dc.setAlpha(110);
-                painter->setPen(QPen(dc, 1));
-                const qreal inset = selected ? 0 : 9;
-                painter->drawLine(QPointF(r.right(), r.top() + inset),
-                                  QPointF(r.right(), r.bottom() - inset));
-            }
         }
 
         // ---- Contents -----------------------------------------------------
