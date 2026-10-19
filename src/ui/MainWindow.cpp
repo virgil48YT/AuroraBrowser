@@ -30,6 +30,8 @@
 #include <QFile>
 #include <QResizeEvent>
 #include <QStandardPaths>
+#include <QTcpSocket>
+#include <QDateTime>
 #include <cstdint>
 #include <atomic>
 #include <unordered_map>
@@ -204,7 +206,11 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "ui/OmniboxSuggestController.hpp"
 #include "session/SessionService.hpp"
 #include "settings/Settings.hpp"
+#include "settings/SiteNightModeStore.hpp"
 #include "settings/SiteZoomStore.hpp"
+#include "ui/QrShareDialog.hpp"
+#include "ui/ScreenshotDialogs.hpp"
+#include "ui/pages/ReaderPage.hpp"
 #include "ui/BookmarkBar.hpp"
 #include "ui/CefHostWidget.hpp"
 #include "ui/DownloadsPopover.hpp"
@@ -231,6 +237,7 @@ inline bool ensure_native_frame(void* hwnd) {
 
 #if defined(AURORA_HAS_CEF)
 #include "cef/CefRuntime.hpp"
+#include "ui/PipWindow.hpp"
 #endif
 
 namespace aurora::ui {
@@ -287,11 +294,74 @@ private:
     MainWindow* owner_ = nullptr;
 };
 #endif
+// --- Tor incognito ----------------------------------------------------------
+
+// The SOCKS5 proxy for Tor windows: AURORA_TOR_PROXY for one run, else the
+// tor.proxy preference, else a local Tor daemon's default port. Chromium's
+// spelling is socks5:// (it always resolves host names through a SOCKS5
+// proxy), so the curl-style socks5h:// is accepted and normalized.
+std::string tor_proxy_setting(const settings::Settings* prefs) {
+    std::string proxy = qEnvironmentVariable("AURORA_TOR_PROXY").trimmed().toStdString();
+    if (proxy.empty() && prefs)
+        proxy = prefs->get_string(settings::PrefKeys::kTorProxy, "");
+    if (proxy.empty()) proxy = "socks5://127.0.0.1:9050";
+    if (proxy.rfind("socks5h://", 0) == 0) proxy = "socks5://" + proxy.substr(10);
+    return proxy;
+}
+
+// Is there a SOCKS5 server (in practice: a running Tor daemon) at `proxy`?
+// Performs the SOCKS5 greeting ("no authentication") and checks the reply,
+// so an unrelated service on the port is not mistaken for Tor. Blocks for at
+// most ~3 s, which is acceptable for an explicit "New Tor window" click.
+bool probe_socks5(const std::string& proxy, QString* why) {
+    const QUrl url(QString::fromStdString(proxy));
+    if (url.scheme() != QLatin1String("socks5") || url.host().isEmpty() || url.port() <= 0) {
+        if (why) *why = QStringLiteral("\"%1\" is not a socks5://host:port address.")
+                            .arg(QString::fromStdString(proxy));
+        return false;
+    }
+    QTcpSocket socket;
+    socket.connectToHost(url.host(), static_cast<quint16>(url.port()));
+    if (!socket.waitForConnected(1500)) {
+        if (why) *why = QStringLiteral("Nothing is listening on %1:%2 (%3).")
+                            .arg(url.host()).arg(url.port()).arg(socket.errorString());
+        return false;
+    }
+    const char greeting[3] = {0x05, 0x01, 0x00};  // SOCKS5, 1 method: no auth
+    socket.write(greeting, sizeof(greeting));
+    if (!socket.waitForBytesWritten(1000) || !socket.waitForReadyRead(1500)) {
+        if (why) *why = QStringLiteral("%1:%2 did not answer as a SOCKS5 proxy.")
+                            .arg(url.host()).arg(url.port());
+        return false;
+    }
+    const QByteArray reply = socket.read(2);
+    socket.abort();
+    if (reply.size() != 2 || reply[0] != 0x05 || reply[1] != 0x00) {
+        if (why) *why = QStringLiteral("%1:%2 is not a SOCKS5 proxy that accepts "
+                                       "unauthenticated connections.")
+                            .arg(url.host()).arg(url.port());
+        return false;
+    }
+    return true;
+}
+
+// Night mode is keyed by origin, like per-site zoom; only web pages qualify.
+std::string night_mode_origin(const std::string& url) {
+    const core::Url parsed(url);
+    if (!parsed.is_valid() || (parsed.scheme() != "http" && parsed.scheme() != "https"))
+        return {};
+    return parsed.origin();
+}
+
 } // namespace
 
 MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
-                       bool is_incognito)
+                       bool is_incognito, bool is_tor)
     : QMainWindow(parent), tabs_(), services_(services) {
+    // Tor mode is incognito plus a proxy: every private-window guarantee
+    // (in-memory context, no profile writes) applies unchanged.
+    tor_ = is_tor;
+    if (tor_) is_incognito = true;
     incognito_ = is_incognito;
     policy_.is_incognito = is_incognito;  // drive IncognitoPolicy checks below
     if (incognito_) {
@@ -325,8 +395,9 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
         read_only_prefs_ = services_.prefs->read_only_view();
         services_.prefs = read_only_prefs_.get();
     }
-    setWindowTitle(incognito_ ? QStringLiteral("Aurora (Incognito)")
-                               : QStringLiteral("Aurora"));
+    setWindowTitle(tor_ ? QStringLiteral("Aurora (Tor Incognito)")
+                   : incognito_ ? QStringLiteral("Aurora (Incognito)")
+                                : QStringLiteral("Aurora"));
     // FRESHNESS PROBE: written to the Desktop (NOT %TEMP%) because the remote
     // device bridge cannot read the user's %TEMP% folder, which is why the
     // earlier "log missing" conclusion was bogus. If this line appears in
@@ -387,6 +458,18 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
             << "engine does not support private mode; aborting window";
         QTimer::singleShot(0, this, &MainWindow::close);
         return;
+    }
+    // Tor: the proxy is scoped to this window's private context and applied
+    // before any tab exists. If the engine cannot, the window must not open:
+    // browsing "in Tor mode" without the proxy would be a silent leak.
+    if (tor_) {
+        tor_proxy_ = tor_proxy_setting(services_.prefs);
+        if (!webview_->set_private_proxy(tor_proxy_)) {
+            AURORA_LOG(util::LogLevel::Error, "main")
+                << "engine cannot proxy the private context; aborting Tor window";
+            QTimer::singleShot(0, this, &MainWindow::close);
+            return;
+        }
     }
     // Open target=_blank / window.open links as new in-app tabs instead of
     // letting CEF spawn a popup (which on some setups escapes to the OS
@@ -713,6 +796,9 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
                     // needlessly re-load it).
                     engine_url_[id] = u;
                     nav_stack(id).note_web_url(core::Url(u), info.title);
+                    // Night mode follows the site, so re-decide on every
+                    // main-frame address change.
+                    apply_night_mode(id, u);
                 }
                 if (id == tabs_.active() && omnibox_ &&
                     !omnibox_->editing()) {
@@ -1098,6 +1184,7 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     auto* chrome = new QWidget(this);
     chrome->setObjectName("ChromeTop");
     chrome->setProperty("incognito", incognito_);
+    chrome->setProperty("tor", tor_);
     auto* cl = new QVBoxLayout(chrome);
     cl->setContentsMargins(0, 0, 0, 0);
     cl->setSpacing(0);
@@ -1106,6 +1193,7 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     auto* tab_row = new QWidget(chrome);
     tab_row->setObjectName("TabStrip");
     tab_row->setProperty("incognito", incognito_);
+    tab_row->setProperty("tor", tor_);
     // Kept as a member so content fullscreen can hide the whole strip: the tab
     // bar, the new-tab button and the window controls are siblings inside it,
     // and hiding only the tab bar left a stray "+" floating over the video.
@@ -1131,6 +1219,7 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     tab_bar_ = new TabBar(&tabs_, tab_row);
     tab_bar_->setObjectName("TabBar");
     tab_bar_->setProperty("incognito", incognito_);
+    tab_bar_->setProperty("tor", tor_);
     // Maximum policy so the strip is only as wide as its tabs: the new-tab
     // button then hugs the last tab instead of being pushed to the far edge.
     tab_bar_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
@@ -1143,7 +1232,16 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     new_tab_btn_->setIconPx(16);
     connect(new_tab_btn_, &IconButton::clicked, this, &MainWindow::on_new_tab);
     tl->addWidget(new_tab_btn_);
-    if (incognito_) {
+    if (tor_) {
+        auto* badge = new QLabel(QStringLiteral("Tor Incognito"), tab_row);
+        badge->setObjectName("TorBadge");
+        badge->setAccessibleName(QStringLiteral("Tor incognito window"));
+        badge->setToolTip(QStringLiteral(
+            "Private browsing through Tor (%1). Not the Tor Browser: see the "
+            "README for what this does and does not protect against.")
+                              .arg(QString::fromStdString(tor_proxy_)));
+        tl->addWidget(badge);
+    } else if (incognito_) {
         auto* badge = new QLabel(QStringLiteral("Incognito"), tab_row);
         badge->setObjectName("IncognitoBadge");
         badge->setAccessibleName(QStringLiteral("Incognito window"));
@@ -1163,6 +1261,7 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
     auto* toolbar = new QWidget(chrome);
     toolbar->setObjectName("ToolbarRow");
     toolbar->setProperty("incognito", incognito_);
+    toolbar->setProperty("tor", tor_);
     toolbar_ = toolbar;
     auto* bl = new QHBoxLayout(toolbar);
     bl->setContentsMargins(Spacing::xs + Spacing::xxs, Spacing::xxs,
@@ -1211,6 +1310,7 @@ void MainWindow::setup_chrome(QVBoxLayout* root) {
 
     omnibox_ = new Omnibox(this);
     omnibox_->setProperty("incognito", incognito_);
+    omnibox_->setProperty("tor", tor_);
     omnibox_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     bl->addWidget(omnibox_, 1);
 
@@ -2025,6 +2125,20 @@ void MainWindow::setup_menu_button() {
             &BrowserMenu::toggle_popup);
     connect(menu_button_, &BrowserMenu::new_incognito_window_requested, this,
             &MainWindow::open_incognito_window);
+    connect(menu_button_, &BrowserMenu::new_tor_window_requested, this,
+            &MainWindow::open_tor_window);
+    connect(menu_button_, &BrowserMenu::reader_mode_requested, this,
+            &MainWindow::on_reader_mode);
+    connect(menu_button_, &BrowserMenu::night_mode_toggled, this,
+            &MainWindow::on_toggle_night_mode);
+    connect(menu_button_, &BrowserMenu::screenshot_visible_requested, this,
+            [this] { on_screenshot(0); });
+    connect(menu_button_, &BrowserMenu::screenshot_full_page_requested, this,
+            [this] { on_screenshot(1); });
+    connect(menu_button_, &BrowserMenu::screenshot_region_requested, this,
+            [this] { on_screenshot(2); });
+    connect(menu_button_, &BrowserMenu::share_qr_requested, this,
+            &MainWindow::on_share_qr);
     // The menu button was created after the first apply_theme(), so hand it the
     // current mode now (it tints its icons from the active theme).
     menu_button_->set_dark_mode(dark_mode_);
@@ -2094,6 +2208,7 @@ void MainWindow::setup_shortcuts() {
     bind("Ctrl+Shift+T", &MainWindow::on_reopen_closed);
     bind("Ctrl+N", &MainWindow::open_new_window);  // mirrors the browser menu
     bind("Ctrl+Shift+N", &MainWindow::open_incognito_window);
+    bind("Ctrl+Alt+Shift+N", &MainWindow::open_tor_window);
     bind("Ctrl+Tab", &MainWindow::on_next_tab);
     bind("Ctrl+Shift+Tab", &MainWindow::on_prev_tab);
     // Qt's spelling is "PgDown"/"PgUp": "Ctrl+PageDown" parses to
@@ -2126,6 +2241,13 @@ void MainWindow::setup_shortcuts() {
     bind("Ctrl+D", &MainWindow::on_bookmark_page);
     bind("Ctrl+F", &MainWindow::on_find);
     bind("Ctrl+P", &MainWindow::on_print);
+
+    // Page tools: reader mode, screenshots, night mode (content only).
+    bind("Ctrl+Alt+R", &MainWindow::on_reader_mode);
+    bind("Ctrl+Shift+S", [this] { on_screenshot(0); });
+    bind("Ctrl+Alt+Shift+S", [this] { on_screenshot(1); });
+    bind("Ctrl+Alt+S", [this] { on_screenshot(2); });
+    bind("Ctrl+Alt+N", &MainWindow::on_toggle_night_mode);
 
     // Page presentation.
     bind("Ctrl++", &MainWindow::on_zoom_in);
@@ -2191,7 +2313,7 @@ bool MainWindow::forward_engine_key(const webview::EngineKeyEvent& ev) {
     constexpr int VK_T = 0x54, VK_W = 0x57, VK_N = 0x4E, VK_R = 0x52,
                   VK_L = 0x4C, VK_J = 0x4A, VK_H = 0x48, VK_D = 0x44,
                   VK_F = 0x46, VK_A = 0x41, VK_I = 0x49, VK_P = 0x50,
-                  VK_TAB = 0x09,
+                  VK_TAB = 0x09, VK_S = 0x53,
                   VK_PRIOR = 0x21, VK_NEXT = 0x22, VK_HOME = 0x24,
                   VK_LEFT = 0x25, VK_RIGHT = 0x27,
                   VK_F5 = 0x74, VK_F11 = 0x7A, VK_F12 = 0x7B,
@@ -2240,6 +2362,18 @@ bool MainWindow::forward_engine_key(const webview::EngineKeyEvent& ev) {
                     webview_->reload(tabs_.active(), true);  // bypass cache
             }); return true;
             case VK_TAB: post(&MainWindow::on_prev_tab); return true;
+            case VK_S: post([this] { on_screenshot(0); }); return true;
+        }
+    } else if (ctrl && ev.alt) {
+        // Ctrl+Alt page tools (see setup_shortcuts). Only claimed for the
+        // letters Aurora binds, so AltGr text input on other keys is untouched.
+        switch (k) {
+            case VK_R: if (shift) break; post(&MainWindow::on_reader_mode); return true;
+            case VK_S: post([this, shift] { on_screenshot(shift ? 1 : 2); }); return true;
+            case VK_N:
+                if (shift) post(&MainWindow::open_tor_window);
+                else post(&MainWindow::on_toggle_night_mode);
+                return true;
         }
     } else if (ev.alt && !ctrl && !shift) {
         // Alt combos (back/forward/home) are Qt shortcuts when a Qt widget has
@@ -2408,6 +2542,8 @@ bool MainWindow::transfer_tab_to(MainWindow& destination, core::TabId id,
     // direction would also break: the adopter creates a fresh browser for the
     // tab in its own context.)
     if (incognito_ != destination.incognito_) return false;
+    // Tor windows only exchange tabs with Tor windows (and their proxy).
+    if (tor_ != destination.tor_ || tor_proxy_ != destination.tor_proxy_) return false;
     auto transfer = release_tab_for_transfer(id);
     if (!transfer) return false;
     const TransferredTab rollback = *transfer;
@@ -2449,7 +2585,7 @@ void MainWindow::tear_off_tab(core::TabId id, const QPoint& release_global,
     // core::IncognitoPolicy: a torn-off tab keeps its window's privacy mode —
     // a private tab must not end up in a regular-profile window.
     auto* detached = new MainWindow(services_, /*parent=*/nullptr,
-                                    /*is_incognito=*/incognito_);
+                                    /*is_incognito=*/incognito_, /*is_tor=*/tor_);
     detached->setAttribute(Qt::WA_DeleteOnClose, true);
     detached->inherit_theme_from(this);
     // Chrome sizes the torn-off window like the source but never hands the
@@ -2744,6 +2880,16 @@ QWidget* MainWindow::page_widget(core::InternalPage page) {
                         update_shield_for_tab();
                     });
             widget = site_page;
+            break;
+        }
+        case core::InternalPage::Reader: {
+            auto* reader_page = new ReaderPage(this);
+            // "Open original" replaces the reader tab with the source page.
+            connect(reader_page, &ReaderPage::open_original_requested, this,
+                    [this](const QString& url) {
+                        navigate_active_tab(core::parse_omnibox_input(url.toStdString()));
+                    });
+            widget = reader_page;
             break;
         }
         case core::InternalPage::Extensions: {
@@ -3357,6 +3503,22 @@ void MainWindow::handle_context_action(
             return;
         }
         default: break;
+    }
+
+    if (req.action == Action::PictureInPictureFallback) {
+#if defined(AURORA_HAS_CEF)
+        // The engine could not open native PiP for the video: float the whole
+        // tab in Aurora's own picture-in-picture window instead.
+        if (PipWindow::can_open(this, tab)) {
+            QTimer::singleShot(0, this, [guard = QPointer<MainWindow>(this), tab] {
+                if (guard) PipWindow::open(guard.data(), tab);
+            });
+            flash_status(QStringLiteral("Video moved to a floating window"));
+            return;
+        }
+#endif
+        flash_status(QStringLiteral("Picture in picture is not available for this video"));
+        return;
     }
 
     // The remaining actions operate on the active tab. The menu is modal, so
@@ -4310,6 +4472,14 @@ void MainWindow::show_host_for(core::TabId id) {
     // Internal pages take the content area over from the web host.
     if (auto page = page_of(id)) {
         auto* widget = page_widget(*page);
+        // The reader page is shared by the window's reader tabs: hand it the
+        // article of the tab being shown (none for a restored reader tab).
+        if (auto* reader = qobject_cast<ReaderPage*>(widget)) {
+            const auto it = reader_articles_.find(id.value());
+            reader->show_article(it != reader_articles_.end() && it->second
+                                     ? *it->second
+                                     : ReaderArticle{});
+        }
         // The skeleton pages re-read their service on every show; the home
         // page is stateless chrome and skips the refresh it does not have.
         if (auto* skeleton = qobject_cast<InternalPageWidget*>(widget)) {
@@ -4655,6 +4825,170 @@ void MainWindow::keyPressEvent(QKeyEvent* e) {
         }
     }
     QMainWindow::keyPressEvent(e);
+}
+
+// --- Tor incognito windows ------------------------------------------------------
+
+void MainWindow::open_tor_window() {
+    const std::string proxy = tor_proxy_setting(services_.prefs);
+    QString why;
+    if (!probe_socks5(proxy, &why)) {
+        QMessageBox box(QMessageBox::Warning, QStringLiteral("Tor is not running"),
+                        QStringLiteral("A Tor incognito window needs a Tor daemon that "
+                                       "you run yourself; Aurora does not include Tor."),
+                        QMessageBox::Ok, this);
+        box.setInformativeText(
+            why + QStringLiteral(
+                      "\n\nStart Tor and try again:\n"
+                      "  • Linux: sudo apt install tor && sudo systemctl start tor\n"
+                      "  • macOS: brew install tor && brew services start tor\n"
+                      "  • Windows: run the Tor Expert Bundle (tor.exe)\n"
+                      "  • Tor Browser running? Its proxy is on port 9150: set "
+                      "AURORA_TOR_PROXY=socks5://127.0.0.1:9150\n\n"
+                      "Expected proxy: %1").arg(QString::fromStdString(proxy)));
+        box.exec();
+        return;
+    }
+    auto* w = new MainWindow(services_, /*parent=*/nullptr,
+                             /*is_incognito=*/true, /*is_tor=*/true);
+    w->setAttribute(Qt::WA_DeleteOnClose, true);
+    w->inherit_theme_from(this);
+    w->resize(size());
+    if (!isMaximized() && !isFullScreen()) w->move(pos() + QPoint(24, 24));
+    w->show();
+    w->raise();
+    w->activateWindow();
+}
+
+// --- Reader mode -----------------------------------------------------------------
+
+void MainWindow::on_reader_mode() {
+    const auto tab = tabs_.active();
+    if (!tab.valid() || !webview_ || page_of(tab).has_value()) {
+        flash_status(QStringLiteral("Reader mode works on web pages"));
+        return;
+    }
+    const QString source = QString::fromStdString(active_tab_url());
+    flash_status(QStringLiteral("Preparing the reader view…"));
+    const QPointer<MainWindow> guard(this);
+    webview_->evaluate_script(
+        tab, ReaderPage::extraction_script(),
+        [guard, source](bool ok, std::string result) {
+            if (!guard) return;
+            auto article = std::make_shared<ReaderArticle>(ReaderPage::parse_result(
+                ok, QString::fromStdString(result), source));
+            // Open the tab on the next turn, outside the engine callback.
+            QTimer::singleShot(0, guard.data(), [guard, article] {
+                if (!guard) return;
+                const core::TabId id =
+                    guard->tabs_.open(core::internal_url(core::InternalPage::Reader));
+                guard->reader_articles_[id.value()] = article;
+                if (guard->tabs_.active() == id) guard->show_host_for(id);
+                if (!article->ok)
+                    guard->flash_status(QStringLiteral("No readable article on this page"));
+            });
+        });
+}
+
+// --- Screenshots -----------------------------------------------------------------
+
+void MainWindow::on_screenshot(int mode) {
+    const auto tab = tabs_.active();
+    if (!tab.valid() || !webview_ || page_of(tab).has_value()) {
+        flash_status(QStringLiteral("Screenshots work on web pages"));
+        return;
+    }
+    QString name = QStringLiteral("Aurora screenshot %1")
+                       .arg(QDateTime::currentDateTime().toString(
+                           QStringLiteral("yyyy-MM-dd HH.mm.ss")));
+    const auto engine_mode = mode == 1
+        ? webview::WebViewController::ScreenshotMode::FullPage
+        : webview::WebViewController::ScreenshotMode::Visible;
+    const QPointer<MainWindow> guard(this);
+    webview_->capture_screenshot(
+        tab, engine_mode, [guard, mode, name](bool ok, std::vector<uint8_t> png) {
+            if (!guard) return;
+            QImage image;
+            if (ok) {
+                image.loadFromData(png.data(), static_cast<int>(png.size()), "PNG");
+            }
+            if (image.isNull()) {
+                guard->flash_status(QStringLiteral("Could not capture this page"));
+                return;
+            }
+            // Dialogs run nested event loops: never inside the engine callback.
+            QTimer::singleShot(0, guard.data(), [guard, image, mode, name] {
+                if (guard) guard->present_screenshot(image, mode, name);
+            });
+        });
+}
+
+void MainWindow::present_screenshot(const QImage& captured, int mode, const QString& name) {
+    QImage image = captured;
+    if (mode == 2) {
+        RegionSelectDialog select(captured, this);
+        if (select.exec() != QDialog::Accepted) return;
+        image = select.cropped();
+        if (image.isNull()) return;
+    }
+    if (auto* cb = QGuiApplication::clipboard()) cb->setImage(image);
+    auto* dialog = new ScreenshotResultDialog(image, name, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
+}
+
+// --- Night mode ------------------------------------------------------------------
+
+bool MainWindow::night_mode_enabled_for(const std::string& origin) const {
+    if (origin.empty()) return false;
+    const auto session = night_mode_session_.find(origin);
+    if (session != night_mode_session_.end()) return session->second;
+    if (!services_.prefs) return false;
+    return settings::SiteNightModeStore(*services_.prefs).enabled(origin);
+}
+
+void MainWindow::apply_night_mode(core::TabId id, const std::string& url) {
+    if (!webview_) return;
+    webview_->set_night_mode(id, night_mode_enabled_for(night_mode_origin(url)));
+}
+
+void MainWindow::on_toggle_night_mode() {
+    const auto tab = tabs_.active();
+    const std::string origin = night_mode_origin(active_tab_url());
+    if (!tab.valid() || !webview_ || page_of(tab).has_value() || origin.empty()) {
+        flash_status(QStringLiteral("Night mode works on web pages"));
+        return;
+    }
+    const bool on = !night_mode_enabled_for(origin);
+    // Remembered per site in the profile, like zoom and Shields exceptions;
+    // a private window keeps the choice for its own lifetime only.
+    if (services_.prefs && !services_.prefs->is_read_only() && !incognito_) {
+        settings::SiteNightModeStore(*services_.prefs).set(origin, on);
+        night_mode_session_.erase(origin);
+    } else {
+        night_mode_session_[origin] = on;
+    }
+    // Every tab of this window on the same site follows.
+    for (const auto& t : tabs_.tabs()) {
+        if (night_mode_origin(t.url.raw()) == origin) webview_->set_night_mode(t.id, on);
+    }
+    flash_status(on ? QStringLiteral("Night mode on for %1").arg(QString::fromStdString(origin))
+                    : QStringLiteral("Night mode off for %1").arg(QString::fromStdString(origin)));
+}
+
+// --- Share as QR code ----------------------------------------------------------
+
+void MainWindow::on_share_qr() {
+    const auto tab = tabs_.active();
+    if (!tab.valid() || page_of(tab).has_value()) {
+        flash_status(QStringLiteral("Only web pages can be shared as a QR code"));
+        return;
+    }
+    QString title;
+    if (const auto* state = tabs_.find(tab)) title = QString::fromStdString(state->title);
+    QrShareDialog::show_for(this, QString::fromStdString(active_tab_url()), title);
 }
 
 } // namespace aurora::ui

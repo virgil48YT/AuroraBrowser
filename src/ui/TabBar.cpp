@@ -195,7 +195,8 @@ public:
             QColor fill = theme.is_dark ? QColor(255, 255, 255)
                                         : QColor(15, 23, 42);
             fill.setAlpha(theme.is_dark ? 22 : 26);
-            if (bar->property("incognito").toBool()) fill = incognito_tint(fill);
+            if (bar->property("tor").toBool()) fill = tor_tint(fill);
+            else if (bar->property("incognito").toBool()) fill = incognito_tint(fill);
             painter->setBrush(fill);
             QColor edge = c.accent2;
             edge.setAlpha(90);
@@ -1110,6 +1111,9 @@ void TabBar::refresh_tab(int idx) {
                 break;
             case core::InternalPage::SiteSettings:
                 setTabIcon(idx, icons::icon(icons::Name::Shield, accent));
+                break;
+            case core::InternalPage::Reader:
+                setTabIcon(idx, icons::icon(icons::Name::FileDocument, accent));
                 break;
         }
     } else {

@@ -184,6 +184,8 @@ void BrowserMenu::build_actions() {
          &BrowserMenu::new_window_requested);
     make(QStringLiteral("New Incognito Window"), "Ctrl+Shift+N",
          icons::Name::NewTab, &BrowserMenu::new_incognito_window_requested);
+    make(QStringLiteral("New Tor Incognito Window"), "Ctrl+Alt+Shift+N",
+         icons::Name::Lock, &BrowserMenu::new_tor_window_requested);
     separator();
 
     make(QStringLiteral("History"), "Ctrl+H", icons::Name::History,
@@ -215,6 +217,18 @@ void BrowserMenu::build_actions() {
          &BrowserMenu::print_requested);
     make(QStringLiteral("Save as PDF…"), nullptr, icons::Name::FileDocument,
          &BrowserMenu::save_as_pdf_requested);
+    make(QStringLiteral("Reader Mode"), "Ctrl+Alt+R", icons::Name::FileDocument,
+         &BrowserMenu::reader_mode_requested);
+    make(QStringLiteral("Night Mode for This Site"), "Ctrl+Alt+N", icons::Name::Moon,
+         &BrowserMenu::night_mode_toggled);
+    make(QStringLiteral("Screenshot: Visible Area"), "Ctrl+Shift+S", icons::Name::FileImage,
+         &BrowserMenu::screenshot_visible_requested);
+    make(QStringLiteral("Screenshot: Full Page"), "Ctrl+Alt+Shift+S", icons::Name::FileImage,
+         &BrowserMenu::screenshot_full_page_requested);
+    make(QStringLiteral("Screenshot: Select Region…"), "Ctrl+Alt+S", icons::Name::FileImage,
+         &BrowserMenu::screenshot_region_requested);
+    make(QStringLiteral("Share Page as QR Code…"), nullptr, icons::Name::Copy,
+         &BrowserMenu::share_qr_requested);
     make(QStringLiteral("Fullscreen"), "F11", icons::Name::Fullscreen,
          &BrowserMenu::fullscreen_requested);
     make(QStringLiteral("Developer Tools"), "Ctrl+Shift+I", icons::Name::Code,

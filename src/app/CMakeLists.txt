@@ -10,6 +10,7 @@ set(AURORA_BROWSER_SOURCES
     ../ui/TabBar.cpp
     ../ui/TabContextMenu.cpp
     ../ui/QrShareDialog.cpp
+    ../ui/ScreenshotDialogs.cpp
     ../ui/BrowserMenu.cpp
     ../ui/BookmarkBar.cpp
     ../ui/DownloadsPopover.cpp
@@ -44,6 +45,7 @@ set(AURORA_BROWSER_SOURCES
     ../ui/pages/SettingsRow.cpp
     ../ui/pages/ExtensionsPage.cpp
     ../ui/pages/SiteSettingsPage.cpp
+    ../ui/pages/ReaderPage.cpp
     main.cpp
 )
 

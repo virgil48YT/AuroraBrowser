@@ -51,7 +51,7 @@
 #include "ui/Omnibox.hpp"
 
 // Forward declaration; the controller is only used from MainWindow.cpp.
-namespace aurora::ui { class OmniboxSuggestController; }
+namespace aurora::ui { class OmniboxSuggestController; struct ReaderArticle; }
 #include "core/IncognitoPolicy.hpp"
 #include "searchengines/SearchEngine.hpp"
 #include "ui/ServiceBundle.hpp"
@@ -112,12 +112,20 @@ public:
     // tabs share a private in-memory CEF request context that is discarded
     // when the window closes. The title suffix "(Incognito)", accent-tinted
     // chrome and an Incognito badge make the mode visible.
+    //
+    // `is_tor` (implies `is_incognito`) is a Tor incognito window: the same
+    // private in-memory context, additionally routed through the user's own
+    // Tor SOCKS5 proxy (PrefKeys::kTorProxy / AURORA_TOR_PROXY, default
+    // socks5://127.0.0.1:9050) and drawn in the pink/purple tor_theme().
     explicit MainWindow(const ServiceBundle& services = ServiceBundle{},
-                        QWidget* parent = nullptr, bool is_incognito = false);
+                        QWidget* parent = nullptr, bool is_incognito = false,
+                        bool is_tor = false);
     ~MainWindow() override;
 
     // True when this window is a private (incognito) window.
     bool is_incognito() const { return incognito_; }
+    // True when this window is a Tor incognito window.
+    bool is_tor() const { return tor_; }
 
     // Applies the window placement saved by the previous run (or maximizes on
     // a first run). Call before show(). Persisting happens in closeEvent().
@@ -483,6 +491,21 @@ private:
     // Spawn a private (incognito) sibling window: same visual chrome, no
     // writes to the regular profile. See core::IncognitoPolicy.
     void open_incognito_window();
+    // File > New Tor Incognito Window (Ctrl+Alt+Shift+N). Checks that a SOCKS5
+    // server answers at the configured Tor proxy first and explains how to
+    // start Tor when it does not; Aurora never bundles or launches Tor.
+    void open_tor_window();
+    // Reader mode (Ctrl+Alt+R): extract the active page's article and show it
+    // in a new aurora://reader tab.
+    void on_reader_mode();
+    // Screenshot tool: 0 = visible area (Ctrl+Shift+S), 1 = full page
+    // (Ctrl+Alt+Shift+S), 2 = select a region (Ctrl+Alt+S).
+    void on_screenshot(int mode);
+    // Night mode for the active site's content (Ctrl+Alt+N), remembered per
+    // site (settings::SiteNightModeStore).
+    void on_toggle_night_mode();
+    // Browser menu "Share Page as QR Code…".
+    void on_share_qr();
     // Re-paint the live extension popup's 1px frame from the active palette so
     // a theme toggle never leaves a light border on a dark popup (or vice versa).
     void apply_extension_popup_theme();
@@ -536,6 +559,21 @@ private:
     // Private (incognito) window flag. Drives core::IncognitoPolicy decisions
     // throughout this class; see the constructor for how it changes the bundle.
     bool incognito_ = false;
+    // Tor incognito window (implies incognito_), and the proxy it uses.
+    bool tor_ = false;
+    std::string tor_proxy_;
+    // Reader mode: the extracted article of each aurora://reader tab, keyed
+    // by TabId value. Shared so the page widget can be handed one cheaply.
+    std::unordered_map<std::uint64_t, std::shared_ptr<ReaderArticle>> reader_articles_;
+    // Night-mode choices made in a window that may not write preferences
+    // (incognito): kept for the window's lifetime only, origin -> on.
+    std::map<std::string, bool> night_mode_session_;
+    // Push this window's night-mode decision for `url` to the engine.
+    void apply_night_mode(core::TabId id, const std::string& url);
+    bool night_mode_enabled_for(const std::string& origin) const;
+    // Second half of the screenshot tool, on the UI thread outside the
+    // engine callback: region selection, clipboard, preview/save dialog.
+    void present_screenshot(const QImage& image, int mode, const QString& name);
     // Gate late engine writes while clear-on-exit drains asynchronous callbacks.
     bool privacy_exit_started_ = false;
     // The policy the window consults for "may I write this?" decisions.

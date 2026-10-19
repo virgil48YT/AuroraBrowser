@@ -49,6 +49,8 @@ signals:
     void new_tab_requested();
     void new_window_requested();
     void new_incognito_window_requested();
+    // A private window whose traffic goes through a local Tor SOCKS proxy.
+    void new_tor_window_requested();
     void history_requested();
     void downloads_requested();
     void bookmarks_requested();
@@ -68,6 +70,12 @@ signals:
     void print_requested();
     // Ask for a file name and render the active page to PDF.
     void save_as_pdf_requested();
+    void reader_mode_requested();
+    void night_mode_toggled();
+    void screenshot_visible_requested();
+    void screenshot_full_page_requested();
+    void screenshot_region_requested();
+    void share_qr_requested();
     void fullscreen_requested();
     void devtools_requested();
     void theme_toggled();
