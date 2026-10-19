@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Aurora
+GenericName=Web Browser
+Comment=Privacy-focused Chromium-based web browser
+Exec=aurora_browser %U
+Icon=aurora
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true
+StartupWMClass=aurora_browser
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=aurora_browser
