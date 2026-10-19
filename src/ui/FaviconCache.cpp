@@ -32,6 +32,38 @@ QPixmap cap_size(const QPixmap& pm, int px) {
     return pm.scaled(px, px, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 }
 
+// A QIcon served to the tab strip and list rows must answer requests at ANY
+// scale: a 16px-only icon is upscaled (blurry) on high-DPI screens, where
+// 16 logical pixels are 20-32 device pixels. Register the source at every
+// useful size up to kLargeIconSize so QIcon always has a crisp pixmap to
+// hand out, whatever the display asks for.
+QIcon make_strip_icon(const QPixmap& large) {
+    QIcon icon;
+    const int src = qMax(large.width(), large.height());
+    for (int px : {16, 20, 24, 32, 40, 48, 56, 64}) {
+        if (px > src) break;
+        icon.addPixmap(large.scaled(px, px, Qt::KeepAspectRatio,
+                                   Qt::SmoothTransformation));
+    }
+    if (icon.isNull()) icon.addPixmap(large);
+    return icon;
+}
+
+// Sites whose only real icon is a 16px /favicon.ico look soft the moment the
+// icon is drawn larger than 16px. Almost every such site ALSO ships the iOS
+// bookmark icon at the root, which is 180x180 on most modern sites. Try it
+// when the fetched icon is too small to look good, and keep it only if it is
+// actually bigger than what we already have.
+constexpr int kTouchIconMinPx = 32;
+QString touch_icon_url_for(const QString& icon_url) {
+    QUrl url(icon_url);
+    if (!url.isValid()) return QString();
+    url.setPath(QStringLiteral("/apple-touch-icon.png"));
+    url.setQuery(QString());
+    url.setFragment(QString());
+    return url.toString();
+}
+
 // A host whose icon could not be fetched is remembered as "no icon" so the
 // request is not repeated on every repaint — but only for this long. Sites go
 // offline, redirects settle, and a browser that gives up permanently after one
@@ -119,7 +151,7 @@ bool FaviconCache::load_from_disk(const QString& host, bool* stale) {
     QPixmap pm;
     if (!pm.load(path)) return false;
     large_[host] = cap_size(pm, kLargeIconSize);
-    icons_[host] = QIcon(cap_size(pm, kIconSize));
+    icons_[host] = make_strip_icon(large_[host]);
     const QFileInfo info(path);
     const auto age = info.lastModified().msecsTo(QDateTime::currentDateTime());
     if (stale && age > kDiskRefreshMs) *stale = true;
@@ -238,7 +270,7 @@ void FaviconCache::fetch(const QString& host, const QString& icon_url) {
         if (!pm.isNull()) {
             const QPixmap large = cap_size(pm, kLargeIconSize);
             large_[host] = large;
-            icons_[host] = QIcon(cap_size(large, kIconSize));
+            icons_[host] = make_strip_icon(large);
             const auto path = disk_path(host);
             if (!path.isEmpty()) {
                 // Best effort: a failed write only costs a refetch next run.
@@ -246,6 +278,13 @@ void FaviconCache::fetch(const QString& host, const QString& icon_url) {
                 (void)large.save(path, "PNG");
             }
             failed_at_ms_.remove(host);
+            // A tiny source (a 16px-only favicon.ico) is the usual reason
+            // favicons look low quality. Before settling for it, try the
+            // site's apple-touch-icon, which is high-resolution on most
+            // sites; it only replaces the icon if it is actually bigger.
+            if (qMax(pm.width(), pm.height()) < kTouchIconMinPx) {
+                try_touch_icon(host, icon_url);
+            }
         } else {
             // Remember the failure as "no icon" so the fetch is not repeated on
             // every repaint — with a timestamp, so it IS retried later.
@@ -253,6 +292,48 @@ void FaviconCache::fetch(const QString& host, const QString& icon_url) {
             large_.remove(host);
             failed_at_ms_[host] = QDateTime::currentMSecsSinceEpoch();
         }
+        emit icon_ready(host);
+    });
+}
+
+void FaviconCache::try_touch_icon(const QString& host,
+                                 const QString& icon_url) {
+    const QString touch_url = touch_icon_url_for(icon_url);
+    if (touch_url.isEmpty()) return;
+    // The engine may have reported a newer icon URL while the original fetch
+    // was in flight; this second chance must not race ahead of it.
+    const auto issued = icon_urls_.constFind(host);
+    if (issued != icon_urls_.constEnd() && issued.value() != icon_url) return;
+    if (touch_in_flight_.contains(host)) return;
+    touch_in_flight_.insert(host);
+
+    QNetworkRequest req(QUrl(touch_url));
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                     QNetworkRequest::NoLessSafeRedirectPolicy);
+    req.setMaximumRedirectsAllowed(3);
+    QNetworkReply* reply = net_->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, host, reply] {
+        reply->deleteLater();
+        touch_in_flight_.remove(host);
+        QPixmap pm;
+        if (reply->error() == QNetworkReply::NoError &&
+            reply->bytesAvailable() <= kMaxIconBytes) {
+            pm.loadFromData(reply->readAll());
+        }
+        // Keep the icon we already have unless the touch icon is genuinely
+        // higher-resolution: a 180px PNG beats a 16px .ico, but a failed or
+        // placeholder-sized reply must not clobber a good icon.
+        const QPixmap& current = large_.value(host);
+        if (pm.isNull() ||
+            qMax(pm.width(), pm.height()) <=
+                qMax(current.width(), current.height())) {
+            return;
+        }
+        const QPixmap large = cap_size(pm, kLargeIconSize);
+        large_[host] = large;
+        icons_[host] = make_strip_icon(large);
+        const auto path = disk_path(host);
+        if (!path.isEmpty()) (void)large.save(path, "PNG");
         emit icon_ready(host);
     });
 }

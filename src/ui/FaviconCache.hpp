@@ -62,6 +62,12 @@ private:
     explicit FaviconCache(QObject* parent = nullptr);
 
     void fetch(const QString& host, const QString& icon_url);
+    // Second-chance lookup: when the icon we fetched for `host` is too small
+    // to look good at list/tile sizes, try the site's apple-touch-icon (a
+    // high-resolution PNG most sites ship at the root) and keep it only if
+    // it is bigger than what we already have. Never overrides a newer engine-
+    // reported icon.
+    void try_touch_icon(const QString& host, const QString& icon_url);
     QString disk_path(const QString& host) const;
     // Loads the persisted icon for `host`. Sets *stale when the file on disk is
     // older than the refresh window, so the caller can show it immediately and
@@ -87,6 +93,8 @@ private:
     // instead of overwriting the newer icon (and persisting the older one).
     QHash<QString, QString> in_flight_urls_;
     QSet<QString> in_flight_;
+    // Hosts with an apple-touch-icon lookup in flight (see try_touch_icon).
+    QSet<QString> touch_in_flight_;
     // Hosts already looked for on disk, so a miss doesn't stat on every paint.
     QSet<QString> disk_checked_;
     // When a host's fetch last failed. A failure is remembered as "no icon" so
