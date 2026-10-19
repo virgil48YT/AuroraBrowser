@@ -42,6 +42,15 @@ struct PrefDefaults {
     // for a fresh profile; the engine now enforces exactly that default.
     static constexpr bool kBlockThirdPartyCookies = true;
     static constexpr bool kSendDoNotTrack = false;
+    // Settings > Performance: Chromium's GPU path. Read once at launch
+    // (before the engine starts), so a change applies after a restart.
+    static constexpr bool kHardwareAcceleration = true;
+    // Settings > Language. Empty = the engine's default (the system locale).
+    static constexpr std::string_view kLanguage = "";
+    static constexpr bool kSpellCheck = true;
+    // Settings > Tabs & browsing.
+    static constexpr bool kTabHoverPreviews = true;
+    static constexpr bool kOpenTabsInNewWindow = false;
     static constexpr int kTabSuspendAfterMinutes = 30;  // 0 = disabled
     static constexpr int kTabSuspendMinMinutes = 0;
     static constexpr int kTabSuspendMaxMinutes = 24 * 60;
@@ -68,6 +77,20 @@ struct PrefKeys {
     static constexpr std::string_view kAccentColor = "appearance.accent";
     static constexpr std::string_view kShowBookmarkBar = "appearance.bookmark_bar";
     static constexpr std::string_view kTabSuspendAfterMinutes = "tabs.suspend_minutes";
+    // The tab hover card (title, address, memory) shown after a dwell.
+    static constexpr std::string_view kTabHoverPreviews = "tabs.hover_previews";
+    // Links a site opens in a new tab (target=_blank, window.open) open in
+    // a new browser window instead.
+    static constexpr std::string_view kOpenTabsInNewWindow = "tabs.open_in_new_window";
+    // "Use hardware acceleration when available" (false = SwiftShader
+    // software rendering from the next launch; AURORA_GPU still overrides).
+    static constexpr std::string_view kHardwareAcceleration = "performance.hardware_acceleration";
+    // Preferred content language as a BCP 47 tag ("en-US", "ro-RO", ...):
+    // Accept-Language for sites and the spell-check dictionary. Empty means
+    // the engine default. Aurora's own interface stays English.
+    static constexpr std::string_view kLanguage = "intl.language";
+    // Spell check in editable fields.
+    static constexpr std::string_view kSpellCheck = "intl.spellcheck";
     static constexpr std::string_view kDownloadsPath = "downloads.path";
     static constexpr std::string_view kDownloadsAskWhere = "downloads.ask_where";
     static constexpr std::string_view kBlockThirdPartyCookies = "privacy.block_3p_cookies";

@@ -251,6 +251,30 @@ std::vector<std::string> enabled_extension_dirs(const QString& profile,
             " enabled extension(s) handed to the engine");
     return list.dirs;
 }
+
+// Settings > Performance > "Use hardware acceleration when available".
+//
+// The GPU mode is fixed when the engine starts (OnBeforeCommandLineProcessing
+// reads AURORA_GPU through cef::gpu_mode_from_environment), and that happens
+// before the application's own database handle is open, so the preference is
+// read here the same way the extension list is. Turning it off selects the
+// software (SwiftShader) path, which keeps WebGL working without the GPU. An
+// explicit AURORA_GPU in the environment always wins over the preference.
+// Child processes inherit the variable from this process.
+void apply_hardware_acceleration_preference(const QString& profile) {
+    if (!qEnvironmentVariableIsEmpty("AURORA_GPU")) return;
+    storage::Database db;
+    if (!db.open((profile + "/profile.db").toStdString())) return;
+    const settings::Settings prefs(db, /*read_only=*/true);
+    if (prefs.get_bool(settings::PrefKeys::kHardwareAcceleration,
+                       settings::PrefDefaults::kHardwareAcceleration)) {
+        return;
+    }
+    qputenv("AURORA_GPU", QByteArrayLiteral("software"));
+    util::Logger::instance().log(
+        util::LogLevel::Info, "app",
+        "hardware acceleration is off in settings; using software rendering");
+}
 #endif
 
 } // namespace
@@ -465,6 +489,7 @@ static int aurora_main(int argc, char** argv) {
         }
     }
 #endif
+    apply_hardware_acceleration_preference(profile_dir);
     if (!cef::initialize((profile_dir + "/cef_cache").toStdString(),
                          enabled_extension_dirs(profile_dir, argc, argv),
                          cef_paths.dir)) {
