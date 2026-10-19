@@ -59,7 +59,16 @@ accounts.
 ## Install
 
 Download the latest release from the
-[Releases](https://github.com/virgil48YT/AuroraBrowser/releases) page.
+[Releases](https://github.com/virgil48YT/AuroraBrowser/releases) page:
+
+| Platform | Package |
+|---|---|
+| Windows 10/11 (x64) | `Aurora-VERSION-windows-x64-setup.exe` — double-click; installs per user into `%LOCALAPPDATA%\Aurora` |
+| macOS 13+ (Apple silicon) | `Aurora-VERSION-macos-arm64.dmg` — drag Aurora to Applications |
+| Linux (x86_64, glibc 2.35+) | `Aurora-VERSION-linux-x86_64.AppImage` (`chmod +x` and run) or the `.tar.gz` (extract, run `./aurora`) |
+| Android 8.0+ | `Aurora-VERSION-android.apk` |
+
+How releases are built and signed: [docs/release.md](docs/release.md).
 
 ## Build from source
 
@@ -84,6 +93,22 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
 cmake --build build
 ./build/bin/aurora_browser
 ```
+
+### macOS
+
+```bash
+brew install qt ninja
+PLATFORM=macosarm64 ./scripts/fetch_cef.sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON -DCEF_ROOT=$PWD/third_party/cef \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
+cmake --build build
+open build/bin/Aurora.app
+```
+
+### Android
+
+See [android/README.md](android/README.md) (`cd android && ./gradlew assembleDebug`).
 
 ## License
 
