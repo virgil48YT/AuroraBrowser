@@ -33,7 +33,8 @@ namespace aurora::ui {
 namespace {
 
 // Corner radius of the address field (a rounded rectangle, see paintEvent).
-constexpr qreal kOmniboxRadius = 10.0;
+// Shared with every surface that reuses the omnibar look (Radius::omnibox).
+constexpr qreal kOmniboxRadius = Radius::omnibox;
 
 // A transparent, borderless line edit that delegates focus to the omnibox
 // container so the focus glow animates around it.

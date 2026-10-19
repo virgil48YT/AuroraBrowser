@@ -103,7 +103,9 @@ public:
             rim.glow = c.accent2;
             rim.glow.setAlpha(145);
             rim.glow_extent = 8;
-            radius = 999;
+            // Same barely-rounded corners as the real address bar, not a
+            // capsule: the home field is the omnibar's twin.
+            radius = Radius::omnibox;
             if (theme.is_dark) plate = QColor(5, 9, 30, 220);
         } else if (kind_ == Kind::Shortcut) {
             rim.color1.setAlpha(105);
@@ -344,7 +346,7 @@ void HomePage::build_ui() {
     column_layout->addWidget(subtitle);
 
     // Search pill: leading search glyph, the field, then the trailing
-    // sparkle — all inside one capsule host.
+    // sparkle — all inside one omnibar-shaped host.
     auto* pill = new HomeGlass(column, HomeGlass::Kind::Search);
     search_host_ = pill;
     pill->setFixedSize(720, 62);

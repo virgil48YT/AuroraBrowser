@@ -1543,14 +1543,14 @@ QString StylesheetBuilder::build(const Theme& t) {
             .arg(c.text_muted.name())
             .arg(13);
 
-    // The big centered search pill: a glowing glass capsule with the
+    // The big centered search field: a glowing glass omnibar twin with the
     // cyan→purple gradient border. The border lives on the HOST (the pill's
     // icons sit inside it); the field itself is a transparent strip.
     // The host is transparent: its capsule + cyan→purple border are painted
     // by HomePage's PillHost (QSS cannot gradient-stroke a border).
     s += QString("QWidget#HomeSearchPillHost {"
                  "  background: transparent; border: none; border-radius: %1px;}")
-            .arg(Radius::pill);
+            .arg(Radius::omnibox);
     s += QString("QLineEdit#HomeSearchPill {"
                  "  background: transparent; color: %1; border: none;"
                  "  padding: 0px %2px;"

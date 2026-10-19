@@ -119,7 +119,7 @@ struct Spacing {
 };
 
 // Corner radii. Deliberately NOT all pills: toolbar controls are small,
-// the omnibox is a capsule, menus are moderate, dialogs are largest.
+// the omnibox is barely rounded, menus are moderate, dialogs are largest.
 struct Radius {
     static constexpr int none = 0;
     static constexpr int sm = 4;   // small controls, close buttons, find inputs
@@ -132,7 +132,11 @@ struct Radius {
     // part of the chrome, and the 12px dialog radius made the short downloads
     // panel look like a pill rather than a card.
     static constexpr int popover = lg;
-    static constexpr int pill = 999; // omnibox, scrollbar handles
+    // The address bar (omnibox) and every surface that reuses its look (the
+    // home page's centered search field, the internal pages' search boxes):
+    // a barely rounded field, deliberately NOT a capsule.
+    static constexpr int omnibox = 10;
+    static constexpr int pill = 999; // scrollbar handles, round glyph buttons
 };
 
 // Metrics for the chrome. Kept here so the stylesheet and the C++ layout
