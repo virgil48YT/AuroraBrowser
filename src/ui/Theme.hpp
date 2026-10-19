@@ -171,4 +171,16 @@ Theme dark_theme();
 // private widgets: publishing it as the global theme would tint normal windows.
 QColor incognito_tint(const QColor& surface);
 
+// Tor incognito windows (File > New Tor Incognito Window). A third theme
+// variant next to light and dark: the dark theme re-keyed to pink/purple
+// (magenta accent, violet secondary, plum surfaces) so a window whose
+// traffic goes through Tor can never be mistaken for a normal or plain
+// incognito one. Like incognito_tint it is applied per window through the
+// [tor="true"] stylesheet selectors and tor_tint() in custom-painted
+// widgets, never published as the global theme.
+Theme tor_theme();
+// Compose the Tor theme's plum wash over a surface (the Tor counterpart of
+// incognito_tint).
+QColor tor_tint(const QColor& surface);
+
 } // namespace aurora::ui

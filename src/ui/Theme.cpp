@@ -181,6 +181,41 @@ Theme dark_theme() {
     return t;
 }
 
+Theme tor_theme() {
+    Theme t = dark_theme();
+    auto& c = t.colors;
+    // Pink/purple: a magenta accent over violet-plum surfaces. Text colours
+    // stay the dark theme's, so the contrast checks it passes still hold.
+    c.accent           = QColor("#F472B6");   // pink-400
+    c.accent2          = QColor("#A855F7");   // purple-500
+    c.accent_soft      = QColor(168, 85, 247, 46);
+    c.background       = QColor("#120A1F");
+    c.surface          = QColor("#1B0F2E");
+    c.surface_raised   = QColor("#26163F");
+    c.surface_hover    = QColor("#2F1B4D");
+    c.tab_strip_bg     = QColor("#0E0718");
+    c.toolbar_bg       = c.surface;
+    c.tab_inactive_bg  = c.tab_strip_bg;
+    c.tab_active_bg    = c.surface;
+    c.tab_hover_bg     = QColor("#24143A");
+    c.omnibox_bg       = QColor("#140B24");
+    c.omnibox_border   = QColor("#3B2160");
+    c.omnibox_focus_border = c.accent;
+    return t;
+}
+
+QColor tor_tint(const QColor& surface) {
+    // A stronger wash than incognito's: the mode must read at a glance.
+    static const QColor wash(168, 85, 247, 70);
+    const int alpha = wash.alpha();
+    const auto blend = [alpha](int base, int accent) {
+        return (base * (255 - alpha) + accent * alpha) / 255;
+    };
+    return QColor(blend(surface.red(), wash.red()),
+                  blend(surface.green(), wash.green()),
+                  blend(surface.blue(), wash.blue()), surface.alpha());
+}
+
 QColor incognito_tint(const QColor& surface) {
     static const QColor wash = dark_theme().colors.accent_soft;
     const int alpha = wash.alpha();

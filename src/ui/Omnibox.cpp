@@ -546,7 +546,8 @@ void Omnibox::paintEvent(QPaintEvent*) {
     } else if (hovered) {
         bg = interp(c.omnibox_bg, c.surface_hover, 0.35);
     }
-    if (property("incognito").toBool()) bg = incognito_tint(bg);
+    if (property("tor").toBool()) bg = tor_tint(bg);
+    else if (property("incognito").toBool()) bg = incognito_tint(bg);
 
     // A faint outer glow that only really appears on focus, so the idle bar
     // reads as a calm, integrated field rather than a neon tube.

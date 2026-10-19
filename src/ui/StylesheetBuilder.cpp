@@ -152,6 +152,33 @@ QString StylesheetBuilder::build(const Theme& t) {
             .arg(Spacing::xs)
             .arg(Spacing::sm);
 
+    // Tor incognito windows: the pink/purple theme variant (tor_theme()).
+    // After the incognito rules, with the same specificity, so a Tor window
+    // (which is also incognito) gets these.
+    {
+        const auto& tc = tor_theme().colors;
+        s += QString("QWidget#ChromeTop[tor=\"true\"],"
+                     "QWidget#ToolbarRow[tor=\"true\"] { background: %1; }"
+                     "QWidget#TabStrip[tor=\"true\"] { background: %2; }")
+                .arg(hex(tor_tint(tc.surface)), hex(tor_tint(tc.tab_strip_bg)));
+        s += QString("QLabel#TorBadge {"
+                     "  background: %1;"
+                     "  color: %2;"
+                     "  border: %3px solid %4;"
+                     "  border-radius: %5px;"
+                     "  font-size: %6px;"
+                     "  font-weight: 600;"
+                     "  padding: %7px %8px;"
+                     "}")
+                .arg(hex(tc.surface_raised), hex(tc.accent))
+                .arg(Metrics::hairline)
+                .arg(hex(tc.accent2))
+                .arg(Radius::sm)
+                .arg(t.small_font_px)
+                .arg(Spacing::xs)
+                .arg(Spacing::sm);
+    }
+
     // The bookmarks bar is the last band of the chrome glass: same
     // transparent fill as the toolbar so the chrome stays one surface.
     s += QString("QWidget#BookmarkBar {"
