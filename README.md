@@ -1,11 +1,19 @@
 # Aurora Browser
 
+[![Linux core + tests](https://github.com/virgil48YT/AuroraBrowser/actions/workflows/linux-core.yml/badge.svg?branch=main)](https://github.com/virgil48YT/AuroraBrowser/actions/workflows/linux-core.yml)
+[![Windows build](https://github.com/virgil48YT/AuroraBrowser/actions/workflows/build-windows.yml/badge.svg?branch=main)](https://github.com/virgil48YT/AuroraBrowser/actions/workflows/build-windows.yml)
+[![macOS build](https://github.com/virgil48YT/AuroraBrowser/actions/workflows/macos.yml/badge.svg?branch=main)](https://github.com/virgil48YT/AuroraBrowser/actions/workflows/macos.yml)
+[![Linux desktop](https://github.com/virgil48YT/AuroraBrowser/actions/workflows/linux-desktop.yml/badge.svg?branch=main)](https://github.com/virgil48YT/AuroraBrowser/actions/workflows/linux-desktop.yml)
+[![Latest release](https://img.shields.io/github/v/release/virgil48YT/AuroraBrowser?sort=semver)](https://github.com/virgil48YT/AuroraBrowser/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A privacy-focused, Chromium-based desktop browser with a fast native Qt6 UI.
 
-Aurora is built around security and privacy by default: a built-in ad and
-tracker blocker with per-site exceptions, and incognito windows that keep
-the session entirely in memory so nothing touches disk. It is a small,
-self-contained app — no telemetry, no background services, no vendor
+Aurora is built around security and privacy by default: the Chromium
+sandbox, a built-in ad and tracker blocker with per-site exceptions, and
+incognito windows whose cookies, site storage, cache, history, downloads list
+and session are kept in memory and discarded when the window closes. It is a
+small, self-contained app — no telemetry, no background services, no vendor
 accounts.
 
 ## Features
@@ -15,11 +23,17 @@ accounts.
   manual only, never on a timer)
 - Site settings page (`aurora://site-settings`) to review and clear
   remembered permissions, per-site zoom levels and Shields exceptions
-- Incognito windows (Ctrl+Shift+N) that leave no trace on disk
+- Incognito windows (Ctrl+Shift+N): cookies, local storage, cache and other
+  site data live in an in-memory profile, and nothing is added to history,
+  the downloads list, the session or the site-settings database. Files you
+  explicitly download are of course written to disk, and the operating
+  system may still page memory to swap
 - Third-party cookies blocked by default (Settings > Privacy & Security),
-  judged against the site in the address bar; site boundaries use a small
-  built-in list of shared suffixes (co.uk, github.io, ...) rather than the
-  full Public Suffix List
+  judged against the site in the address bar using the bundled
+  [Public Suffix List](https://publicsuffix.org) (so `alice.github.io` and
+  `bob.github.io`, or two `.co.uk` registrants, are different sites)
+- Chromium sandbox enabled on Windows, macOS and Linux (see
+  [docs/security.md](docs/security.md) for the per-platform details)
 - Chrome-style layout: tabs, address bar, downloads
 - History, bookmarks, downloads and settings pages
 - Custom search engines (any `https://` search URL with `%s`), selectable as
@@ -37,6 +51,18 @@ accounts.
   home page, or open a specific page
 - Runs without the Chromium engine; the UI and internal pages still work
 
+## Screenshots
+
+<!-- TODO(screenshots): replace these placeholders with real captures of a
+     release build (1280x800, dark and light theme). The files do not exist
+     yet; see docs/img/README.md for what each one should show. -->
+
+| Home page (dark) | Home page (light) |
+|---|---|
+| ![Aurora home page, dark theme — TODO placeholder](docs/img/home-dark.png) | ![Aurora home page, light theme — TODO placeholder](docs/img/home-light.png) |
+| **Settings** | **Incognito window** |
+| ![aurora://settings — TODO placeholder](docs/img/settings.png) | ![Incognito window — TODO placeholder](docs/img/incognito.png) |
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
@@ -47,6 +73,7 @@ accounts.
 | Ctrl+N | New window |
 | Ctrl+Shift+N | New incognito window |
 | Ctrl+L | Focus address bar |
+| Ctrl+D (Cmd+D on macOS) | Bookmark this page |
 | Ctrl+F | Find in page |
 | Ctrl+P | Print |
 | F5 / Ctrl+R | Reload |
@@ -66,7 +93,28 @@ Download the latest release from the
 | Windows 10/11 (x64) | `Aurora-VERSION-windows-x64-setup.exe` — double-click; installs per user into `%LOCALAPPDATA%\Aurora` |
 | macOS 13.3+ (Apple silicon) | `Aurora-VERSION-macos-arm64.dmg` — drag Aurora to Applications |
 | Linux (x86_64, glibc 2.35+) | `Aurora-VERSION-linux-x86_64.AppImage` (`chmod +x` and run) or the `.tar.gz` (extract, run `./aurora`) |
-| Android 8.0+ | `Aurora-VERSION-android.apk` |
+| Android 8.0+ | `Aurora-VERSION-android.apk`, or `Aurora-VERSION-android-unsigned.apk` (see below) |
+
+Things to know before installing:
+
+- **Windows:** the installer and the browser are **not code-signed**, so
+  SmartScreen shows "Windows protected your PC". Choose *More info > Run
+  anyway* only if you downloaded the file from this repository's Releases
+  page and its SHA-256 matches the published `.sha256` file.
+- **macOS:** the DMG is **ad-hoc signed and not notarized** unless the
+  release was built with the Apple signing secrets configured, so Gatekeeper
+  blocks the first launch. Right-click Aurora.app > *Open* (or *System
+  Settings > Privacy & Security > Open Anyway*) once.
+- **Linux AppImage:** AppImages need **FUSE 2** (`libfuse2`; on Ubuntu 22.04+
+  `sudo apt install libfuse2`, on 24.04+ `libfuse2t64`). Without it, run
+  `./Aurora-VERSION-linux-x86_64.AppImage --appimage-extract-and-run`, or use
+  the `.tar.gz`.
+- **Android:** the release workflow signs the APK only when the
+  `ANDROID_KEYSTORE_*` secrets are configured; otherwise it publishes
+  `Aurora-VERSION-android-unsigned.apk`. **Android refuses to install an
+  unsigned APK** ("App not installed" / "package appears to be invalid"). Sign
+  it yourself first (`apksigner sign --ks my.jks Aurora-VERSION-android-unsigned.apk`)
+  or build a debug APK from source (see [android/README.md](android/README.md)).
 
 How releases are built and signed: [docs/release.md](docs/release.md).
 
@@ -110,6 +158,13 @@ open build/bin/Aurora.app
 
 See [android/README.md](android/README.md) (`cd android && ./gradlew assembleDebug`).
 
+## Contributing and security
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Please
+report security vulnerabilities privately as described in
+[SECURITY.md](SECURITY.md), not in public issues.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE). The bundled Public Suffix List
+(`third_party/publicsuffix/`) is under the Mozilla Public License 2.0.
