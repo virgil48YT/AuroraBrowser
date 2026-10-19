@@ -1,4 +1,5 @@
 #include "ui/TabContextMenu.hpp"
+#include "ui/QrShareDialog.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -159,6 +160,21 @@ void TabContextMenu::build() {
         });
     });
 #endif
+
+    // Share as QR code: generated locally, for opening the page on a phone.
+    {
+        auto* qr = add(this, QStringLiteral("Share as QR Code…"), icons::Name::Duplicate);
+        const QString url = QString::fromStdString(tab.url.display());
+        const QString title = QString::fromStdString(tab.title);
+        qr->setEnabled(tab.url.scheme() == "http" || tab.url.scheme() == "https");
+        QPointer<QWidget> owner = parentWidget() ? parentWidget()->window() : nullptr;
+        connect(qr, &QAction::triggered, this, [owner, url, title] {
+            // After the transient menu has unwound, like the PiP entry.
+            QTimer::singleShot(0, owner.data(), [owner, url, title] {
+                if (owner) QrShareDialog::show_for(owner.data(), url, title);
+            });
+        });
+    }
 
     auto* dup = add(this, "Duplicate Tab", icons::Name::Duplicate);
     connect(dup, &QAction::triggered, this, [this] { emit duplicate_tab(index_); });

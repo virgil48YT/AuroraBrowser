@@ -112,6 +112,8 @@ target_sources(aurora_core
         src/util/Log.cpp
         src/util/Perf.cpp
         src/util/Sha256.cpp
+        src/util/QrCode.cpp
+        third_party/qrcodegen/qrcodegen.cpp
         src/storage/Database.cpp
         src/storage/Migration.cpp
         src/tabs/TabManager.cpp
@@ -135,6 +137,15 @@ target_sources(aurora_core
         src/adblock/ListUpdater.cpp
 )
 target_include_directories(aurora_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# Vendored QR encoder (Project Nayuki, MIT): third-party code, so it is built
+# without Aurora's warning set and its header is a SYSTEM include.
+target_include_directories(aurora_core SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/qrcodegen)
+if(MSVC)
+    set_source_files_properties(third_party/qrcodegen/qrcodegen.cpp PROPERTIES COMPILE_OPTIONS /W0)
+else()
+    set_source_files_properties(third_party/qrcodegen/qrcodegen.cpp PROPERTIES COMPILE_OPTIONS -w)
+endif()
 target_compile_features(aurora_core PUBLIC cxx_std_20)
 # SearchEngineService owns a worker thread (std::thread), which needs the
 # platform threads library on Linux/macOS toolchains.

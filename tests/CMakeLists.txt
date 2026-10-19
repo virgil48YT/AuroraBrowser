@@ -27,6 +27,7 @@ add_executable(aurora_tests
     test_extension_load_list.cpp
     test_search_engines.cpp
     test_sha256.cpp
+    test_qr_code.cpp
     test_build_id.cpp
     test_cef_layout.cpp
     test_omnibox_suggest.cpp

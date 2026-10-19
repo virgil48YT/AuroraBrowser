@@ -9,6 +9,7 @@ set(AURORA_BROWSER_SOURCES
     ../ui/OmniboxSuggestController.cpp
     ../ui/TabBar.cpp
     ../ui/TabContextMenu.cpp
+    ../ui/QrShareDialog.cpp
     ../ui/BrowserMenu.cpp
     ../ui/BookmarkBar.cpp
     ../ui/DownloadsPopover.cpp
