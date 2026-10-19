@@ -2810,14 +2810,21 @@ QWidget* MainWindow::page_widget(core::InternalPage page) {
         case core::InternalPage::History:
             widget = new HistoryPage(services_.history, this);
             break;
-        case core::InternalPage::Downloads:
+        case core::InternalPage::Downloads: {
             // The page's per-row actions go back through the window, which
             // owns the engine-id mapping the engine needs to control a
             // transfer.
-            widget = new DownloadsPage(
+            auto* downloads_page = new DownloadsPage(
                 services_.downloads, this,
                 downloads_actions<DownloadsPage::Actions>());
+            // The summary card shows the real download location.
+            downloads_page->set_prefs(services_.prefs);
+            // "Download settings" opens the settings page.
+            connect(downloads_page, &DownloadsPage::download_settings_requested,
+                    this, [this] { show_page(core::InternalPage::Settings); });
+            widget = downloads_page;
             break;
+        }
         case core::InternalPage::Bookmarks: {
             auto* bookmarks_page = new BookmarksPage(services_.bookmarks, this);
             // The page reports every edit/delete through status_message, and

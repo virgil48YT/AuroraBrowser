@@ -35,12 +35,6 @@ static QString qss_gradient(const QColor& a, const QColor& b) {
         .arg(hex(a), hex(b));
 }
 
-// Height of the in-progress bar in an aurora://downloads Status cell. Mirrors
-// kProgressHeight in DownloadsPage.cpp: the widget sets the fixed height, and
-// this re-states it in the sheet because the generic QProgressBar rule below
-// caps every bar at a 3px hairline.
-static constexpr int kDownloadProgressHeight = 18;
-
 QString StylesheetBuilder::build(const Theme& t) {
     const auto& c = t.colors;
     QString s;
@@ -1294,62 +1288,120 @@ QString StylesheetBuilder::build(const Theme& t) {
             .arg(c.text_faint.name()).arg(t.small_font_px + 1);
 
     // --- Downloads page (aurora://downloads) -------------------------------
-    // Same family as the shared page list, but flatter and airier: the list is
-    // the whole page here, so it gets a small 6px radius (a large radius on a
-    // full-width panel reads as a phone card), roomier rows, and a header row
-    // that separates cleanly from the first item.
-    s += QString("QTreeWidget#DownloadsList {"
-                 "  background: %1; alternate-background-color: %1;"
-                 "  color: %2; border: %3px solid %4; border-radius: %5px;"
-                 "  outline: none; padding: %6px; }")
-            .arg(rgba(c.card_bg, 168)).arg(c.text.name()).arg(Metrics::hairline)
-            .arg(glow_edge_soft).arg(Radius::md).arg(Spacing::xs);
-    s += QString("QTreeWidget#DownloadsList::item {"
-                 "  color: %1; padding: %2px %3px; border-radius: %4px; }")
-            .arg(c.text.name()).arg(Spacing::sm).arg(Spacing::md)
-            .arg(Radius::sm - 1);
-    s += QString("QTreeWidget#DownloadsList::item:hover {"
-                 "  background: %1; color: %2; }")
-            .arg(rgba(c.accent, 28)).arg(c.text.name());
-    s += QString("QTreeWidget#DownloadsList::item:selected {"
-                 "  background: %1; color: %2; }")
-            .arg(rgba(c.accent, 70)).arg(c.text.name());
-    s += QString("QTreeWidget#DownloadsList::item:selected:!active {"
-                 "  background: %1; color: %2; }")
-            .arg(rgba(c.accent, 45)).arg(c.text.name());
-    // The in-progress bar that replaces the Status text on aurora://downloads.
-    // The generic QProgressBar rule caps every bar at a 3px hairline and hides
-    // its text; this one is a real cell, so it re-states height, text color and
-    // font — an ID selector outranks the element selector regardless of order.
-    s += QString("QProgressBar#DownloadPageProgress {"
-                 "  background: %1; border: %2px solid %3; border-radius: %4px;"
-                 "  min-height: %5px; max-height: %5px;"
-                 "  color: %6; font-size: %7px; text-align: center;"
-                 "}"
-                 "QProgressBar#DownloadPageProgress::chunk {"
-                 "  background: %8; border-radius: %4px;"
-                 "}")
-            .arg(rgba(c.surface_alt, 170))
-            .arg(Metrics::hairline)
-            .arg(glow_edge_soft)
-            .arg(Radius::sm)
-            .arg(kDownloadProgressHeight)
-            .arg(c.text.name())
-            .arg(t.small_font_px)
-            .arg(rgba(c.accent, 110));
-    s += QString("QTreeWidget#DownloadsList QHeaderView::section {"
+    // Neon layout: the glass cards, search rim and summary card are painted
+    // by GlowFrame; the sheet owns text, the flat controls and hover washes.
+    // Label rules carry the #InternalPage prefix so they outrank the page-wide
+    // "QWidget#InternalPage QLabel" color rule.
+    s += QString("QWidget#DownloadsHeader, QWidget#DownloadsBody,"
+                 "QWidget#DownloadsLeft, QWidget#DownloadsRight,"
+                 "QWidget#DownloadsColumn, QWidget#DownloadsSearchWrap,"
+                 "QScrollArea#DownloadsScroll {"
+                 "  background: transparent; border: none; }");
+    s += QString("QWidget#InternalPage QLabel#DownloadsTitle { color: %1;"
+                 "  font-size: %2px; font-weight: 600; letter-spacing: -0.3px; }")
+            .arg(c.text.name()).arg(t.title_font_px + 9);
+    s += QString("QLineEdit#DownloadsSearch {"
                  "  background: transparent; color: %1; border: none;"
-                 "  border-bottom: %2px solid %3; padding: %4px %5px;"
-                 "  font-size: %6px; font-weight: 600; letter-spacing: 0.4px; }")
-            .arg(c.text_muted.name()).arg(Metrics::hairline)
-            .arg(c.divider.name()).arg(Spacing::sm).arg(Spacing::md)
-            .arg(t.small_font_px);
-    // Leading label of the actions row: the page's own context line now that
-    // the skeleton draws no title.
-    s += QString("QWidget#InternalPage QLabel#DownloadsCount {"
-                 "  color: %1; font-size: %2px; font-weight: 600;"
-                 "  letter-spacing: 0.2px; }")
+                 "  font-size: %3px;"
+                 "  selection-background-color: %2; selection-color: %1; }")
+            .arg(c.text.name()).arg(rgba(c.accent, 60)).arg(t.body_font_px + 2);
+    s += QString("QComboBox#DownloadsFilter {"
+                 "  background: %1; color: %2; border: 1px solid %3;"
+                 "  border-radius: %4px; padding: 8px 12px; min-height: 22px;"
+                 "  font-size: %5px; }")
+            .arg(rgba(c.card_bg, 200)).arg(c.text.name())
+            .arg(rgba(c.accent2, 150)).arg(Radius::omnibox)
+            .arg(t.body_font_px + 1);
+    s += QString("QComboBox#DownloadsFilter:hover { border-color: %1; }")
+            .arg(hex(c.accent2));
+    s += QString("QComboBox#DownloadsFilter::drop-down { border: none; width: 22px; }");
+    s += QString("QComboBox#DownloadsFilter QAbstractItemView {"
+                 "  background: %1; color: %2; border: 1px solid %3;"
+                 "  selection-background-color: %4; selection-color: %2;"
+                 "  outline: none; padding: 4px; }")
+            .arg(c.card_bg.name()).arg(c.text.name()).arg(glow_edge)
+            .arg(rgba(c.accent2, 80));
+    s += QString("QPushButton#DownloadsLinkButton {"
+                 "  background: transparent; border: none; color: %1;"
+                 "  font-size: %2px; padding: 6px 8px; border-radius: %3px; }"
+                 "QPushButton#DownloadsLinkButton:hover { background: %4; color: %5; }"
+                 "QPushButton#DownloadsLinkButton:pressed { background: %6; }"
+                 "QPushButton#DownloadsLinkButton:disabled { color: %7; }")
+            .arg(hex(c.accent)).arg(t.body_font_px + 1).arg(Radius::md)
+            .arg(accent_wash).arg(c.text.name()).arg(rgba(c.accent, 60))
+            .arg(c.text_faint.name());
+    s += QString("QWidget#InternalPage QLabel#DownloadsCardTitle {"
+                 "  color: %1; font-size: %2px; font-weight: 600; }")
+            .arg(c.text.name()).arg(t.title_font_px + 3);
+    s += QString("QWidget#InternalPage QLabel#DownloadsCountBadge {"
+                 "  color: %1; background: %2; border: 1px solid %3;"
+                 "  border-radius: 10px; padding: 1px 9px; min-width: 8px;"
+                 "  font-size: %4px; font-weight: 600; }")
+            .arg(c.text.name()).arg(rgba(QColor(59, 130, 246), 70))
+            .arg(rgba(QColor(59, 130, 246), 140)).arg(t.small_font_px + 1);
+    s += QString("QWidget#DownloadsRow { background: transparent;"
+                 "  border-radius: %1px; }"
+                 "QWidget#DownloadsRow:hover { background: %2; }")
+            .arg(Radius::md).arg(rgba(c.accent, 14));
+    s += QString("QWidget#InternalPage QLabel#DownloadsRowName {"
+                 "  color: %1; font-size: %2px; }")
+            .arg(c.text.name()).arg(t.body_font_px + 1);
+    s += QString("QWidget#InternalPage QLabel#DownloadsRowProgressText {"
+                 "  color: %1; font-size: %2px; }")
+            .arg(hex(c.accent)).arg(t.small_font_px + 1);
+    s += QString("QWidget#InternalPage QLabel#DownloadsRowMeta {"
+                 "  color: %1; font-size: %2px; }")
+            .arg(c.text_muted.name()).arg(t.small_font_px + 1);
+    s += QString("QWidget#InternalPage QLabel#DownloadsRowSpeed {"
+                 "  color: %1; font-size: %2px; }")
+            .arg(hex(c.accent2.lighter(135))).arg(t.small_font_px + 1);
+    s += QString("QToolButton#DownloadsRowButton {"
+                 "  background: transparent; border: none; border-radius: %1px; }"
+                 "QToolButton#DownloadsRowButton:hover { background: %2; }"
+                 "QToolButton#DownloadsRowButton:pressed { background: %3; }")
+            .arg(Radius::md).arg(accent2_wash).arg(rgba(c.accent2, 70));
+    s += QString("QPushButton#DownloadsOpenFolder {"
+                 "  background: transparent; border: none; color: %1;"
+                 "  font-size: %2px; padding: 5px 10px; border-radius: %3px; }"
+                 "QPushButton#DownloadsOpenFolder:hover { background: %4; color: %5; }"
+                 "QPushButton#DownloadsOpenFolder:pressed { background: %6; }"
+                 "QPushButton#DownloadsOpenFolder:disabled { color: %7; }")
+            .arg(hex(c.accent2.lighter(140))).arg(t.small_font_px + 2)
+            .arg(Radius::md).arg(accent2_wash).arg(c.text.name())
+            .arg(rgba(c.accent2, 70)).arg(c.text_faint.name());
+    s += QString("QFrame#DownloadsRowDivider, QFrame#DownloadsSummaryDivider {"
+                 "  background: %1; border: none; }")
+            .arg(c.divider.name());
+    s += QString("QWidget#InternalPage QLabel#DownloadsPlaceholder {"
+                 "  color: %1; font-size: %2px; padding: 10px 4px; }")
             .arg(c.text_muted.name()).arg(t.body_font_px);
+    s += QString("QWidget#InternalPage QLabel#DownloadsStatLabel {"
+                 "  color: %1; font-size: %2px; }")
+            .arg(c.text_muted.name()).arg(t.body_font_px);
+    s += QString("QWidget#InternalPage QLabel#DownloadsStatValue {"
+                 "  color: %1; font-size: %2px; font-weight: 600; }")
+            .arg(c.text.name()).arg(t.title_font_px + 4);
+    s += QString("QWidget#InternalPage QLabel#DownloadsSectionLabel,"
+                 "QWidget#InternalPage QLabel#DownloadsSettingsLinkText {"
+                 "  color: %1; font-size: %2px; }")
+            .arg(c.text.name()).arg(t.body_font_px + 1);
+    s += QString("QFrame#DownloadsLocationBox {"
+                 "  background: %1; border: 1px solid %2; border-radius: %3px; }")
+            .arg(rgba(c.card_bg, 190)).arg(rgba(c.accent2, 120))
+            .arg(Radius::omnibox);
+    s += QString("QLineEdit#DownloadsLocation {"
+                 "  background: transparent; border: none; color: %1;"
+                 "  font-size: %2px; selection-background-color: %3; }")
+            .arg(c.text.name()).arg(t.body_font_px).arg(rgba(c.accent, 60));
+    s += QString("QPushButton#DownloadsSettingsLink {"
+                 "  background: %1; border: 1px solid %2; border-radius: %3px;"
+                 "  text-align: left; padding: 0px; }"
+                 "QPushButton#DownloadsSettingsLink:hover { background: %4;"
+                 "  border-color: %5; }"
+                 "QPushButton#DownloadsSettingsLink:pressed { background: %6; }")
+            .arg(rgba(c.card_bg, 170)).arg(rgba(c.accent2, 110))
+            .arg(Radius::omnibox).arg(accent2_wash).arg(hex(c.accent2))
+            .arg(rgba(c.accent2, 60));
 
     // Settings page, chrome://settings style: a fixed section rail, then a
     // section header above each rounded card. Rows are transparent on the
