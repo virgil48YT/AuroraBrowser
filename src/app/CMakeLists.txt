@@ -107,7 +107,11 @@ endif()
 if(APPLE)
     set(AURORA_MAC_BUNDLE_ID "com.aurora.browser")
     set(AURORA_MAC_NAME "Aurora")
-    set(AURORA_MAC_MIN_OS "13.0")
+    if(CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(AURORA_MAC_MIN_OS "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    else()
+        set(AURORA_MAC_MIN_OS "13.3")
+    endif()
     set(AURORA_ICNS "${CMAKE_CURRENT_BINARY_DIR}/Aurora.icns")
     add_custom_command(
         OUTPUT "${AURORA_ICNS}"

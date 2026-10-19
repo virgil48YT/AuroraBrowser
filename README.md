@@ -64,7 +64,7 @@ Download the latest release from the
 | Platform | Package |
 |---|---|
 | Windows 10/11 (x64) | `Aurora-VERSION-windows-x64-setup.exe` — double-click; installs per user into `%LOCALAPPDATA%\Aurora` |
-| macOS 13+ (Apple silicon) | `Aurora-VERSION-macos-arm64.dmg` — drag Aurora to Applications |
+| macOS 13.3+ (Apple silicon) | `Aurora-VERSION-macos-arm64.dmg` — drag Aurora to Applications |
 | Linux (x86_64, glibc 2.35+) | `Aurora-VERSION-linux-x86_64.AppImage` (`chmod +x` and run) or the `.tar.gz` (extract, run `./aurora`) |
 | Android 8.0+ | `Aurora-VERSION-android.apk` |
 

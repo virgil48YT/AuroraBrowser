@@ -271,6 +271,11 @@ if(AURORA_ENABLE_CEF)
     # loads them and sets CEF_INCLUDE_PATH / CEF_LIBCEF_DLL_WRAPPER_PATH.
     list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
     find_package(CEF REQUIRED)
+    if(APPLE)
+        # CEF's cmake sets a 13.0 deployment target, but libc++'s
+        # floating-point std::to_chars (used by std::format) needs 13.3.
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3")
+    endif()
     if(MSVC)
         # CEF's cef_variables.cmake clears CMAKE_CXX_FLAGS when using the Ninja
         # generator (to quiet warnings in CEF's own project). That strips
