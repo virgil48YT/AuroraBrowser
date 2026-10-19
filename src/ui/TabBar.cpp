@@ -181,13 +181,19 @@ public:
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
 
-        // Aurora glass, per the mockup: tabs are separate rounded capsules
+        // Aurora glass, per the mockup: tabs are separate rounded tiles
         // floating on the strip with a real gap between neighbours (the 4px
         // horizontal inset on each side adds up to an 8px gutter). The active
         // pill is a translucent wash the strip shows through, outlined with
         // the nebula purple; inactive tabs are fully transparent until
         // hovered, and the gap alone separates them — no dividers.
         const QRectF pill = r.adjusted(4, 4, -4, -4);
+        // Softly rounded rectangles, not stadiums: the settings/downloads
+        // mockups give the tabs a small corner radius (the full
+        // height/2 capsule read as too round next to the barely-rounded
+        // omnibox). Clamped so a very short tab still draws a valid rect.
+        const qreal tab_radius =
+            qMin<qreal>(Radius::lg, pill.height() / 2.0);
         if (selected) {
             // A faint light wash over the dark strip (a faint dark wash over
             // the light strip) instead of an opaque plate, so the pill reads
@@ -201,16 +207,14 @@ public:
             QColor edge = c.accent2;
             edge.setAlpha(90);
             painter->setPen(QPen(edge, 1.0));
-            painter->drawRoundedRect(pill, pill.height() / 2.0,
-                                     pill.height() / 2.0);
+            painter->drawRoundedRect(pill, tab_radius, tab_radius);
         } else if (h > 0.02) {
             // Hover lift: a subtly raised pill, fully inside the tab.
             QColor fill = c.tab_hover_bg;
             fill.setAlphaF(fill.alphaF() * static_cast<float>(h));
             painter->setPen(Qt::NoPen);
             painter->setBrush(fill);
-            painter->drawRoundedRect(pill, pill.height() / 2.0,
-                                     pill.height() / 2.0);
+            painter->drawRoundedRect(pill, tab_radius, tab_radius);
         }
 
         // ---- Contents -----------------------------------------------------
