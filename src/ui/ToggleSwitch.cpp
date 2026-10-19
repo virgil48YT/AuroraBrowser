@@ -87,9 +87,11 @@ void ToggleSwitch::paintEvent(QPaintEvent*) {
     p.drawRoundedRect(track, radius, radius);
 
     if (t > 0.0) {
+        // Purple, deep violet -> neon purple: the mockup's switches read as
+        // one purple pill rather than a purple -> magenta ramp.
         QLinearGradient grad(track.topLeft(), track.topRight());
-        grad.setColorAt(0.0, c.accent2);
-        grad.setColorAt(1.0, c.accent3);
+        grad.setColorAt(0.0, c.accent2.darker(135));
+        grad.setColorAt(1.0, c.accent2);
         p.setOpacity((isEnabled() ? 1.0 : 0.5) * t);
         p.setPen(QPen(c.accent2, 1.0));
         p.setBrush(grad);

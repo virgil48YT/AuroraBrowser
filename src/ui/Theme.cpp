@@ -143,11 +143,11 @@ Theme dark_theme() {
     c.accent2_soft     = QColor(168, 85, 247, 36);
     c.accent3          = QColor("#D946EF");
 
-    // Toggle switch: on = cyan→magenta gradient track (StylesheetBuilder)
-    // with a navy core dot; off = slate track with a slate dot.
+    // Toggle switch: on = neon purple track with a white knob (the
+    // settings mockup's switches); off = slate track with a slate dot.
     c.toggle_track_off = QColor("#1E293B");
     c.toggle_border_off= QColor("#33415C");
-    c.toggle_knob_on   = QColor("#0B1120");
+    c.toggle_knob_on   = QColor("#F8FAFC");
     c.toggle_knob_off  = QColor("#94A3B8");
 
     // Semantic — desaturated slightly so they don't vibrate on navy.
