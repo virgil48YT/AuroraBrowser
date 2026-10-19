@@ -7,7 +7,6 @@
 #include <QFontInfo>
 #include <QFontMetrics>
 #include <QFrame>
-#include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
@@ -20,6 +19,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include "ui/GlowFrame.hpp"
 #include "ui/Icons.hpp"
 #include "ui/PopupPlacement.hpp"
 #include "ui/Theme.hpp"
@@ -112,8 +112,15 @@ constexpr int kIconBox = 18;
 constexpr int kIconPx = 16;
 // Separator frame (1px) plus its vertical stylesheet margins (Spacing::xs).
 constexpr int kSeparatorHeight = Metrics::hairline + 2 * Spacing::xs;
-// Transparent border of the popup window, reserved for the panel's shadow.
-constexpr QMargins kShadowMargins(9, 7, 13, 15);
+// The panel is painted like the History page's side panel (GlowFrame card
+// style): gradient rim, outer halo and navy glass. The halo is drawn inside
+// the panel's own rect, `kGlowExtent` px deep, and the layout keeps the rows
+// one pixel clear of the rim on top of that.
+constexpr int kPanelRadius = 14;
+constexpr int kGlowExtent = 3;
+constexpr int kPanelInset = kGlowExtent + 2;
+// Transparent border of the popup window around the glowing panel.
+constexpr QMargins kShadowMargins(4, 2, 4, 6);
 
 QString color_css(const QColor& color) {
     return popup_detail::css_color(color);
@@ -280,14 +287,19 @@ void BrowserMenu::build_popup() {
     root->setContentsMargins(kShadowMargins);
     root->setSpacing(0);
 
-    panel_ = new QWidget(popup_);
-    panel_->setObjectName(QStringLiteral("BrowserMenuPanel"));
-    panel_->setAttribute(Qt::WA_StyledBackground, true);
+    // Same glass card as the History page's panel; GlowFrame paints the rim,
+    // halo and plate itself, so no stylesheet background or drop shadow.
+    auto* glow = new GlowFrame(popup_);
+    glow->setObjectName(QStringLiteral("BrowserMenuPanel"));
+    glow->apply_menu_style(current_theme().is_dark,
+                           current_theme().colors.surface_raised,
+                           kPanelRadius, kGlowExtent);
+    panel_ = glow;
     root->addWidget(panel_);
-    installShadowBorder(panel_, current_theme().colors.shadow_color);
 
     auto* panel_layout = new QVBoxLayout(panel_);
-    panel_layout->setContentsMargins(0, 0, 0, 0);
+    panel_layout->setContentsMargins(kPanelInset, kPanelInset, kPanelInset,
+                                     kPanelInset);
     panel_layout->setSpacing(0);
 
     // --- Header: title + close ------------------------------------------
@@ -459,7 +471,7 @@ int BrowserMenu::resolve_row_height() const {
     const int chrome = kHeaderHeight + kFooterHeight +
                        separators * kSeparatorHeight +
                        2 * Spacing::xs /* list margins */ +
-                       2 * Metrics::hairline /* panel border */;
+                       2 * kPanelInset /* glow rim + halo */;
     const int available =
         PopupPlacement::availablePanelHeightFromAnchor(this, Spacing::xs);
     if (available <= 0) return kRowHeight;
@@ -525,7 +537,13 @@ void BrowserMenu::update_popup_style() {
 
     QString style = QStringLiteral(
         "QWidget#BrowserMenuPopup { background: transparent; border: none; }");
-    style += roundedPanelStyle(QStringLiteral("BrowserMenuPanel"), c);
+    // The plate is painted by the GlowFrame (History panel look).
+    style += QStringLiteral(
+        "QFrame#BrowserMenuPanel { background: transparent; border: none; }");
+    if (auto* glow = qobject_cast<GlowFrame*>(panel_)) {
+        glow->apply_menu_style(theme.is_dark, c.surface_raised, kPanelRadius,
+                               kGlowExtent);
+    }
     style += QStringLiteral(
                  "QWidget#BrowserMenuHeader { background: transparent;"
                  " border: none; border-bottom: %1px solid %2; }")
@@ -584,15 +602,8 @@ void BrowserMenu::update_popup_style() {
                  .arg(Metrics::hairline)
                  .arg(divider)
                  .arg(hover, pressed)
-                 .arg(Radius::popover - Metrics::hairline);
+                 .arg(kPanelRadius - kPanelInset);
     popup_->setStyleSheet(style);
-
-    if (auto* shadow = qobject_cast<QGraphicsDropShadowEffect*>(
-            panel_ ? panel_->graphicsEffect() : nullptr)) {
-        QColor shadow_color(c.shadow_color);
-        shadow_color.setAlpha(qMax(38, shadow_color.alpha()));
-        shadow->setColor(shadow_color);
-    }
 }
 
 void BrowserMenu::toggle_popup() {

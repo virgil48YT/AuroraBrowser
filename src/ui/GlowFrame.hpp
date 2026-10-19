@@ -32,6 +32,13 @@ public:
 
     // Installs the aurora cyan -> purple edge for ordinary cards/panels.
     void apply_card_style(int radius = 14, int glow_extent = 3);
+    // The history panel's card look (same blue -> violet rim, blue halo and
+    // navy glass) for floating menus such as the browser's three-dots menu.
+    // A menu floats over arbitrary page content instead of the aurora
+    // wallpaper, so the navy plate is near-opaque to keep rows legible; in
+    // the light theme the plate falls back to `light_fill`.
+    void apply_menu_style(bool dark, const QColor& light_fill, int radius = 14,
+                          int glow_extent = 3);
     // Installs the purple -> magenta edge for destructive actions.
     void apply_danger_style(int radius = 10, int glow_extent = 3);
     // Installs an explicit edge + fill + radius (search field, free use).

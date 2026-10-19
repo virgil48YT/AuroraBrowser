@@ -45,6 +45,14 @@ void GlowFrame::apply_card_style(int radius, int glow_extent) {
               radius);
 }
 
+void GlowFrame::apply_menu_style(bool dark, const QColor& light_fill,
+                                 int radius, int glow_extent) {
+    QColor plate = kCardPlate;
+    plate.setAlpha(244);
+    set_style({kCardEdgeA, kCardEdgeB, kCardHalo, glow_extent},
+              dark ? plate : light_fill, radius);
+}
+
 void GlowFrame::apply_danger_style(int radius, int glow_extent) {
     set_style({kDangerEdgeA, kDangerEdgeB, kDangerHalo, glow_extent},
               kDangerPlate, radius);
