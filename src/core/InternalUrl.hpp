@@ -6,7 +6,8 @@
 // so the omnibox, the browser menu and session restore all speak the same
 // language: `aurora://home`, `aurora://history`, `aurora://downloads`,
 // `aurora://bookmarks`, `aurora://extensions`, `aurora://settings`,
-// `aurora://site-settings`.
+// `aurora://site-settings`, plus `aurora://reader` (reader mode, which shows
+// the article extracted from the tab it was opened from).
 //
 // chrome-extension:// URLs are not Qt pages, but they are also in-app: they
 // must load inside Aurora and must never be handed to an external browser.
@@ -29,6 +30,7 @@ enum class InternalPage {
     Extensions,
     Settings,
     SiteSettings,  // per-site permissions, zoom and Shields exceptions
+    Reader,        // reader mode: clean-text view of a page's article
 };
 
 // Scheme used by the internal pages, without the "://".

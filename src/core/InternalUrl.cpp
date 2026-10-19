@@ -49,6 +49,7 @@ std::optional<InternalPage> parse_internal_url(std::string_view input) {
     // chrome://settings/content is where Chrome keeps the same controls.
     if (host == "site-settings" || host == "settings/content")
         return InternalPage::SiteSettings;
+    if (host == "reader") return InternalPage::Reader;
     return std::nullopt;
 }
 
@@ -73,6 +74,7 @@ std::string internal_url(InternalPage page) {
         case InternalPage::Extensions: return "aurora://extensions";
         case InternalPage::Settings:  return "aurora://settings";
         case InternalPage::SiteSettings: return "aurora://site-settings";
+        case InternalPage::Reader:    return "aurora://reader";
     }
     return "aurora://settings";
 }
@@ -86,6 +88,7 @@ std::string internal_page_title(InternalPage page) {
         case InternalPage::Extensions: return "Extensions";
         case InternalPage::Settings:  return "Settings";
         case InternalPage::SiteSettings: return "Site settings";
+        case InternalPage::Reader:    return "Reader";
     }
     return "Aurora";
 }

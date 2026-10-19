@@ -37,3 +37,11 @@ TEST_CASE("internal_url round-trips through the parser") {
         CHECK_FALSE(internal_page_title(page).empty());
     }
 }
+
+TEST_CASE("internal url: reader mode page") {
+    using aurora::core::InternalPage;
+    CHECK(aurora::core::parse_internal_url("aurora://reader") == InternalPage::Reader);
+    CHECK(aurora::core::parse_internal_url("AURORA:reader/") == InternalPage::Reader);
+    CHECK(aurora::core::internal_url(InternalPage::Reader) == "aurora://reader");
+    CHECK(aurora::core::internal_page_title(InternalPage::Reader) == "Reader");
+}
