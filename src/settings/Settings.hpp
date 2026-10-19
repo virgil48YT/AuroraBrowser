@@ -101,6 +101,13 @@ struct PrefKeys {
     // Per-site zoom: "zoom.<origin>" = Chromium zoom level as text (0 is
     // 100%; an absent key means default). See settings::SiteZoomStore.
     static constexpr std::string_view kZoomPrefix = "zoom.";
+    // Night mode for page content: the global default (bool) and per-site
+    // overrides "nightmode.<origin>" = "on" | "off". See SiteNightModeStore.
+    static constexpr std::string_view kNightModeDefault = "content.night_mode";
+    static constexpr std::string_view kNightModePrefix = "nightmode.";
+    // Tor incognito windows: the SOCKS5 proxy of the user's own Tor daemon.
+    // AURORA_TOR_PROXY overrides it for a single run.
+    static constexpr std::string_view kTorProxy = "tor.proxy";
 };
 
 // The three Startup-card choices. Home opens one aurora://home tab, Continue

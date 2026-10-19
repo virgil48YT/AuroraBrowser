@@ -7,6 +7,7 @@
 
 #include "permissions/PermissionStore.hpp"
 #include "settings/Settings.hpp"
+#include "settings/SiteNightModeStore.hpp"
 #include "settings/SiteZoomStore.hpp"
 #include "storage/Database.hpp"
 #include "storage/Migration.hpp"
@@ -108,4 +109,34 @@ TEST_CASE("SiteZoomStore round-trips levels and clears the default") {
     // Corrupt values read as default rather than garbage.
     prefs.set_string("zoom.https://c.test", "1,5");
     CHECK_FALSE(zoom.level("https://c.test", level));
+}
+
+TEST_CASE("SiteNightModeStore: per-site overrides on top of the default") {
+    auto db = open_profile();
+    Settings prefs(db);
+    prefs.ensure_schema();
+    aurora::settings::SiteNightModeStore night(prefs);
+    CHECK_FALSE(night.default_on());
+    CHECK_FALSE(night.enabled("https://example.com"));
+    CHECK_FALSE(night.enabled(""));
+
+    night.set("https://example.com", true);
+    CHECK(night.enabled("https://example.com"));
+    CHECK_FALSE(night.enabled("https://other.org"));
+    REQUIRE(night.list().size() == 1);
+    CHECK(night.list()[0].origin == "https://example.com");
+    CHECK(night.list()[0].on);
+
+    // Turning the default on makes every site dark except explicit "off".
+    prefs.set_bool(aurora::settings::PrefKeys::kNightModeDefault, true);
+    CHECK(night.enabled("https://other.org"));
+    night.set("https://other.org", false);
+    CHECK_FALSE(night.enabled("https://other.org"));
+    // A choice equal to the default removes the override.
+    night.set("https://example.com", true);
+    REQUIRE(night.list().size() == 1);
+    CHECK(night.list()[0].origin == "https://other.org");
+    night.clear("https://other.org");
+    CHECK(night.list().empty());
+    CHECK_FALSE(night.enabled(""));  // never for pages without an origin
 }

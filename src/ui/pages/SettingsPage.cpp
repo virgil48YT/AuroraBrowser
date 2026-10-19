@@ -478,6 +478,9 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         bool fallback;
     };
     const PrivacyRow privacy_rows[] = {
+        {"Night mode for web pages by default",
+         "Darkens page content (not the browser); switch a site with Ctrl+Alt+N",
+         settings::PrefKeys::kNightModeDefault, false},
         {"Use HTTPS-only mode (no insecure fallback)",
          "Refuse to load pages that are not encrypted",
          settings::PrefKeys::kHttpsOnly, settings::PrefDefaults::kHttpsOnly},
