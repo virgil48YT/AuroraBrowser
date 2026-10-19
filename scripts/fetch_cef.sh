@@ -50,7 +50,12 @@ MAJOR="${CEF_VERSION_MAJOR:-}"
 # Resolve the latest stable minimal build for this platform from the live index.
 # Falls back gracefully if the requested channel/platform has no minimal file.
 PYTHON_BIN="${PYTHON:-python3}"
-read -r FILE_URL CEF_VERSION < <("$PYTHON_BIN" - "${BASE}" "${PLATFORM}" "${CHANNEL}" "${MAJOR}" <<'PYEOF'
+# The resolver is written to a temporary file rather than fed through a
+# here-document inside <( ... ): macOS still ships bash 3.2 as /bin/bash, and
+# its parser rejects a here-document nested in a process substitution.
+RESOLVER="$(mktemp "${TMPDIR:-/tmp}/aurora-cef-resolve.XXXXXX")"
+trap 'rm -f "${RESOLVER}"' EXIT
+cat > "${RESOLVER}" <<'PYEOF'
 import json, sys, urllib.request
 base, platform, channel, major = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 with urllib.request.urlopen(f"{base}/index.json", timeout=60) as r:
@@ -85,7 +90,9 @@ for v in sorted(versions, key=chromium_key, reverse=True):
             sys.exit(0)
 sys.exit(1)
 PYEOF
-)
+RESOLVED="$("$PYTHON_BIN" "${RESOLVER}" "${BASE}" "${PLATFORM}" "${CHANNEL}" "${MAJOR}" || true)"
+FILE_URL="${RESOLVED%% *}"
+CEF_VERSION="${RESOLVED#* }"
 
 if [ -z "${FILE_URL:-}" ]; then
     echo "No ${CHANNEL} minimal CEF build found for ${PLATFORM}${MAJOR:+ (major ${MAJOR})}."

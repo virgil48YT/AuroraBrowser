@@ -14,7 +14,10 @@
 // change, and unit-testable against an in-memory profile.
 #pragma once
 
+#include <cctype>
 #include <charconv>
+#include <locale>
+#include <sstream>
 #include <cmath>
 #include <string>
 #include <string_view>
@@ -94,10 +97,18 @@ private:
 
     static bool parse(std::string_view text, double& out) {
         if (text.empty()) return false;
+        // Not std::from_chars: Apple's libc++ only provides the floating-point
+        // overload when targeting macOS 26+, and the macOS build targets 13.
+        // A classic-locale stream parses the same "1.25" on every platform
+        // regardless of the user's locale (no decimal comma).
+        const unsigned char first = static_cast<unsigned char>(text.front());
+        if (std::isspace(first) || first == '+') return false;
+        std::istringstream in{std::string(text)};
+        in.imbue(std::locale::classic());
         double v = 0.0;
-        const char* end = text.data() + text.size();
-        const auto res = std::from_chars(text.data(), end, v);
-        if (res.ec != std::errc() || res.ptr != end || !std::isfinite(v))
+        in >> v;
+        if (in.fail() || in.peek() != std::char_traits<char>::eof() ||
+            !std::isfinite(v))
             return false;
         out = v;
         return true;
