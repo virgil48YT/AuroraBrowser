@@ -141,6 +141,15 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
     filter_ = new QLineEdit(this);
     filter_->setObjectName(QStringLiteral("PageSearch"));
     filter_->setPlaceholderText(QStringLiteral("Search settings"));
+    // The placeholder must stay readable on the translucent field over the
+    // aurora backdrop: the faint default washed out against it. Muted, but
+    // one step brighter than the placeholder grey.
+    {
+        QPalette pal = filter_->palette();
+        pal.setColor(QPalette::PlaceholderText,
+                     current_theme().colors.text_muted);
+        filter_->setPalette(pal);
+    }
     filter_->setClearButtonEnabled(true);
     toolbar_row()->addWidget(filter_, 1);
 

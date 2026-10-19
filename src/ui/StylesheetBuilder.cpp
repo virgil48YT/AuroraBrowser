@@ -195,7 +195,7 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  font-size: %2px;"
                  "  padding-left: %3px;"
                  "}")
-            .arg(hex(c.text_faint))
+            .arg(hex(c.text_muted))
             .arg(t.small_font_px)
             .arg(Spacing::xxs);
 
@@ -1107,7 +1107,7 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: %1; color: %2; border: 1px solid %3;"
                  "  padding: 7px 12px; border-radius: %4px; min-height: 24px;"
                  "  selection-background-color: %5; selection-color: %2; }")
-            .arg(rgba(c.surface_alt, 160)).arg(c.text.name())
+            .arg(rgba(c.surface_alt, 205)).arg(c.text.name())
             .arg(glow_edge_soft)
             .arg(Radius::md).arg(rgba(c.accent, 60));
     s += QString("QLineEdit#PageSearch:focus, QLineEdit#PageInput:focus {"
@@ -1341,7 +1341,7 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  background: transparent; border: %1px solid transparent; color: %2;"
                  "  font-size: %3px; font-weight: 400; text-align: left;"
                  "  padding: %4px %5px; border-radius: %6px; min-height: 22px; }")
-            .arg(Metrics::hairline).arg(c.text_muted.name())
+            .arg(Metrics::hairline).arg(c.text.name())
             .arg(t.body_font_px + 1)
             .arg(Spacing::sm).arg(Spacing::md).arg(Radius::lg);
     s += QString("QToolButton#SettingsNavButton:hover { background: %1; color: %2; }")
@@ -1360,7 +1360,7 @@ QString StylesheetBuilder::build(const Theme& t) {
     s += QString("QWidget#SettingsCard {"
                  "  background: %1; border: %2px solid %3;"
                  "  border-radius: %4px; }")
-            .arg(rgba(c.card_bg, 165)).arg(Metrics::hairline)
+            .arg(rgba(c.card_bg, 205)).arg(Metrics::hairline)
             .arg(glow_edge).arg(Radius::xl);
     s += QString("QWidget#SettingsCard QLabel { color: %1; background: transparent; }")
             .arg(c.text.name());
