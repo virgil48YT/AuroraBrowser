@@ -2117,6 +2117,12 @@ void MainWindow::setup_shortcuts() {
     // Ctrl+J opens the full downloads PAGE (like Chrome's Ctrl+J), not the
     // dropdown popover. The toolbar button still shows the dropdown.
     bind("Ctrl+J", [this] { show_page(core::InternalPage::Downloads); });
+    // Ctrl+D toggles the omnibox star (bookmark / un-bookmark this page), the
+    // same action as clicking the star or "Bookmark This Page" in the menu.
+    // macOS: Qt maps "Ctrl" in a QKeySequence to the Command key, so this one
+    // binding is Cmd+D there; the engine-side path (forward_engine_key) folds
+    // EVENTFLAG_COMMAND_DOWN into `ctrl`, so Cmd+D also works while a page
+    // owns the keyboard. Internal aurora:// pages are a no-op by design.
     bind("Ctrl+D", &MainWindow::on_bookmark_page);
     bind("Ctrl+F", &MainWindow::on_find);
     bind("Ctrl+P", &MainWindow::on_print);
