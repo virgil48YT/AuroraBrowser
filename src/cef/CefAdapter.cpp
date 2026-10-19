@@ -15,6 +15,7 @@
 #include "include/cef_client.h"
 #include "include/cef_context_menu_handler.h"
 #include "include/cef_cookie.h"
+#include "include/cef_devtools_message_observer.h"
 #include "include/cef_download_handler.h"
 #include "include/cef_download_item.h"
 #include "include/cef_image.h"
@@ -311,6 +312,157 @@ private:
     std::function<void()> fn_;
     IMPLEMENT_REFCOUNTING(AdblockTask);
 };
+
+// --- DevTools protocol calls -------------------------------------------------
+// CEF exposes the DevTools protocol to the embedder (ExecuteDevToolsMethod +
+// a CefDevToolsMessageObserver for the reply). Aurora uses it for the things
+// the CEF C++ API has no direct call for with windowed rendering: page
+// screenshots (Page.captureScreenshot), script evaluation that returns a
+// value (Runtime.evaluate with returnByValue) and running with a user gesture
+// (picture-in-picture must be requested from one). Everything here runs on
+// the UI thread, which is where CEF delivers the method results.
+using DevToolsResult = std::function<void(bool success, std::string result_json)>;
+
+// One registration per in-flight call, dropped (from a posted task, never
+// inside the observer callback that the registration keeps alive) once the
+// matching result arrived.
+std::unordered_map<int, CefRefPtr<CefRegistration>> g_devtools_registrations;
+int g_devtools_token = 0;
+
+class DevToolsCall final : public CefDevToolsMessageObserver {
+public:
+    explicit DevToolsCall(DevToolsResult done) : done_(std::move(done)) {}
+    void arm(int message_id, int token) {
+        message_id_ = message_id;
+        token_ = token;
+    }
+    void OnDevToolsMethodResult(CefRefPtr<CefBrowser> /*browser*/, int message_id,
+                                bool success, const void* result,
+                                size_t result_size) override {
+        if (message_id != message_id_ || !done_) return;
+        auto done = std::move(done_);
+        done_ = nullptr;
+        const int token = token_;
+        CefPostTask(TID_UI, new AdblockTask([token] {
+            g_devtools_registrations.erase(token);
+        }));
+        done(success, std::string(static_cast<const char*>(result), result_size));
+    }
+
+private:
+    DevToolsResult done_;
+    int message_id_ = -1;
+    int token_ = 0;
+    IMPLEMENT_REFCOUNTING(DevToolsCall);
+};
+
+// Execute `method` with `params` (may be null) on `browser`. `done` gets the
+// raw JSON result object (or the error object when success is false).
+void devtools_call(CefRefPtr<CefBrowser> browser, const std::string& method,
+                   CefRefPtr<CefDictionaryValue> params, DevToolsResult done) {
+    CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+    if (!host) {
+        if (done) done(false, {});
+        return;
+    }
+    CefRefPtr<DevToolsCall> observer(new DevToolsCall(done));
+    const int token = ++g_devtools_token;
+    g_devtools_registrations[token] = host->AddDevToolsMessageObserver(observer);
+    const int id = host->ExecuteDevToolsMethod(0, CefString(method), params);
+    if (id == 0) {
+        g_devtools_registrations.erase(token);
+        if (done) done(false, {});
+        return;
+    }
+    observer->arm(id, token);
+}
+
+CefRefPtr<CefDictionaryValue> parse_json_object(const std::string& json) {
+    CefRefPtr<CefValue> value = CefParseJSON(CefString(json), JSON_PARSER_RFC);
+    if (!value || value->GetType() != VTYPE_DICTIONARY) return nullptr;
+    return value->GetDictionary();
+}
+
+// Runtime.evaluate in the main frame's main world. The expression must
+// produce a string (or a promise of one with await_promise). user_gesture
+// makes Chromium treat it as triggered by a click.
+void evaluate_in_page(CefRefPtr<CefBrowser> browser, const std::string& expression,
+                      bool user_gesture,
+                      std::function<void(bool ok, std::string value)> done) {
+    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+    params->SetString("expression", expression);
+    params->SetBool("returnByValue", true);
+    params->SetBool("awaitPromise", true);
+    params->SetBool("userGesture", user_gesture);
+    devtools_call(browser, "Runtime.evaluate", params,
+                  [done](bool success, std::string json) {
+        if (!done) return;
+        CefRefPtr<CefDictionaryValue> reply = parse_json_object(json);
+        if (!success || !reply) {
+            done(false, {});
+            return;
+        }
+        if (reply->HasKey("exceptionDetails")) {
+            CefRefPtr<CefDictionaryValue> details = reply->GetDictionary("exceptionDetails");
+            done(false, details ? details->GetString("text").ToString() : std::string());
+            return;
+        }
+        CefRefPtr<CefDictionaryValue> result = reply->GetDictionary("result");
+        if (!result || result->GetType("value") != VTYPE_STRING) {
+            done(false, {});
+            return;
+        }
+        done(true, result->GetString("value").ToString());
+    });
+}
+
+// --- Night mode ------------------------------------------------------------------
+// Tabs whose page content gets the dark filter (UI thread only). The host
+// decides per site (settings::SiteNightModeStore) and calls set_night_mode().
+std::unordered_set<TabId> g_night_tabs;
+
+// Inverts the page and re-inverts media so photos and video keep their
+// colours. A constructed stylesheet is used first because Content Security
+// Policies that forbid inline <style> do not apply to it; the <style>
+// element is the fallback for engines without constructable stylesheets.
+// Idempotent in both directions, so the load hooks can call it repeatedly.
+std::string night_mode_script(bool on) {
+    static const char* const kCss =
+        "html{filter:invert(0.92) hue-rotate(180deg)!important;"
+        "background:#fff!important;color-scheme:light!important}"
+        "img,video,picture,canvas,iframe,embed,object,svg image,"
+        "[style*=\"background-image\"]{filter:invert(1) hue-rotate(180deg)!important}";
+    std::string js =
+        "(function(on){var d=document,k='__auroraNightMode',id='aurora-night-mode';"
+        "if(!d||!d.documentElement)return;var cur=d[k];"
+        "if(!on){if(cur&&d.adoptedStyleSheets){d.adoptedStyleSheets="
+        "d.adoptedStyleSheets.filter(function(x){return x!==cur;});}d[k]=null;"
+        "var old=d.getElementById(id);if(old)old.remove();return;}"
+        "if(cur&&d.adoptedStyleSheets&&d.adoptedStyleSheets.indexOf(cur)>=0)return;"
+        "if(d.getElementById(id))return;var css='";
+    js += kCss;
+    js += "';try{var sh=new CSSStyleSheet();sh.replaceSync(css);"
+          "d.adoptedStyleSheets=d.adoptedStyleSheets.concat([sh]);d[k]=sh;}"
+          "catch(e){var st=d.createElement('style');st.id=id;st.textContent=css;"
+          "(d.head||d.documentElement).appendChild(st);}})(";
+    js += on ? "true" : "false";
+    js += ");";
+    return js;
+}
+
+// --- Video helpers for the context menu ------------------------------------------
+// Finds the <video> under (x, y) — walking up from the hit element, then
+// falling back to the largest video on the page — and runs `body` with it
+// bound to `v`. Coordinates are the context menu's, in CSS pixels of the view.
+std::string with_video_at(int x, int y, const std::string& body) {
+    return "(function(){var x=" + std::to_string(x) + ",y=" + std::to_string(y) +
+           ";var v=document.elementFromPoint(x,y);"
+           "while(v&&v.tagName!=='VIDEO')v=v.parentElement;"
+           "if(!v){var best=null,area=0;document.querySelectorAll('video').forEach("
+           "function(c){var r=c.getBoundingClientRect(),a=r.width*r.height;"
+           "if(a>area){area=a;best=c;}});v=best;}"
+           "if(!v)return 'no-video';" + body + "})()";
+}
 
 // Map a Chromium resource type to the adblock-rust request-type spelling.
 // The blocker only differentiates a handful; anything unmapped is "other".
@@ -1802,6 +1954,7 @@ public:
         // this frame is not scriptable yet.
         inject_youtube_adskip(browser, frame);
         inject_cosmetic_filters(browser, frame);
+        inject_night_mode(frame);
         if (frame && frame->IsMain()) {
             renderer_discarded_ = false;
             webview::PageInfo info;
@@ -1839,6 +1992,16 @@ public:
         }
         inject_youtube_adskip(browser, frame);
         inject_cosmetic_filters(browser, frame);
+        inject_night_mode(frame);
+    }
+
+    // Night mode (see g_night_tabs): main frame only — the filter on <html>
+    // already covers same-document iframes visually, and inverting an iframe
+    // again would cancel it out.
+    void inject_night_mode(CefRefPtr<CefFrame> frame) {
+        if (!frame || !frame->IsMain() || !g_night_tabs.count(id_)) return;
+        frame->ExecuteJavaScript(CefString(night_mode_script(true)),
+                                 CefString("aurora://night-mode.js"), 1);
     }
 
     // The popup half of the extension bridge. An extension popup running the
@@ -2271,6 +2434,16 @@ public:
             model->AddItem(kSaveVideo, CefString(u"Save video as\u2026"));
             model->AddItem(kCopyVideoAddress, CefString("Copy video address"));
             model->AddItem(kOpenVideoNewTab, CefString("Open video in new tab"));
+            section();
+            // Playback speed submenu, 0.5x..2x, as radio items in one group.
+            CefRefPtr<CefMenuModel> speed =
+                model->AddSubMenu(kVideoSpeedMenu, CefString("Playback speed"));
+            for (int i = 0; i < kVideoSpeedCount; ++i) {
+                const int id = kVideoSpeedFirst + i;
+                speed->AddRadioItem(id, CefString(kVideoSpeedLabels[i]), kVideoSpeedGroup);
+            }
+            speed->SetChecked(kVideoSpeedFirst + kVideoSpeedNormalIndex, true);
+            model->AddItem(kVideoPictureInPicture, CefString("Picture in picture"));
         }
 
         // Plain page: navigation and page-level commands, like every browser.
@@ -2301,7 +2474,7 @@ public:
     }
 
     bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
-                              CefRefPtr<CefFrame> /*frame*/,
+                              CefRefPtr<CefFrame> frame,
                               CefRefPtr<CefContextMenuParams> params,
                               int command_id,
                               EventFlags /*event_flags*/) override {
@@ -2364,6 +2537,33 @@ public:
         case kPageSavePdf: emit_action(Action::SavePageAsPdf); return true;
         case kPagePrint:   emit_action(Action::Print); return true;
         case kInspect:     emit_action(Action::Inspect); return true;
+        case kVideoPictureInPicture: {
+            // Native PiP needs a user gesture, which a context-menu command
+            // does not carry into a plain ExecuteJavaScript; Runtime.evaluate
+            // with userGesture does. When the engine has no PiP support (or
+            // the video is in a cross-origin frame the main world cannot
+            // reach) the host falls back to Aurora's floating tab window.
+            const std::string script = with_video_at(
+                params->GetXCoord(), params->GetYCoord(),
+                "if(!document.pictureInPictureEnabled||v.disablePictureInPicture)"
+                "return 'unsupported';"
+                "if(document.pictureInPictureElement===v)"
+                "return document.exitPictureInPicture().then(function(){return 'ok';});"
+                "return v.requestPictureInPicture().then(function(){return 'ok';},"
+                "function(e){return 'error:'+e.message;});");
+            auto emitter = context_action_emit_;
+            const TabId tab = id_;
+            evaluate_in_page(browser, script, /*user_gesture=*/true,
+                             [emitter, tab](bool ok, std::string value) {
+                if (ok && value == "ok") return;
+                if (!emitter) return;
+                webview::WebViewController::ContextActionRequest req;
+                req.action = Action::PictureInPictureFallback;
+                req.text = value;
+                emitter(tab, std::move(req));
+            });
+            return true;
+        }
         case kPageViewSource: {
             // Only real web documents have source worth showing; the host
             // opens it as a "view-source:" tab.
@@ -2372,6 +2572,20 @@ public:
             return true;
         }
         default:
+            if (command_id >= kVideoSpeedFirst && command_id <= kVideoSpeedLast) {
+                // playbackRate needs no user gesture; run it in the frame the
+                // menu was opened on so a video inside an iframe is reachable.
+                const char* rate = kVideoSpeedRates[command_id - kVideoSpeedFirst];
+                CefRefPtr<CefFrame> target = frame ? frame : browser->GetMainFrame();
+                if (target) {
+                    target->ExecuteJavaScript(
+                        CefString(with_video_at(params->GetXCoord(), params->GetYCoord(),
+                                                std::string("v.playbackRate=") + rate +
+                                                    ";return 'ok';")),
+                        CefString("aurora://video-speed.js"), 1);
+                }
+                return true;
+            }
             // CEF's own ids (Cut/Copy/Paste/Undo/Select all...) fall through to
             // CEF, which executes them.
             return false;
@@ -3009,7 +3223,18 @@ private:
         kPagePrint,
         kPageViewSource,
         kInspect,
+        kVideoPictureInPicture,
+        kVideoSpeedMenu,
+        kVideoSpeedFirst,  // kVideoSpeedFirst + i  <->  kVideoSpeedRates[i]
+        kVideoSpeedLast = kVideoSpeedFirst + 6,
     };
+    static constexpr int kVideoSpeedCount = 7;
+    static constexpr int kVideoSpeedGroup = 1;
+    static constexpr int kVideoSpeedNormalIndex = 2;
+    static constexpr const char* kVideoSpeedRates[kVideoSpeedCount] = {
+        "0.5", "0.75", "1", "1.25", "1.5", "1.75", "2"};
+    static constexpr const char* kVideoSpeedLabels[kVideoSpeedCount] = {
+        "0.5x", "0.75x", "Normal", "1.25x", "1.5x", "1.75x", "2x"};
 
     bool take_force_save_dialog(const std::string& url) {
         const auto it = force_save_dialog_urls_.find(url);
@@ -3870,6 +4095,148 @@ void CefAdapter::request_memory(TabId tab) {
     if (!frame.get()) return;
     frame->SendProcessMessage(PID_RENDERER,
                               CefProcessMessage::Create("aurora.memory.request"));
+}
+
+void CefAdapter::evaluate_script(TabId tab, std::string_view script,
+                                 ScriptResultCallback done) {
+    auto b = browser_for(tab);
+    if (!b.get()) {
+        if (done) done(false, {});
+        return;
+    }
+    evaluate_in_page(b, std::string(script), /*user_gesture=*/false,
+                     [done](bool ok, std::string value) {
+        if (done) done(ok, std::move(value));
+    });
+}
+
+namespace {
+
+// Decode the base64 "data" member of a Page.captureScreenshot result.
+std::vector<uint8_t> screenshot_png(const std::string& json) {
+    std::vector<uint8_t> png;
+    CefRefPtr<CefDictionaryValue> reply = parse_json_object(json);
+    if (!reply || reply->GetType("data") != VTYPE_STRING) return png;
+    CefRefPtr<CefBinaryValue> bytes = CefBase64Decode(reply->GetString("data"));
+    if (!bytes || bytes->GetSize() == 0) return png;
+    png.resize(bytes->GetSize());
+    bytes->GetData(png.data(), png.size(), 0);
+    return png;
+}
+
+// Chromium cannot rasterize arbitrarily tall surfaces in one capture; past
+// this many CSS pixels a full-page shot is cut off (documented in README).
+constexpr double kMaxFullPageHeight = 16384.0;
+
+} // namespace
+
+void CefAdapter::capture_screenshot(TabId tab, ScreenshotMode mode,
+                                    ScreenshotCallback done) {
+    auto b = browser_for(tab);
+    if (!b.get()) {
+        if (done) done(false, {});
+        return;
+    }
+    auto finish = [done](bool success, std::string json) {
+        if (!done) return;
+        std::vector<uint8_t> png = success ? screenshot_png(json) : std::vector<uint8_t>{};
+        const bool ok = !png.empty();
+        done(ok, std::move(png));
+    };
+    if (mode == ScreenshotMode::Visible) {
+        CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+        params->SetString("format", "png");
+        devtools_call(b, "Page.captureScreenshot", params, finish);
+        return;
+    }
+    // Full page: measure the document first, then capture beyond the
+    // viewport with a clip covering all of it at scale 1.
+    devtools_call(b, "Page.getLayoutMetrics", nullptr,
+                  [b, finish](bool success, std::string json) {
+        CefRefPtr<CefDictionaryValue> metrics = success ? parse_json_object(json) : nullptr;
+        CefRefPtr<CefDictionaryValue> size =
+            metrics ? metrics->GetDictionary("cssContentSize") : nullptr;
+        if (!size) size = metrics ? metrics->GetDictionary("contentSize") : nullptr;
+        if (!size) {
+            finish(false, {});
+            return;
+        }
+        const double width = std::max(1.0, size->GetDouble("width"));
+        const double height =
+            std::clamp(size->GetDouble("height"), 1.0, kMaxFullPageHeight);
+        CefRefPtr<CefDictionaryValue> clip = CefDictionaryValue::Create();
+        clip->SetDouble("x", 0);
+        clip->SetDouble("y", 0);
+        clip->SetDouble("width", width);
+        clip->SetDouble("height", height);
+        clip->SetDouble("scale", 1);
+        CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+        params->SetString("format", "png");
+        params->SetBool("captureBeyondViewport", true);
+        params->SetDictionary("clip", clip);
+        devtools_call(b, "Page.captureScreenshot", params, finish);
+    });
+}
+
+void CefAdapter::set_night_mode(TabId tab, bool on) {
+    const bool changed = on ? g_night_tabs.insert(tab).second
+                            : g_night_tabs.erase(tab) != 0;
+    if (!changed) return;
+    // Apply to the page that is already showing; the load hooks keep it on
+    // across navigations from here on.
+    if (auto b = browser_for(tab); b.get()) {
+        if (CefRefPtr<CefFrame> frame = b->GetMainFrame()) {
+            frame->ExecuteJavaScript(CefString(night_mode_script(on)),
+                                     CefString("aurora://night-mode.js"), 1);
+        }
+    }
+}
+
+bool CefAdapter::set_private_proxy(std::string_view proxy_server) {
+    // Only a private (in-memory) context may carry the Tor proxy: setting it
+    // on the global context would route every normal window through it too,
+    // and would persist into the regular profile's preferences.
+    CefRefPtr<CefRequestContext> context;
+    {
+        std::lock_guard<std::mutex> lock(private_context_mutex_);
+        context = private_context_;
+    }
+    if (!context.get() || proxy_server.empty()) return false;
+    // Chromium's "proxy" preference, scoped to this request context. A
+    // socks5:// server makes Chromium send host NAMES to the proxy (SOCKS5
+    // remote resolution), so DNS goes through Tor as well. Called on the UI
+    // thread right after the context was created, before any browser uses it.
+    CefRefPtr<CefDictionaryValue> proxy = CefDictionaryValue::Create();
+    proxy->SetString("mode", "fixed_servers");
+    proxy->SetString("server", std::string(proxy_server));
+    CefRefPtr<CefValue> proxy_value = CefValue::Create();
+    proxy_value->SetDictionary(proxy);
+    CefString error;
+    if (!context->SetPreference("proxy", proxy_value, error)) {
+        AURORA_LOG(util::LogLevel::Error, "cef")
+            << "could not set the Tor proxy on the private context: "
+            << error.ToString() << "; refusing Tor mode";
+        return false;
+    }
+    // Leak hardening for the same context (best effort: an older engine
+    // without one of these preferences still proxies all HTTP(S) traffic).
+    //  * WebRTC may otherwise send UDP directly and reveal the real address.
+    //  * Network prediction would pre-resolve / pre-connect speculatively.
+    CefRefPtr<CefValue> webrtc = CefValue::Create();
+    webrtc->SetString("disable_non_proxied_udp");
+    if (!context->SetPreference("webrtc.ip_handling_policy", webrtc, error)) {
+        AURORA_LOG(util::LogLevel::Warn, "cef")
+            << "Tor window: could not restrict WebRTC: " << error.ToString();
+    }
+    CefRefPtr<CefValue> prediction = CefValue::Create();
+    prediction->SetInt(2);  // chrome_browser_net::NETWORK_PREDICTION_NEVER
+    if (!context->SetPreference("net.network_prediction_options", prediction, error)) {
+        AURORA_LOG(util::LogLevel::Warn, "cef")
+            << "Tor window: could not disable network prediction: " << error.ToString();
+    }
+    AURORA_LOG(util::LogLevel::Info, "cef")
+        << "private context proxied through " << proxy_server;
+    return true;
 }
 
 void CefAdapter::set_new_tab_callback(NewTabCallback cb) {

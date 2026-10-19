@@ -62,6 +62,12 @@ public:
                       PdfCallback done) override;
     void set_muted(TabId tab, bool muted) override;
     void request_memory(TabId tab) override;
+    void evaluate_script(TabId tab, std::string_view script,
+                         ScriptResultCallback done) override;
+    void capture_screenshot(TabId tab, ScreenshotMode mode,
+                            ScreenshotCallback done) override;
+    void set_night_mode(TabId tab, bool on) override;
+    bool set_private_proxy(std::string_view proxy_server) override;
     void open_devtools_docked(TabId tab, void* native_parent, int w, int h) override;
     void resize_devtools(TabId tab, int w, int h) override;
     void close_devtools(TabId tab) override;

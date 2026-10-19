@@ -388,6 +388,10 @@ public:
         Print,
         SearchSelection, // `text` is the selected text (already trimmed)
         Inspect,         // open DevTools for the tab
+        // The engine could not open native picture-in-picture for a video
+        // (Alloy-style CEF builds have no PiP window); the host falls back to
+        // its floating PipWindow for the whole tab.
+        PictureInPictureFallback,
     };
     struct ContextActionRequest {
         ContextAction action = ContextAction::CopyText;
@@ -419,6 +423,56 @@ public:
     using DevToolsClosedCallback = std::function<void()>;
     virtual void set_devtools_closed_callback(DevToolsClosedCallback cb) {
         (void)cb;
+    }
+
+    // --- Page tools: script evaluation, screenshots, night mode ------------
+
+    // Evaluate `script` in the main frame of `tab` and hand back its result.
+    // The script must evaluate to a string (callers JSON.stringify anything
+    // structured); `ok` is false when the tab has no page, the page has no
+    // script context, or the script threw (then `result` carries the
+    // exception message). `done` runs on the UI thread, possibly after the
+    // tab is gone. The CEF adapter evaluates in the renderer via a process
+    // message (AuroraApp in CefLifecycle.cpp).
+    using ScriptResultCallback = std::function<void(bool ok, std::string result)>;
+    virtual void evaluate_script(core::TabId tab, std::string_view script,
+                                 ScriptResultCallback done) {
+        (void)tab;
+        (void)script;
+        if (done) done(false, {});
+    }
+
+    // Capture the page as PNG bytes: the visible viewport, or the whole
+    // scrollable document. The CEF adapter uses the DevTools protocol
+    // (Page.captureScreenshot), which works with windowed rendering.
+    enum class ScreenshotMode { Visible, FullPage };
+    using ScreenshotCallback = std::function<void(bool ok, std::vector<uint8_t> png)>;
+    virtual void capture_screenshot(core::TabId tab, ScreenshotMode mode,
+                                    ScreenshotCallback done) {
+        (void)tab;
+        (void)mode;
+        if (done) done(false, {});
+    }
+
+    // Night mode for page CONTENT: when on, the adapter keeps a dark filter
+    // stylesheet injected into the tab's main frame across navigations until
+    // it is turned off. Which sites get it is the host's decision
+    // (settings::SiteNightModeStore); the adapter only applies it.
+    virtual void set_night_mode(core::TabId tab, bool on) {
+        (void)tab;
+        (void)on;
+    }
+
+    // Tor incognito windows: route every request of this controller's private
+    // context through `proxy_server` (e.g. "socks5://127.0.0.1:9050"). Must
+    // be called after set_private_context(true) and before the first create().
+    // Fail-closed: until the proxy preference is confirmed applied, the
+    // adapter holds navigations at about:blank. Returns false when the engine
+    // cannot scope a proxy to the private context; the window must then refuse
+    // to open in Tor mode.
+    virtual bool set_private_proxy(std::string_view proxy_server) {
+        (void)proxy_server;
+        return false;
     }
 
     virtual void set_page_info_callback(PageInfoCallback cb) = 0;
