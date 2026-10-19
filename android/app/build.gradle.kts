@@ -3,6 +3,31 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Release signing comes only from the environment (CI secrets or a local
+// shell), never from files in the repository. When any value is missing the
+// release build still succeeds and produces app-release-unsigned.apk, which
+// must be signed with apksigner before it can be installed or published.
+//   AURORA_ANDROID_KEYSTORE           path to the .jks/.keystore file
+//   AURORA_ANDROID_KEYSTORE_PASSWORD  keystore password
+//   AURORA_ANDROID_KEY_ALIAS          key alias
+//   AURORA_ANDROID_KEY_PASSWORD       key password
+val releaseKeystore: String? = System.getenv("AURORA_ANDROID_KEYSTORE")?.takeIf { it.isNotBlank() }
+val releaseSigningConfigured: Boolean =
+    releaseKeystore != null && file(releaseKeystore).isFile &&
+        listOf(
+            "AURORA_ANDROID_KEYSTORE_PASSWORD",
+            "AURORA_ANDROID_KEY_ALIAS",
+            "AURORA_ANDROID_KEY_PASSWORD",
+        ).all { !System.getenv(it).isNullOrBlank() }
+
+// Version: AURORA_VERSION_NAME (e.g. "0.2.0" from a v0.2.0 tag) and
+// AURORA_VERSION_CODE (a monotonically increasing integer, e.g. the CI run
+// number). Local builds fall back to the defaults below.
+val auroraVersionName: String =
+    System.getenv("AURORA_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "0.1.0"
+val auroraVersionCode: Int =
+    System.getenv("AURORA_VERSION_CODE")?.toIntOrNull()?.takeIf { it > 0 } ?: 1
+
 android {
     namespace = "com.aurora.browser"
     compileSdk = 35
@@ -11,9 +36,22 @@ android {
         applicationId = "com.aurora.browser"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = auroraVersionCode
+        versionName = auroraVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(releaseKeystore!!)
+                storePassword = System.getenv("AURORA_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("AURORA_ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("AURORA_ANDROID_KEY_PASSWORD")
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
     }
 
     buildTypes {
@@ -28,6 +66,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

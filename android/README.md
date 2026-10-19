@@ -56,9 +56,38 @@ Install with `adb install app/build/outputs/apk/debug/app-debug.apk`.
 The debug build uses the application id `com.aurora.browser.debug`, so it can
 be installed next to a future release build.
 
-CI: `.github/workflows/android-build.yml` builds the debug APK on every push
-to `mobile/android` (or on manual dispatch) and uploads it as the
-`aurora-android-debug-apk` artifact.
+CI: `.github/workflows/android-build.yml` runs the JVM tests and builds both
+the debug APK and the release APK on every push to `main` or `mobile/android`
+that touches `android/` (or on manual dispatch), uploading
+`aurora-android-debug-apk` and `aurora-android-release-apk`. Tagged releases
+are built by `.github/workflows/release.yml`.
+
+## Release signing
+
+`./gradlew assembleRelease` always works. Signing is read only from the
+environment — no keystore, password or alias is stored in the repository:
+
+| Variable | Meaning |
+|---|---|
+| `AURORA_ANDROID_KEYSTORE` | Path to the upload/release keystore (`.jks`) |
+| `AURORA_ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `AURORA_ANDROID_KEY_ALIAS` | Key alias |
+| `AURORA_ANDROID_KEY_PASSWORD` | Key password |
+| `AURORA_VERSION_NAME` / `AURORA_VERSION_CODE` | Optional version override (CI sets them from the tag and run number) |
+
+With all four signing values set, the output is a signed
+`app-release.apk`. Without them the output is `app-release-unsigned.apk`,
+which Android refuses to install until it is signed, e.g.:
+
+```bash
+apksigner sign --ks my-release.jks --out aurora-release.apk app-release-unsigned.apk
+```
+
+In GitHub Actions the release workflow decodes the repository secret
+`ANDROID_KEYSTORE_BASE64` (a base64-encoded keystore) together with
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`.
+Keep the keystore backed up: an app signed with a lost key can never be
+updated in place.
 
 Project facts: package `com.aurora.browser`, minSdk 26, targetSdk/compileSdk
 35, Kotlin 2.0, AGP 8.7, Views + Material 3 (no Compose).
@@ -85,8 +114,9 @@ Project facts: package `com.aurora.browser`, minSdk 26, targetSdk/compileSdk
   Chromium's extension system, which WebView doesn't have).
 - Search suggestions come from local history and bookmarks only. No network
   suggestion API is used, which is deliberate for privacy.
-- Only the debug APK is built in CI. A release build needs a signing key
-  (not included).
+- A release APK that can be installed needs your own signing key (not
+  included; see [Release signing](#release-signing)). Unsigned release APKs
+  are produced otherwise.
 
 ## Icon set
 

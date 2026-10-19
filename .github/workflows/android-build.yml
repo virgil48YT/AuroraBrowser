@@ -2,7 +2,13 @@ name: Android APK
 
 on:
   push:
-    branches: [ "mobile/android" ]
+    branches: [main, "mobile/android"]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-build.yml"
+  pull_request:
+    paths:
+      - "android/**"
   workflow_dispatch:
 
 permissions:
@@ -14,7 +20,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build debug APK
+    name: Build debug + release APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     defaults:
@@ -49,25 +55,39 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
 
-      - name: Verify APK exists
-        run: |
-          APK_COUNT=$(find app/build/outputs/apk -name '*.apk' | wc -l)
-          if [ "$APK_COUNT" -eq 0 ]; then
-            echo "::error::No APK was produced by assembleDebug"
-            exit 1
-          fi
-          find app/build/outputs/apk -name '*.apk' -exec ls -la {} \;
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      # The release APK is built on every run so R8/resource shrinking is
+      # exercised continuously. Without signing secrets the output is
+      # app-release-unsigned.apk (not installable until signed); see
+      # android/README.md#release-signing.
+      - name: Build release APK (unsigned unless signing secrets exist)
+        env:
+          AURORA_VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Verify APKs exist
+        run: |
+          find app/build/outputs/apk -name '*.apk' -exec ls -la {} \;
+          test -n "$(find app/build/outputs/apk/debug -name '*.apk')"
+          test -n "$(find app/build/outputs/apk/release -name '*.apk')"
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: aurora-android-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-android-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
