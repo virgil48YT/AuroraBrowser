@@ -45,6 +45,25 @@ accounts.
   fullscreen (F11). On Linux, Print uses the desktop's print dialog (the
   XDG print portal, or GTK); on a desktop with neither, use Save as PDF,
   which works everywhere
+- Reader mode (Ctrl+Alt+R or the browser menu): the page's article in a
+  clean, distraction-free `aurora://reader` tab with serif typography in the
+  light and dark themes; text size buttons; images become their captions and
+  nothing remote is loaded. Pages without a recognizable article show a
+  message instead
+- Screenshot tool: visible area (Ctrl+Shift+S), full page
+  (Ctrl+Alt+Shift+S) or a selected region (Ctrl+Alt+S). The PNG is copied to
+  the clipboard and can be saved from the preview. Full-page captures stop at
+  16384 CSS pixels of height
+- Night mode for page content (Ctrl+Alt+N): darkens the site you are on and
+  remembers the choice per site, like zoom; Settings has a default for all
+  sites. The browser chrome keeps following the normal theme
+- Video right-click menu: playback speed (0.5x–2x) and picture in picture.
+  Where the engine has no native PiP window for a video, the tab moves to
+  Aurora's floating PiP window instead
+- Share the current page as a QR code (tab right-click menu or browser
+  menu), generated locally, with copy and save
+- Tor incognito windows (browser menu > New Tor Incognito Window,
+  Ctrl+Alt+Shift+N) — see [Tor incognito mode](#tor-incognito-mode)
 - Per-site zoom that is remembered across visits and restarts
 - Dark and light theme
 - Startup choice: continue where you left off (session restore), open the
@@ -74,6 +93,12 @@ accounts.
 | Ctrl+Shift+N | New incognito window |
 | Ctrl+L | Focus address bar |
 | Ctrl+D (Cmd+D on macOS) | Bookmark this page |
+| Ctrl+Alt+R | Reader mode |
+| Ctrl+Shift+S | Screenshot of the visible area |
+| Ctrl+Alt+Shift+S | Screenshot of the full page |
+| Ctrl+Alt+S | Screenshot of a selected region |
+| Ctrl+Alt+N | Night mode for this site |
+| Ctrl+Alt+Shift+N | New Tor incognito window |
 | Ctrl+F | Find in page |
 | Ctrl+P | Print |
 | F5 / Ctrl+R | Reload |
@@ -82,6 +107,49 @@ accounts.
 | F11 | Toggle fullscreen |
 | F12 | Developer tools |
 | Ctrl+Shift+Del | Clear browsing data |
+
+## Tor incognito mode
+
+A Tor incognito window is an incognito window (same in-memory profile, nothing
+written to history, downloads list, session or settings) whose traffic goes
+through **a Tor daemon you run yourself**. Aurora does not include, download or
+start Tor.
+
+1. Install and start Tor: `sudo apt install tor && sudo systemctl start tor`
+   (Linux), `brew install tor && brew services start tor` (macOS), or the Tor
+   Expert Bundle on Windows. If Tor Browser is running instead, its proxy is on
+   port 9150: start Aurora with `AURORA_TOR_PROXY=socks5://127.0.0.1:9150`.
+2. Browser menu > **New Tor Incognito Window** (Ctrl+Alt+Shift+N). Aurora
+   first checks that a SOCKS5 server answers at the proxy address (default
+   `socks5://127.0.0.1:9050`, or the `tor.proxy` preference) and explains how
+   to start Tor if it does not.
+
+The window has its own pink/purple theme and a "Tor Incognito" badge. Its
+proxy is scoped to that window's private request context, so normal and
+incognito windows are unaffected.
+
+What it does: every HTTP(S)/WebSocket request of the window goes to the SOCKS5
+proxy with the **host name** (Chromium resolves names through a SOCKS5 proxy,
+so DNS lookups go through Tor, not your resolver). WebRTC is restricted to
+proxied connections, and network prediction (DNS prefetch / preconnect) is off
+for the window. If the engine cannot apply the proxy, the window refuses to
+open rather than browse directly.
+
+What it does **not** do — use [Tor Browser](https://www.torproject.org/) when
+anonymity matters:
+
+- It is not Tor Browser: there is no fingerprinting resistance (window size,
+  fonts, user agent, canvas/WebGL are those of a normal Chromium), no
+  per-site circuit isolation, and no security slider. Sites can still
+  recognize the browser across visits within the window.
+- Tor exit nodes see (and can tamper with) unencrypted traffic. Use HTTPS
+  (Settings > HTTPS-only mode); the exit node still learns which sites you
+  visit, but not the content of HTTPS pages.
+- Logging in to an account identifies you, Tor or not.
+- Some sites block or CAPTCHA Tor exit nodes.
+- Downloads are fetched through Tor, but opening a downloaded file happens
+  outside the browser and may connect to the internet directly.
+- Extensions are disabled in all private windows, Tor included.
 
 ## Install
 
