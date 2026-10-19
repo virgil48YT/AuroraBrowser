@@ -92,9 +92,82 @@ if(AURORA_ENABLE_CEF)
     target_compile_definitions(aurora_browser PRIVATE AURORA_HAS_CEF)
 endif()
 
-# macOS: bundle the app so CEF's framework and helper subprocesses resolve.
+# Linux: CEF's libcef.so (and its sibling libraries) are shipped next to the
+# executable, so the binary looks for them in its own directory first. The
+# packaging script (packaging/linux/package_linux.sh) relies on this.
+if(UNIX AND NOT APPLE AND AURORA_ENABLE_CEF)
+    set_target_properties(aurora_browser PROPERTIES
+        BUILD_RPATH "$ORIGIN"
+        INSTALL_RPATH "$ORIGIN")
+endif()
+
+# macOS: a real .app bundle. The executable is named "Aurora" because CEF
+# derives the helper bundle names from it ("Aurora Helper (GPU).app", ...),
+# and the bundle carries an .icns generated from the PNG brand icon.
 if(APPLE)
+    set(AURORA_MAC_BUNDLE_ID "com.aurora.browser")
+    set(AURORA_MAC_NAME "Aurora")
+    set(AURORA_MAC_MIN_OS "13.0")
+    set(AURORA_ICNS "${CMAKE_CURRENT_BINARY_DIR}/Aurora.icns")
+    add_custom_command(
+        OUTPUT "${AURORA_ICNS}"
+        COMMAND "${CMAKE_SOURCE_DIR}/packaging/macos/make_icns.sh"
+                "${CMAKE_SOURCE_DIR}/assets/icons/aurora_256.png" "${AURORA_ICNS}"
+        DEPENDS "${CMAKE_SOURCE_DIR}/assets/icons/aurora_256.png"
+                "${CMAKE_SOURCE_DIR}/packaging/macos/make_icns.sh"
+        COMMENT "Generating Aurora.icns"
+        VERBATIM)
+    target_sources(aurora_browser PRIVATE "${AURORA_ICNS}")
+    set_source_files_properties("${AURORA_ICNS}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources)
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/packaging/macos/Info.plist.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/Info.plist" @ONLY)
     set_target_properties(aurora_browser PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.aurora.browser")
+        OUTPUT_NAME "${AURORA_MAC_NAME}"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "${AURORA_MAC_BUNDLE_ID}")
+endif()
+
+# macOS + CEF: helper bundles and the framework. Chromium launches its
+# renderer/GPU/plugin/alert subprocesses from separate helper apps inside
+# Contents/Frameworks; each one loads the framework itself and enters
+# CefExecuteProcess (mac_helper_main.cpp). The main bundle copies the
+# framework and the helpers in after linking, mirroring CEF's cefsimple.
+if(APPLE AND AURORA_ENABLE_CEF)
+    set(AURORA_CEF_FRAMEWORK "${CEF_ROOT}/Release/Chromium Embedded Framework.framework")
+    set(AURORA_BUNDLE_FRAMEWORKS "$<TARGET_BUNDLE_DIR:aurora_browser>/Contents/Frameworks")
+    add_custom_command(TARGET aurora_browser POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${AURORA_BUNDLE_FRAMEWORKS}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${AURORA_CEF_FRAMEWORK}"
+                "${AURORA_BUNDLE_FRAMEWORKS}/Chromium Embedded Framework.framework"
+        VERBATIM)
+    foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
+        # "<name suffix>:<target suffix>:<plist suffix>", e.g. " (GPU):_gpu:.gpu"
+        string(REPLACE ":" ";" _suffix_list "${_suffix_list}")
+        list(GET _suffix_list 0 _name_suffix)
+        list(GET _suffix_list 1 _target_suffix)
+        list(GET _suffix_list 2 _plist_suffix)
+        set(_helper_target "aurora_helper${_target_suffix}")
+        set(_helper_name "${AURORA_MAC_NAME} Helper${_name_suffix}")
+        set(AURORA_HELPER_NAME "${_helper_name}")
+        set(AURORA_HELPER_BUNDLE_ID "${AURORA_MAC_BUNDLE_ID}.helper${_plist_suffix}")
+        set(_helper_plist "${CMAKE_CURRENT_BINARY_DIR}/helper${_target_suffix}-Info.plist")
+        configure_file("${CMAKE_SOURCE_DIR}/packaging/macos/helper-Info.plist.in"
+                       "${_helper_plist}" @ONLY)
+        add_executable(${_helper_target} MACOSX_BUNDLE mac_helper_main.cpp)
+        target_include_directories(${_helper_target} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(${_helper_target} PRIVATE aurora_cef)
+        set_target_properties(${_helper_target} PROPERTIES
+            OUTPUT_NAME "${_helper_name}"
+            MACOSX_BUNDLE_INFO_PLIST "${_helper_plist}")
+        add_dependencies(aurora_browser ${_helper_target})
+        add_custom_command(TARGET aurora_browser POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "$<TARGET_BUNDLE_DIR:${_helper_target}>"
+                    "${AURORA_BUNDLE_FRAMEWORKS}/${_helper_name}.app"
+            VERBATIM)
+    endforeach()
 endif()

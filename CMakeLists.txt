@@ -273,7 +273,10 @@ if(AURORA_ENABLE_CEF)
     endif()
     # Create the imported target for libcef (libcef.lib import library) so we
     # can link the C runtime symbols exported by libcef.dll.
-    if(NOT TARGET libcef_lib)
+    # macOS is different: libcef is never linked there. The framework is
+    # loaded at runtime from the app bundle (CefScopedLibraryLoader, see
+    # cef::load_library), so there is no import library to wrap.
+    if(NOT APPLE AND NOT TARGET libcef_lib)
         ADD_LOGICAL_TARGET(libcef_lib "${CEF_LIB_DEBUG}" "${CEF_LIB_RELEASE}")
     endif()
     # Build the CEF C++ wrapper (libcef_dll_wrapper). It is a static lib that
@@ -295,7 +298,15 @@ if(AURORA_ENABLE_CEF)
         src/cef/CefAdapter.cpp
         src/cef/CefLifecycle.cpp
     )
-    target_link_libraries(aurora_cef PUBLIC aurora_core libcef_dll_wrapper libcef_lib)
+    if(APPLE)
+        # AppKit glue: AuroraApplication (CefAppProtocol) and NSView sizing.
+        enable_language(OBJCXX)
+        target_sources(aurora_cef PRIVATE src/cef/CefMacSupport.mm)
+        target_link_libraries(aurora_cef PUBLIC aurora_core libcef_dll_wrapper
+            "-framework AppKit" "-framework Cocoa" "-framework IOSurface")
+    else()
+        target_link_libraries(aurora_cef PUBLIC aurora_core libcef_dll_wrapper libcef_lib)
+    endif()
     if(AURORA_CEF_CODEC_ARGS_ENABLED)
         target_compile_definitions(aurora_cef PRIVATE AURORA_CEF_CODEC_ARGS_ENABLED=1)
     endif()

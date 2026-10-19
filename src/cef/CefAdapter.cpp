@@ -53,6 +53,10 @@
 #include <windows.h>
 #endif
 
+#if defined(OS_MAC)
+#include "cef/CefMacSupport.hpp"
+#endif
+
 #if defined(OS_LINUX)
 // Resizing a child browser window on X11 means moving CEF's own window, and
 // CEF exposes no API for it — cefclient does the same thing through its
@@ -3085,9 +3089,13 @@ CefRefPtr<CefBrowser> create_browser(TabId tab, std::string_view url,
     // host widget passes Qt's winId() through as an opaque void*.
     info.SetAsChild(reinterpret_cast<CefWindowHandle>(native_parent),
                     CefRect(0, 0, 0, 0));
-#elif defined(OS_MACOSX)
-    // On macOS parenting is done via NSView; the Qt bridge passes the view.
-    info.SetAsChild(static_cast<NSView*>(native_parent));
+#elif defined(OS_MAC)
+    // On macOS parenting is done via NSView: QWidget::winId() is the NSView*
+    // and CefWindowHandle is an opaque void* to it, so no Objective-C is
+    // needed here. The view is fitted to the parent once CEF creates it (see
+    // resize_native_child).
+    info.SetAsChild(static_cast<CefWindowHandle>(native_parent),
+                    CefRect(0, 0, 0, 0));
 #endif
     // Alloy style, explicitly. This is the single most consequential line in
     // the CEF layer, so it is worth spelling out why. CEF hosts a browser in
@@ -3576,6 +3584,12 @@ void resize_native_child(CefRefPtr<CefBrowserHost> host, int width, int height) 
                           static_cast<unsigned int>(height));
         XFlush(display);
     }
+#elif defined(OS_MAC)
+    // NSView frames are in points, not the device pixels passed in; fit the
+    // browser view to its parent instead (AppKit then keeps it sized).
+    (void)width;
+    (void)height;
+    mac_fit_child_view(host->GetWindowHandle());
 #endif
     host->WasResized();
 }
@@ -3751,8 +3765,9 @@ void CefAdapter::open_devtools_docked(TabId tab, void* native_parent,
 #elif defined(OS_LINUX)
     wi.SetAsChild(reinterpret_cast<CefWindowHandle>(native_parent),
                   CefRect(0, 0, w, h));
-#elif defined(OS_MACOSX)
-    wi.SetAsChild(static_cast<NSView*>(native_parent));
+#elif defined(OS_MAC)
+    wi.SetAsChild(static_cast<CefWindowHandle>(native_parent),
+                  CefRect(0, 0, w, h));
 #endif
     // Same reasoning as the tab browsers: Alloy style so the docked DevTools
     // window behaves as an embedded child and its close cannot reach the Qt

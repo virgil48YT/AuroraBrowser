@@ -278,8 +278,23 @@ int main(int argc, char** argv) {
     // only by the browser process (below) so the console is not flooded with
     // one "process start" line per subprocess on Windows, where the GPU and
     // renderer processes share the browser's stderr.
+    //
+    // macOS: libcef is not linked but loaded from the bundle's
+    // Contents/Frameworks, and that has to happen before any CEF call. (Real
+    // subprocesses on macOS are the separate "Aurora Helper*.app" executables,
+    // see src/app/mac_helper_main.cpp; this call still returns -1 here.)
+    if (!cef::load_library(/*helper=*/false)) return 1;
     int code = cef::run_subprocess(argc, argv);
     if (code >= 0) return code;
+#if defined(__linux__)
+    // CEF parents its browser windows to the widget's X11 window id, so the Qt
+    // chrome must be an X11 client too; under Wayland that means XWayland.
+    // The engine side is forced to Ozone/X11 in CefLifecycle.cpp. An explicit
+    // QT_QPA_PLATFORM (e.g. offscreen for --smoke-test) is respected.
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "xcb");
+    }
+#endif
 #endif
 
     util::startup_milestone("process start");
@@ -317,6 +332,14 @@ int main(int argc, char** argv) {
     // engine is created, whether CEF consults GetResourceRequestHandler, and
     // whether OnBeforeResourceLoad fires + what should_block returns. Remove
     // once the bug is found and fixed. ---
+    //
+    // Windows only by default: on Linux the executable usually sits in a
+    // read-only prefix (/opt, an AppImage mount), and on macOS writing into
+    // the .app bundle would invalidate its code signature. Set
+    // AURORA_DEBUG_LOG=1 to opt in there.
+#if !defined(_WIN32)
+    if (!qEnvironmentVariableIsEmpty("AURORA_DEBUG_LOG"))
+#endif
     {
         static std::ofstream diag_log(exe_dir + "/aurora-debug.log",
                                       std::ios::app);

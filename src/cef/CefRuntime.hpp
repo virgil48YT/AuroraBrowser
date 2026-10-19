@@ -38,6 +38,15 @@ void pump_message_loop();
 // Tear down CEF. Call once at process exit, after the Qt event loop ends.
 void shutdown();
 
+// macOS: load "Chromium Embedded Framework.framework" from the app bundle.
+// On macOS libcef is not linked; it must be loaded at runtime before any other
+// CEF call, from the main executable (`helper == false`) or from one of the
+// "Aurora Helper*.app" subprocess executables (`helper == true`). The loaded
+// library stays loaded until process exit. Returns false if the framework is
+// missing (a broken bundle). Always returns true on Windows and Linux, where
+// libcef is linked normally.
+bool load_library(bool helper);
+
 // Dispatch a CEF subprocess (renderer/GPU/utility). Returns >= 0 for a
 // subprocess (which should then exit), -1 for the browser process.
 int run_subprocess(int argc, char** argv);

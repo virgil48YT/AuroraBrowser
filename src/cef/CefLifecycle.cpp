@@ -19,6 +19,10 @@
 #include <psapi.h>
 #elif defined(__linux__)
 #include <cstdio>
+#elif defined(__APPLE__)
+#include <mach/mach.h>
+#include "cef/CefMacSupport.hpp"
+#include "include/wrapper/cef_library_loader.h"
 #endif
 
 namespace aurora::core { class TabId; }  // forward
@@ -80,6 +84,15 @@ double current_process_memory_bytes() {
     }
     std::fclose(f);
     return bytes;
+#elif defined(__APPLE__)
+    // Resident size of this task, the closest analogue to Linux VmRSS.
+    mach_task_basic_info_data_t info{};
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                  reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS) {
+        return static_cast<double>(info.resident_size);
+    }
+    return -1.0;
 #else
     return -1.0;
 #endif
@@ -150,6 +163,22 @@ public:
         // Aurora has no sign-in or sync UI, so the profile picker and account
         // consent surfaces have nothing to act on.
         command_line->AppendSwitch("disable-sync");
+#if defined(__linux__)
+        // Windowed browsers are parented to the Qt widget's X11 window id
+        // (CefWindowInfo::SetAsChild on Linux takes an X11 Window), so
+        // Chromium's Ozone layer must use X11 even inside a Wayland session.
+        // main.cpp makes Qt use xcb (XWayland) for the same reason. An explicit
+        // --ozone-platform from the user is respected.
+        if (process_type.empty() && !command_line->HasSwitch("ozone-platform")) {
+            command_line->AppendSwitchWithValue("ozone-platform", "x11");
+        }
+#endif
+#if defined(__APPLE__)
+        // Keep Chromium from prompting for (or writing to) the login keychain
+        // for cookie encryption on every launch of an unsigned/ad-hoc build;
+        // Aurora's profile lives in the user's Application Support directory.
+        command_line->AppendSwitch("use-mock-keychain");
+#endif
 
         // --- Extension support ---
 
@@ -262,6 +291,15 @@ bool initialize(std::string_view cache_path,
            "the decoders (see docs/twitch-playback.md)";
 #endif
     CefMainArgs main_args;
+#if defined(__APPLE__)
+    // NSApp must implement CefAppProtocol before CefInitialize, and must exist
+    // before QApplication so Qt adopts it instead of creating QNSApplication.
+    mac_prepare_application();
+    if (!mac_application_is_cef_compatible()) {
+        AURORA_LOG(LogLevel::Warn, "cef")
+            << "NSApp does not implement CefAppProtocol; event handling may misbehave";
+    }
+#endif
     CefSettings settings;
     settings.multi_threaded_message_loop = false;  // We pump from Qt.
     settings.no_sandbox = true;  // Not linking cef_sandbox.lib; the sandbox
@@ -297,6 +335,12 @@ bool initialize(std::string_view cache_path,
     // explicit here instead of relying on "whatever is next to the exe".
     // CEF propagates these to its own subprocesses on their command lines, so
     // renderers and the GPU process inherit them.
+#if defined(__APPLE__)
+    // On macOS the resources live inside Chromium Embedded Framework.framework
+    // (Contents/Frameworks/.../Resources) and CEF finds them on its own;
+    // overriding the paths with the executable directory breaks startup.
+    (void)cef_resource_dir;
+#else
     if (!cef_resource_dir.empty()) {
         const std::string resources(cef_resource_dir);
         CefString(&settings.resources_dir_path) = resources;
@@ -304,6 +348,7 @@ bool initialize(std::string_view cache_path,
         AURORA_LOG(LogLevel::Info, "cef")
             << "cef resources: " << resources;
     }
+#endif
 
     // Windowed (not off-screen) rendering with GPU compositing: CEF only
     // enables the accelerated compositor — and therefore WebGL — when the
@@ -332,6 +377,23 @@ void pump_message_loop() {
 
 void shutdown() {
     CefShutdown();
+}
+
+bool load_library(bool helper) {
+#if defined(__APPLE__)
+    // Static: the framework must stay loaded until the process exits, after
+    // CefShutdown. CefScopedLibraryLoader unloads it in its destructor.
+    static CefScopedLibraryLoader loader;
+    static bool loaded = helper ? loader.LoadInHelper() : loader.LoadInMain();
+    if (!loaded) {
+        AURORA_LOG(LogLevel::Error, "cef")
+            << "could not load Chromium Embedded Framework.framework";
+    }
+    return loaded;
+#else
+    (void)helper;
+    return true;
+#endif
 }
 
 int run_subprocess(int argc, char** argv) {

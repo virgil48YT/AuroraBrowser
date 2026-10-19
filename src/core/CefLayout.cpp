@@ -13,6 +13,11 @@
 #include <climits>
 #include <unistd.h>
 #endif
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <cstdint>
+#include <vector>
+#endif
 
 namespace aurora::core {
 namespace {
@@ -237,6 +242,19 @@ std::string current_executable_path() {
     if (n <= 0) return {};
     buf[n] = '\0';
     return normalize_separators(std::string(buf));
+#elif defined(__APPLE__)
+    // macOS has no /proc. _NSGetExecutablePath reports the path the binary
+    // was launched through (possibly via symlinks); canonicalize it so the
+    // directory is the real Contents/MacOS of the bundle.
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    if (size == 0) return {};
+    std::vector<char> buf(size + 1, '\0');
+    if (_NSGetExecutablePath(buf.data(), &size) != 0) return {};
+    std::error_code ec;
+    const auto p = fs::canonical(fs::path(buf.data()), ec);
+    if (ec) return normalize_separators(std::string(buf.data()));
+    return normalize_separators(p.string());
 #else
     std::error_code ec;
     const auto p = fs::canonical("/proc/self/exe", ec);
