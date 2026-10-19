@@ -1105,6 +1105,30 @@ searchengines::ResolvedEngine MainWindow::resolved_search_engine() const {
 }
 
 void MainWindow::open_site_initiated_tab(std::string url) {
+    // Settings > Tabs & browsing > "Open tabs in new window": a link the site
+    // opens in a new tab (target=_blank, window.open) gets its own browser
+    // window instead, in the same privacy mode. Tor windows keep the tab: a
+    // Tor window is only created after its proxy checks (open_tor_window).
+    if (!url.empty() && !tor_ && services_.prefs &&
+        services_.prefs->get_bool(settings::PrefKeys::kOpenTabsInNewWindow,
+                                  settings::PrefDefaults::kOpenTabsInNewWindow)) {
+        const core::Url target = core::parse_omnibox_input(url);
+        if (target.is_valid()) {
+            auto* w = new MainWindow(services_, /*parent=*/nullptr, incognito_);
+            w->setAttribute(Qt::WA_DeleteOnClose, true);
+            w->inherit_theme_from(this);
+            w->resize(size());
+            if (!isMaximized() && !isFullScreen()) {
+                w->move(pos() + QPoint(24, 24));
+            }
+            w->show();
+            w->raise();
+            w->activateWindow();
+            // The new window's seed tab becomes the link's page.
+            w->navigate_active_tab(target);
+            return;
+        }
+    }
     // CEF documents target_url as empty when the popup request does not name a
     // destination (window.open() with no arguments). TabManager treats an empty
     // URL as Aurora's configured new-tab/home page, which is not JavaScript's
@@ -4161,6 +4185,13 @@ void MainWindow::on_close_other_tabs(int index) {
 }
 
 void MainWindow::show_tab_hover_card(int index) {
+    // Settings > Tabs & browsing > "Show tab previews".
+    if (services_.prefs &&
+        !services_.prefs->get_bool(settings::PrefKeys::kTabHoverPreviews,
+                                   settings::PrefDefaults::kTabHoverPreviews)) {
+        hide_tab_hover_card();
+        return;
+    }
     const auto& tabs = tabs_.tabs();
     if (!tab_bar_ || index < 0 || static_cast<size_t>(index) >= tabs.size()) {
         hide_tab_hover_card();
