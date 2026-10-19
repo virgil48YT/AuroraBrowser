@@ -21,6 +21,13 @@ project(Aurora
     DESCRIPTION "Aurora — a premium Chromium/CEF desktop browser"
     LANGUAGES C CXX)
 
+# Objective-C++ is needed on macOS for the CEF/AppKit glue
+# (src/cef/CefMacSupport.mm). Enabled here, at the top level, because CMake
+# requires a language to be enabled before targets that use it are created.
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -300,7 +307,6 @@ if(AURORA_ENABLE_CEF)
     )
     if(APPLE)
         # AppKit glue: AuroraApplication (CefAppProtocol) and NSView sizing.
-        enable_language(OBJCXX)
         target_sources(aurora_cef PRIVATE src/cef/CefMacSupport.mm)
         target_link_libraries(aurora_cef PUBLIC aurora_core libcef_dll_wrapper
             "-framework AppKit" "-framework Cocoa" "-framework IOSurface")
