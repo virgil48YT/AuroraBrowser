@@ -29,6 +29,7 @@ set(AURORA_BROWSER_SOURCES
     ../ui/ShortcutList.cpp
     ../ui/ToggleSwitch.cpp
     ../ui/GlowFrame.cpp
+    ../ui/FileTypeIcon.cpp
     ../ui/PageBackground.cpp
     ../ui/TabHoverCard.cpp
     ../ui/RoundedToolTip.cpp

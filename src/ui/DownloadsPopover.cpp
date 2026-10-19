@@ -34,6 +34,7 @@
 #include <utility>
 
 #include "downloads/DownloadService.hpp"
+#include "ui/FileTypeIcon.hpp"
 #include "ui/IconButton.hpp"
 #include "ui/Icons.hpp"
 #include "ui/PopupPlacement.hpp"
@@ -619,20 +620,16 @@ void DownloadsPopover::rebuild() {
             icon->setScaledContents(false);
             icon->setAttribute(Qt::WA_TransparentForMouseEvents);
             // Use the real system file icon (like Chrome does) instead of
-            // generic SVG glyphs. QFileIconProvider returns the actual OS icon
-            // for the file type — a real .exe icon, .pdf icon, image preview,
-            // etc. If the file doesn't exist yet (still downloading), fall back
-            // to a generic file icon from the icon system.
-            QIcon sys_icon;
-            if (file_available) {
-                sys_icon = QFileIconProvider().icon(QFileInfo(target));
-            }
-            if (sys_icon.isNull()) {
-                // Download in progress or file not yet available: use a
-                // generic file-type icon from our icon system as fallback.
-                sys_icon = icons::icon(icons::Name::FileGeneric,
-                                        c.text_muted, kFileIconSize, dpr);
-            }
+            // generic SVG glyphs: QFileIconProvider returns the actual OS icon
+            // for the file type — the WinRAR logo for a .rar, a real .exe
+            // icon, .pdf icon, image preview, etc. A file that does not exist
+            // yet (still downloading) or any more gets the per-extension type
+            // tile shared with aurora://downloads (see FileTypeIcon).
+            const QString icon_path = target.isEmpty()
+                ? QString::fromStdString(d.url) : target;
+            const QIcon sys_icon = file_icons::icon_for(
+                icon_path, QString::fromStdString(d.mime), file_available,
+                kFileIconSize, dpr);
             icon->setPixmap(fitted_file_icon(sys_icon, dpr));
             rl->addWidget(icon, 0, Qt::AlignVCenter);
 
