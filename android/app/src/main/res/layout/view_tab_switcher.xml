@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/aurora_background"
+    android:clickable="true"
+    android:focusable="true"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/toolbar_height"
+        android:background="@color/aurora_surface"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <ImageButton
+            android:id="@+id/switcherNewTab"
+            android:layout_width="@dimen/toolbar_button"
+            android:layout_height="@dimen/toolbar_button"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/new_tab"
+            android:src="@drawable/ic_add" />
+
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/switcherModes"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"
+            app:tabGravity="center"
+            app:tabIndicatorColor="@color/aurora_accent"
+            app:tabMode="fixed"
+            app:tabSelectedTextColor="@color/aurora_text"
+            app:tabTextColor="@color/aurora_text_muted" />
+
+        <ImageButton
+            android:id="@+id/switcherMenu"
+            android:layout_width="@dimen/toolbar_button"
+            android:layout_height="@dimen/toolbar_button"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/menu"
+            android:src="@drawable/ic_more_vert" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/switcherGrid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:padding="8dp" />
+
+        <TextView
+            android:id="@+id/switcherEmpty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/no_tabs"
+            android:textColor="@color/aurora_text_muted"
+            android:visibility="gone" />
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/switcherFab"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_margin="20dp"
+            android:text="@string/new_tab"
+            app:icon="@drawable/ic_add" />
+    </FrameLayout>
+</LinearLayout>

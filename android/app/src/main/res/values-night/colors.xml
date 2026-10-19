@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Aurora neon dark palette (mirrors src/ui/Theme.cpp dark theme). -->
+<resources>
+    <color name="aurora_background">#050811</color>
+    <color name="aurora_surface">#0B1220</color>
+    <color name="aurora_surface_raised">#101A2E</color>
+    <color name="aurora_card">#0E1626</color>
+    <color name="aurora_border">#1E293B</color>
+    <color name="aurora_text">#F1F5F9</color>
+    <color name="aurora_text_muted">#94A3B8</color>
+    <color name="aurora_text_faint">#64748B</color>
+    <color name="aurora_accent">#00E5FF</color>
+    <color name="aurora_accent2">#A855F7</color>
+    <color name="aurora_accent3">#D946EF</color>
+    <color name="aurora_on_accent">#04060E</color>
+    <color name="aurora_omnibox_bg">#070D1A</color>
+    <color name="aurora_shield_off">#64748B</color>
+    <!-- Browser chrome: the deep-navy neon toolbar, like the desktop build. -->
+    <color name="chrome_bg">#0B1220</color>
+    <color name="chrome_omnibox">#070D1A</color>
+    <color name="chrome_text">#E2E8F0</color>
+    <color name="chrome_muted">#94A3B8</color>
+    <color name="chrome_cyan">#22D3EE</color>
+    <color name="chrome_magenta">#E879F9</color>
+    <color name="chrome_shield_off">#64748B</color>
+</resources>

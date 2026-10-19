@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/action_new_incognito" android:title="@string/new_incognito_tab" />
+    <item android:id="@+id/action_reopen_closed" android:title="@string/reopen_closed_tab" />
+    <item android:id="@+id/action_close_all" android:title="@string/close_all_tabs" />
+    <item android:id="@+id/action_close_incognito" android:title="@string/close_incognito_tabs" />
+</menu>

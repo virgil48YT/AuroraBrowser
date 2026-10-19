@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Aurora" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/aurora_accent</item>
+        <item name="colorOnPrimary">@color/aurora_on_accent</item>
+        <item name="colorSecondary">@color/aurora_accent2</item>
+        <item name="colorTertiary">@color/aurora_accent3</item>
+        <item name="colorSurface">@color/aurora_surface</item>
+        <item name="colorOnSurface">@color/aurora_text</item>
+        <item name="colorOnSurfaceVariant">@color/aurora_text_muted</item>
+        <item name="colorOutline">@color/aurora_border</item>
+        <item name="android:colorBackground">@color/aurora_background</item>
+        <item name="android:windowBackground">@color/aurora_background</item>
+        <item name="colorControlNormal">@color/aurora_text_muted</item>
+        <item name="android:statusBarColor">@color/aurora_surface</item>
+        <item name="android:navigationBarColor">@color/aurora_surface</item>
+        <item name="android:windowLightStatusBar">@bool/light_status_bar</item>
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay</item>
+    </style>
+
+    <style name="TextAppearance.Aurora.Wordmark" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:letterSpacing">0.6</item>
+        <item name="android:textColor">@color/home_text</item>
+        <item name="android:fontFamily">sans-serif-light</item>
+    </style>
+
+    <style name="TextAppearance.Aurora.CardTitle" parent="TextAppearance.Material3.TitleSmall">
+        <item name="android:textColor">@color/home_text</item>
+        <item name="android:letterSpacing">0.08</item>
+    </style>
+</resources>

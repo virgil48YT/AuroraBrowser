@@ -1,0 +1,17 @@
+# Gradle / Android Studio build outputs — never commit these.
+.gradle/
+build/
+/app/build/
+local.properties
+.idea/
+*.iml
+.cxx/
+.externalNativeBuild/
+captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+# The wrapper jar IS committed (it is how CI bootstraps Gradle).
+!gradle/wrapper/gradle-wrapper.jar
+.kotlin/

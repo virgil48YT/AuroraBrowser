@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="@string/pref_cat_general" app:iconSpaceReserved="false">
+        <Preference
+            app:key="search_engine_screen"
+            app:title="@string/pref_search_engine"
+            app:iconSpaceReserved="false" />
+        <ListPreference
+            app:key="theme"
+            app:title="@string/pref_theme"
+            app:defaultValue="system"
+            app:entries="@array/theme_entries"
+            app:entryValues="@array/theme_values"
+            app:useSimpleSummaryProvider="true"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:key="restore_tabs"
+            app:title="@string/pref_restore_tabs"
+            app:summary="@string/pref_restore_tabs_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:key="omnibox_suggestions"
+            app:title="@string/pref_suggestions"
+            app:summary="@string/pref_suggestions_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/pref_cat_privacy" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat
+            app:key="adblock_enabled"
+            app:title="@string/pref_adblock"
+            app:summary="@string/pref_adblock_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:key="cosmetic_filtering"
+            app:title="@string/pref_cosmetic"
+            app:summary="@string/pref_cosmetic_summary"
+            app:defaultValue="true"
+            app:dependency="adblock_enabled"
+            app:iconSpaceReserved="false" />
+        <Preference
+            app:key="custom_filters_screen"
+            app:title="@string/pref_custom_filters"
+            app:summary="@string/pref_custom_filters_summary"
+            app:iconSpaceReserved="false" />
+        <Preference
+            app:key="shields_exceptions"
+            app:title="@string/pref_shields_exceptions"
+            app:summary="@string/pref_shields_exceptions_summary"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:key="block_third_party_cookies"
+            app:title="@string/pref_3p_cookies"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:key="https_only"
+            app:title="@string/pref_https_only"
+            app:summary="@string/pref_https_only_summary"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:key="save_history"
+            app:title="@string/pref_save_history"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+        <Preference
+            app:key="clear_data"
+            app:title="@string/pref_clear_data"
+            app:summary="@string/pref_clear_data_summary"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/pref_cat_content" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat
+            app:key="javascript_enabled"
+            app:title="@string/pref_javascript"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
+            app:key="desktop_mode"
+            app:title="@string/pref_desktop_mode"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/pref_cat_about" app:iconSpaceReserved="false">
+        <Preference
+            app:key="about_version"
+            app:title="@string/pref_version"
+            app:selectable="false"
+            app:iconSpaceReserved="false" />
+        <Preference
+            app:key="about_engine"
+            app:title="@string/pref_engine"
+            app:selectable="false"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+</PreferenceScreen>
