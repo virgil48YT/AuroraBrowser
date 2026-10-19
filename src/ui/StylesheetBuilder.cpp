@@ -1498,8 +1498,8 @@ QString StylesheetBuilder::build(const Theme& t) {
             .arg(c.text_muted.name())
             .arg(14)
             .arg(c.text.name())
-            .arg(52)
-            .arg(14)
+            .arg(56)
+            .arg(15)
             .arg(c.divider.name());
 
     s += QString("QLabel#HomeWeatherTemp {"
@@ -1510,11 +1510,11 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "QLabel#HomeRowTitle { color: %1; font-size: %4px;}"
                  "QLabel#HomeRowSub { color: %5; font-size: %6px;}")
             .arg(c.text.name())
-            .arg(22)
+            .arg(24)
+            .arg(16)
             .arg(15)
-            .arg(14)
             .arg(c.text_muted.name())
-            .arg(12);
+            .arg(13);
 
     // The big centered search pill: a glowing glass capsule with the
     // cyan→purple gradient border. The border lives on the HOST (the pill's
@@ -1531,15 +1531,15 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  selection-background-color: %4; selection-color: %1;}")
             .arg(c.text.name())
             .arg(Spacing::xs)
-            .arg(17)
+            .arg(18)
             .arg(rgba(c.accent, 60));
 
     // In-pill trailing sparkle: chromeless, glows to magenta on hover.
     s += QString("QToolButton#HomeSparkleButton {"
                  "  background: transparent; border: none;"
                  "  border-radius: %1px; padding: 0px; margin: 0px;"
-                 "  min-width: 34px; max-width: 34px;"
-                 "  min-height: 34px; max-height: 34px;}"
+                 "  min-width: 36px; max-width: 36px;"
+                 "  min-height: 36px; max-height: 36px;}"
                  "QToolButton#HomeSparkleButton:hover { background: %2;}"
                  "QToolButton#HomeSparkleButton:pressed { background: %3;}")
             .arg(Radius::pill)

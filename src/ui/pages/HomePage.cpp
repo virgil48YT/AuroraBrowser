@@ -51,7 +51,7 @@ public:
     explicit BrandLabel(QWidget* parent = nullptr) : QWidget(parent) {
         setAttribute(Qt::WA_TranslucentBackground, true);
         logo_.load(QStringLiteral(":/brand/aurora_logo_full.png"));
-        set_width(312);
+        set_width(340);
     }
 
     void set_width(int width) {
@@ -180,13 +180,13 @@ QColor brand_color(const QString& label) {
 }
 
 constexpr int kTilesPerRow = 6;
-constexpr int kTileSpacing = 18;   // gap between shortcut tiles
-constexpr int kTileIconPx = 36;    // favicon / badge inside a shortcut tile
-constexpr int kRowIconPx = 30;     // favicon / badge in a history card row
+constexpr int kTileSpacing = 20;   // gap between shortcut tiles
+constexpr int kTileIconPx = 40;    // favicon / badge inside a shortcut tile
+constexpr int kRowIconPx = 32;     // favicon / badge in a history card row
 // Real favicons fill most of their slot (the letter badge is a full disc, a
 // site logo carries its own padding), matching the mockup's proportions.
-constexpr int kTileFaviconPx = 33;
-constexpr int kRowIconFaviconPx = 26;
+constexpr int kTileFaviconPx = 36;
+constexpr int kRowIconFaviconPx = 28;
 constexpr int kMaxShortcuts = 18;
 constexpr int kRowsPerCard = 3;
 
@@ -308,7 +308,7 @@ void HomePage::build_ui() {
     page_layout->addWidget(content_scroll_);
 
     auto* root = new QVBoxLayout(content_);
-    root->setContentsMargins(26, 26, 26, 26);
+    root->setContentsMargins(28, 28, 28, 28);
     root->setSpacing(0);
 
     // The weather and clock share the brand's top band, as in the reference,
@@ -328,10 +328,10 @@ void HomePage::build_ui() {
     column_ = column;
     column->setObjectName(QStringLiteral("HomeColumn"));
     column->setAttribute(Qt::WA_TranslucentBackground, true);
-    column->setFixedWidth(840);
+    column->setFixedWidth(900);
     auto* column_layout = new QVBoxLayout(column);
     column_layout->setContentsMargins(0, 0, 0, 0);
-    column_layout->setSpacing(14);
+    column_layout->setSpacing(16);
 
     brand_ = new BrandLabel(column);
     column_layout->addWidget(brand_, 0, Qt::AlignHCenter);
@@ -347,7 +347,7 @@ void HomePage::build_ui() {
     // sparkle — all inside one capsule host.
     auto* pill = new HomeGlass(column, HomeGlass::Kind::Search);
     search_host_ = pill;
-    pill->setFixedSize(664, 56);
+    pill->setFixedSize(720, 62);
     pill->setObjectName(QStringLiteral("HomeSearchPillHost"));
     auto* pill_layout = new QHBoxLayout(pill);
     pill_layout->setContentsMargins(12, 4, 12, 4);
@@ -357,7 +357,7 @@ void HomePage::build_ui() {
     search_btn_->setObjectName(QStringLiteral("HomeSparkleButton"));
     search_btn_->setCursor(Qt::PointingHandCursor);
     search_btn_->setToolTip(QStringLiteral("Search"));
-    search_btn_->setIconSize(QSize(18, 18));
+    search_btn_->setIconSize(QSize(20, 20));
     connect(search_btn_, &QToolButton::clicked, this, [this] {
         search_->setFocus(Qt::ShortcutFocusReason);
     });
@@ -376,7 +376,7 @@ void HomePage::build_ui() {
     sparkle_btn_->setObjectName(QStringLiteral("HomeSparkleButton"));
     sparkle_btn_->setCursor(Qt::PointingHandCursor);
     sparkle_btn_->setToolTip(QStringLiteral("Search"));
-    sparkle_btn_->setIconSize(QSize(20, 20));
+    sparkle_btn_->setIconSize(QSize(22, 22));
     connect(sparkle_btn_, &QToolButton::clicked, this, &HomePage::submit);
     pill_layout->addWidget(sparkle_btn_, 0, Qt::AlignVCenter);
     pill_layout->addSpacing(Spacing::sm);
@@ -393,7 +393,7 @@ void HomePage::build_ui() {
     rebuild_shortcuts();
 
     root->addWidget(column, 0, Qt::AlignHCenter);
-    root->addSpacing(18);
+    root->addSpacing(20);
     root->addStretch(1);
 
     // --- Bottom cards -------------------------------------------------------
@@ -402,8 +402,8 @@ void HomePage::build_ui() {
     cards_row_->setAttribute(Qt::WA_TranslucentBackground, true);
     auto* cards_layout = new QHBoxLayout(cards_row_);
     cards_layout->setContentsMargins(0, 0, 0, 0);
-    cards_layout->setSpacing(16);
-    cards_row_->setFixedWidth(1220);
+    cards_layout->setSpacing(18);
+    cards_row_->setFixedWidth(1320);
 
     QWidget* resume = build_history_card(
         cards_row_, QStringLiteral("Continue where you left off"));
@@ -439,7 +439,7 @@ QWidget* HomePage::build_weather_chip() {
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(Spacing::sm);
     weather_icon_ = new QLabel(chip);
-    weather_icon_->setFixedSize(36, 36);
+    weather_icon_->setFixedSize(40, 40);
     row->addWidget(weather_icon_, 0, Qt::AlignVCenter);
     auto* texts = new QVBoxLayout;
     texts->setContentsMargins(0, 0, 0, 0);
@@ -670,7 +670,7 @@ QWidget* HomePage::build_history_card(QWidget* parent, const QString& heading) {
     card->setObjectName(QStringLiteral("HomeCard"));
     card->setMinimumWidth(0);
     auto* card_layout = new QVBoxLayout(card);
-    card_layout->setContentsMargins(20, 16, 20, 16);
+    card_layout->setContentsMargins(22, 18, 22, 18);
     card_layout->setSpacing(6);
 
     auto* header_row = new QHBoxLayout;
@@ -711,7 +711,7 @@ QWidget* HomePage::build_actions_card(QWidget* parent) {
     card->setObjectName(QStringLiteral("HomeCard"));
     card->setMinimumWidth(0);
     auto* card_layout = new QVBoxLayout(card);
-    card_layout->setContentsMargins(20, 16, 20, 16);
+    card_layout->setContentsMargins(22, 18, 22, 18);
     card_layout->setSpacing(6);
 
     auto* title = new QLabel(QStringLiteral("Quick actions"), card);
@@ -950,17 +950,17 @@ void HomePage::update_home_layout() {
     // Leave room for a vertical scrollbar without changing the grid width
     // when it appears. Crucially, these are explicit widths: AlignHCenter
     // alone makes Qt shrink a widget back to its content's sizeHint.
-    // The target sizes follow the reference mockup: a ~664px search pill,
-    // a ~312px logo and a card row that leaves generous side margins, so the
+    // The target sizes follow the reference mockup: a ~720px search pill,
+    // a ~340px logo and a card row that leaves generous side margins, so the
     // whole page fits a 1080p window without scrolling.
     const int available = qMax(240, width() - 84);
     const qreal scale = qBound<qreal>(0.72, height() / 1040.0, 1.0);
-    column_->setFixedWidth(qMin(available, 840));
-    search_host_->setFixedSize(qMin(available, 664), qRound(56 * scale));
+    column_->setFixedWidth(qMin(available, 900));
+    search_host_->setFixedSize(qMin(available, 720), qRound(62 * scale));
     static_cast<BrandLabel*>(brand_)->set_width(
-        qMin(available, qRound(312 * scale)));
-    cards_row_->setFixedWidth(qMin(available, 1220));
-    cards_row_->setMinimumHeight(qRound(220 * scale));
+        qMin(available, qRound(340 * scale)));
+    cards_row_->setFixedWidth(qMin(available, 1320));
+    cards_row_->setMinimumHeight(qRound(240 * scale));
 
     // Stack cards only when there is no longer room for readable columns.
     auto* cards = static_cast<QBoxLayout*>(cards_row_->layout());
@@ -968,8 +968,8 @@ void HomePage::update_home_layout() {
         ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight;
     if (cards->direction() != direction) cards->setDirection(direction);
 
-    const int tile_width = qRound(114 * scale);
-    const int tile_height = qRound(98 * scale);
+    const int tile_width = qRound(124 * scale);
+    const int tile_height = qRound(106 * scale);
     const int per_row = qBound(1, (available + kTileSpacing) /
                                       (tile_width + kTileSpacing),
                               kTilesPerRow);
@@ -988,13 +988,13 @@ void HomePage::update_home_layout() {
         }
     }
 
-    header_->setGeometry(qMax(0, (width() - available) / 2), 26, available,
+    header_->setGeometry(qMax(0, (width() - available) / 2), 28, available,
                        header_->sizeHint().height());
     // On narrow windows the corner widgets get their own band, so neither
     // can cover the centered logo. Extra shortcuts/cards scroll, not shrink.
     auto* root = static_cast<QVBoxLayout*>(content_->layout());
-    root->setContentsMargins(26, available < 850
-        ? header_->sizeHint().height() + 40 : 26, 26, 26);
+    root->setContentsMargins(28, available < 850
+        ? header_->sizeHint().height() + 44 : 28, 28, 28);
 }
 
 void HomePage::apply_icons() {
@@ -1002,11 +1002,11 @@ void HomePage::apply_icons() {
     const qreal dpr = screen() ? screen()->devicePixelRatio() : 1.0;
     if (search_btn_) {
         search_btn_->setIcon(icons::icon(icons::Name::Search,
-                                         theme.colors.text_muted, 18, dpr));
+                                         theme.colors.text_muted, 20, dpr));
     }
     if (sparkle_btn_) {
         sparkle_btn_->setIcon(icons::icon(icons::Name::Sparkle,
-                                          theme.colors.accent2, 20, dpr));
+                                          theme.colors.accent2, 22, dpr));
     }
     if (weather_icon_) {
         const WeatherInfo& w = WeatherService::instance().current();
@@ -1014,12 +1014,12 @@ void HomePage::apply_icons() {
             ? WeatherService::icon_for(w.code, w.is_day)
             : icons::Name::CloudSun;
         weather_icon_->setPixmap(icons::pixmap(
-            glyph, 36, theme.colors.accent, dpr));
+            glyph, 40, theme.colors.accent, dpr));
     }
     for (QToolButton* tile : shortcut_buttons_) {
         if (tile->property("auroraTileAdd").toBool()) {
             tile->setIcon(icons::icon(icons::Name::Plus,
-                                      theme.colors.text_muted, 28, dpr));
+                                      theme.colors.text_muted, 30, dpr));
             continue;
         }
         const QString label = tile->property("auroraTileLabel").toString();
