@@ -1465,6 +1465,65 @@ QString StylesheetBuilder::build(const Theme& t) {
                  "  color: %1; font-size: %2px; background: transparent; }")
             .arg(c.text_muted.name()).arg(t.body_font_px);
 
+    // Neon settings layout (the mockup): the sidebar card, the search pill
+    // and every collapsible card are GlowFrames that paint their own glass
+    // plate and gradient rim (the History look), so their hosts carry no
+    // sheet background. The sheet owns text, the nav pills and hover washes.
+    // Label rules are scoped under InternalPage so they outrank the page's
+    // generic "QWidget#InternalPage QLabel" color.
+    s += QString("QWidget#SettingsHeader, QWidget#SettingsBody,"
+                 "QWidget#SettingsSearchWrap, QWidget#SettingsNavCard,"
+                 "QWidget#SettingsGlowCard, QWidget#SettingsCardHeader,"
+                 "QWidget#SettingsCardBody { background: transparent; border: none; }");
+    s += QString("QWidget#InternalPage QLabel#SettingsHeaderTitle {"
+                 "  color: %1; font-size: %2px; font-weight: 600;"
+                 "  letter-spacing: -0.3px; background: transparent; }")
+            .arg(c.text.name()).arg(t.title_font_px + 9);
+    s += QString("QWidget#InternalPage QLabel#SettingsHeaderSubtitle {"
+                 "  color: %1; font-size: %2px; background: transparent; }")
+            .arg(c.text_muted.name()).arg(t.body_font_px + 1);
+    s += QString("QLineEdit#SettingsSearch {"
+                 "  background: transparent; color: %1; border: none;"
+                 "  font-size: %3px;"
+                 "  selection-background-color: %2; selection-color: %1; }")
+            .arg(c.text.name())
+            .arg(rgba(c.accent, 60))
+            .arg(t.body_font_px + 1);
+    // AURORA wordmark beside the logo: wide-tracked caps in a pale violet.
+    s += QString("QWidget#InternalPage QLabel#SettingsBrand {"
+                 "  color: %1; font-size: %2px; font-weight: 600;"
+                 "  letter-spacing: 4px; background: transparent; }")
+            .arg(hex(c.accent2.lighter(150))).arg(t.title_font_px + 3);
+    // Nav pills inside the sidebar card: a little taller than the old rail,
+    // with the checked pill's purple outline at full strength (the glow is
+    // a QGraphicsDropShadowEffect set by the page).
+    s += QString("QWidget#SettingsNavCard QToolButton#SettingsNavButton {"
+                 "  padding: %1px %2px; min-height: 24px; }")
+            .arg(Spacing::sm + 1).arg(Spacing::md);
+    s += QString("QWidget#SettingsNavCard QToolButton#SettingsNavButton:checked {"
+                 "  background: %1; border: %2px solid %3; }")
+            .arg(rgba(c.accent2, 46)).arg(Metrics::hairline)
+            .arg(hex(c.accent2));
+    s += QString("QToolButton#SettingsCardChevron {"
+                 "  background: transparent; border: none; border-radius: %1px; }"
+                 "QToolButton#SettingsCardChevron:hover { background: %2; }"
+                 "QToolButton#SettingsCardChevron:pressed { background: %3; }")
+            .arg(Radius::md).arg(rgba(c.accent2, 40)).arg(rgba(c.accent2, 70));
+    s += QString("QWidget#InternalPage QLabel#SettingsSectionHeader {"
+                 "  color: %1; font-size: %2px; font-weight: 600;"
+                 "  background: transparent; }")
+            .arg(c.text.name()).arg(t.title_font_px + 3);
+    s += QString("QWidget#InternalPage QLabel#SettingsRowTitle {"
+                 "  color: %1; font-size: %2px; background: transparent; }")
+            .arg(c.text.name()).arg(t.body_font_px + 1);
+    s += QString("QWidget#InternalPage QLabel#SettingsRowSubtitle,"
+                 "QWidget#InternalPage QLabel#SettingsRowHint {"
+                 "  color: %1; font-size: %2px; background: transparent; }")
+            .arg(c.text_muted.name()).arg(t.small_font_px + 1);
+    s += QString("QWidget#SettingsGlowCard QFrame#SettingsRowDivider {"
+                 "  background: %1; border: none; }")
+            .arg(rgba(c.accent2, 40));
+
     // Startup radio group: circular pill radios matching the toggle pair —
     // a slate ring at rest, the cyan→magenta gradient with a navy core dot
     // when selected.

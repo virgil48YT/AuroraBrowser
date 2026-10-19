@@ -1,16 +1,18 @@
 // Aurora — settings page (aurora://settings).
 //
 // Real typed preferences persisted through settings::Settings the moment the
-// user changes a control (no Apply button, no shadow state): default search
-// engine (which is also the home / new-tab page — there is no separate
-// startup URL option), theme, restore-session toggle, downloads directory
-// and the privacy switches the engine reads.
+// user changes a control (no Apply button, no shadow state).
 //
-// The layout follows chrome://settings: a fixed left rail with one entry per
-// section (scrolling the matching card into view), a live filter field above
-// a scrolling column of rounded cards, and rows with the title plus an
-// explanatory subtitle on the left and the control on the right. The filter
-// only shows/hides rows and cards — it never touches the preferences.
+// Layout (the neon settings mockup): a glass sidebar card with the AURORA
+// brand and one entry per category (General, Appearance, Tabs, Browsing,
+// Search, Privacy & Security, Downloads, Languages, Extensions, Advanced),
+// the active one glowing; a header with the title, subtitle and a "Search
+// settings..." field; and a column of collapsible glass cards with neon
+// rims. Picking a category shows the cards that belong to it (a card may
+// belong to several: Language is under General and Languages). Typing in the
+// search field shows every matching row across all categories, expanding
+// collapsed cards while it filters. The filter only shows/hides rows and
+// cards — it never touches the preferences.
 //
 // Custom search engines (name + https:// template with one %s) are managed in
 // the Search card: one SettingsRow per engine (Edit / Delete), plus an "Add"
@@ -21,10 +23,12 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 #include <QList>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
 
 #include "ui/Icons.hpp"
 #include "ui/ThemeState.hpp"
@@ -34,6 +38,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QProcess;
 class QPropertyAnimation;
 class QPushButton;
 class QRadioButton;
@@ -53,6 +58,7 @@ namespace aurora::ui {
 
 class FilterListUpdater;
 class SettingsRow;
+class ToggleSwitch;
 
 class SettingsPage : public InternalPageWidget {
     Q_OBJECT
@@ -72,6 +78,12 @@ public:
     // The updater is process-wide and outlives the page.
     void set_filter_list_updater(FilterListUpdater* updater);
 
+    // Select a sidebar category by id ("general", "appearance", "tabs",
+    // "browsing", "search", "privacy", "downloads", "languages",
+    // "extensions", "advanced"), clearing the search field. Unknown ids
+    // are ignored. Used by aurora://downloads' "Download settings" link.
+    void show_category(const QString& id);
+
 signals:
     // "system" | "light" | "dark" — the window re-applies its stylesheet.
     void theme_preference_changed(const QString& theme);
@@ -82,16 +94,32 @@ signals:
     void adblock_enabled_changed(bool enabled);
     // "Site settings" was clicked: the window opens aurora://site-settings.
     void site_settings_requested();
+    // Extensions card "Open": the window opens aurora://extensions.
+    void extensions_requested();
+    // Browsing card "Show bookmarks bar" (appearance.bookmark_bar) changed;
+    // the pref is already written, the window shows/hides its bar.
+    void bookmark_bar_visibility_changed(bool visible);
 
 private:
-    // One card on the page plus the sidebar entry that scrolls to it.
+    // One collapsible glass card plus the categories it is listed under.
     struct Section {
-        QWidget* wrapper = nullptr;   // header + card block (hidden whole by the filter)
-        QWidget* card = nullptr;      // the rounded card itself
+        QWidget* wrapper = nullptr;   // the card (hidden whole by the filter)
+        QWidget* card = nullptr;      // same widget: the GlowFrame plate
         QVBoxLayout* body = nullptr;  // row list inside the card
+        QWidget* body_host = nullptr; // collapses with the chevron
+        QToolButton* chevron = nullptr;
+        QLabel* icon_label = nullptr;
         QString title;
         icons::Name icon = icons::Name::Settings;
-        QToolButton* button = nullptr;  // sidebar entry, lazily created
+        QStringList categories;
+        bool collapsed = false;
+    };
+    // One sidebar entry.
+    struct Category {
+        QString id;
+        QString title;
+        icons::Name icon = icons::Name::Settings;
+        QToolButton* button = nullptr;
     };
 
     void report_change(const QString& message);
@@ -101,6 +129,14 @@ private:
     void sync_startup_controls();
     // Filter-list row: subtitle and button state from the updater.
     void sync_filter_list_row(const QString& status = QString());
+    // Performance card: the memory-saver switch mirrors the suspend timer
+    // (on = tabs.suspend_minutes > 0).
+    void sync_memory_saver();
+
+    // Default browser card: per-platform registration / hand-off to the OS
+    // settings, and a best-effort status line.
+    void set_as_default_browser();
+    void check_default_browser();
 
     // Custom search engines. reload_search_engines() rebuilds the default-
     // engine picker and the per-engine rows of the Search card from the
@@ -115,18 +151,25 @@ private:
     void on_search_engine_saved(const searchengines::MutationResult& result,
                                 const QString& success_message, bool removed);
 
-    // Adds a Chrome-style card (header above a rounded group of rows) and
-    // appends its nav entry. Returns the vbox rows are added to.
-    QVBoxLayout* add_section(const QString& title, icons::Name icon);
+    // Adds a collapsible glass card listed under `categories` (first is its
+    // home). Returns the vbox rows are added to.
+    QVBoxLayout* add_section(const QString& title, icons::Name icon,
+                             const QStringList& categories);
     // Adds a row to a section body and indexes its text for the filter.
     SettingsRow* add_row(QVBoxLayout* body, const QString& title,
                          const QString& subtitle, QWidget* control);
     void add_divider(QWidget* parent, QVBoxLayout* into);
+    // A switch bound to a boolean preference through the generic
+    // auroraPrivacyKey loader/saver (refresh() reloads it).
+    ToggleSwitch* add_pref_toggle(QVBoxLayout* body, const QString& title,
+                                  const QString& subtitle, std::string_view key,
+                                  bool fallback);
+    void set_collapsed(Section& section, bool collapsed);
 
     // Filter / nav behaviour. Re-applied on text change and when sections
     // are (re)populated; empty sections disappear entirely while filtering.
     void apply_filter();
-    void select_section(int index, bool scroll_to);
+    void select_category(int index, bool scroll_to);
     // Eases the content to the section's card unless the reduced-motion
     // preference is on (instant jump then).
     void scroll_to_section(const Section& section);
@@ -141,17 +184,19 @@ private:
     settings::Settings* prefs_ = nullptr;
     searchengines::SearchEngineService* engines_ = nullptr;
 
-    // Chrome-like chrome: left section rail, live filter, scrolling cards.
+    // Sidebar card, header search, scrolling cards.
     QWidget* sidebar_ = nullptr;
     QVBoxLayout* sidebar_layout_ = nullptr;
+    QLabel* brand_text_ = nullptr;
     QLineEdit* filter_ = nullptr;
     QLabel* no_results_ = nullptr;
     QScrollArea* scroll_ = nullptr;
     QVBoxLayout* cards_column_ = nullptr;
     QPointer<QPropertyAnimation> scroll_anim_;
     QList<Section> sections_;
+    QList<Category> categories_;
     ThemeObserverId theme_observer_ = 0;
-    int active_section_ = -1;
+    int active_category_ = 0;
     bool sidebar_compact_ = false;
 
     // Settings controls. Identical set, keys and write-behind behaviour as
@@ -189,6 +234,18 @@ private:
     QPushButton* filter_list_update_ = nullptr;
     QPushButton* site_settings_open_ = nullptr;
     QCheckBox* reduced_motion_ = nullptr;
+    // Default browser card.
+    SettingsRow* default_browser_row_ = nullptr;
+    QPushButton* default_browser_button_ = nullptr;
+    QPointer<QProcess> default_browser_probe_;
+    // Language card.
+    QComboBox* language_ = nullptr;
+    // Performance card: memory saver mirrors suspend_minutes_ (> 0).
+    QCheckBox* memory_saver_ = nullptr;
+    int last_suspend_minutes_ = 30;
+    // Browsing card.
+    QCheckBox* bookmark_bar_ = nullptr;
+    QPushButton* extensions_open_ = nullptr;
 };
 
 } // namespace aurora::ui

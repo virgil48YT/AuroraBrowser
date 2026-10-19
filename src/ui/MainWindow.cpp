@@ -2845,7 +2845,14 @@ QWidget* MainWindow::page_widget(core::InternalPage page) {
             downloads_page->set_prefs(services_.prefs);
             // "Download settings" opens the settings page.
             connect(downloads_page, &DownloadsPage::download_settings_requested,
-                    this, [this] { show_page(core::InternalPage::Settings); });
+                    this, [this] {
+                        show_page(core::InternalPage::Settings);
+                        if (auto* settings_page = qobject_cast<SettingsPage*>(
+                                page_widget(core::InternalPage::Settings))) {
+                            settings_page->show_category(
+                                QStringLiteral("downloads"));
+                        }
+                    });
             widget = downloads_page;
             break;
         }
@@ -2894,6 +2901,15 @@ QWidget* MainWindow::page_widget(core::InternalPage page) {
             settings_page->set_filter_list_updater(services_.filter_lists);
             connect(settings_page, &SettingsPage::site_settings_requested, this,
                     [this] { show_page(core::InternalPage::SiteSettings); });
+            connect(settings_page, &SettingsPage::extensions_requested, this,
+                    [this] { show_page(core::InternalPage::Extensions); });
+            // The page already wrote appearance.bookmark_bar; mirror it into
+            // the bar and the menu's check mark like the menu toggle does.
+            connect(settings_page, &SettingsPage::bookmark_bar_visibility_changed,
+                    this, [this](bool visible) {
+                        bookmark_bar_visible_ = visible;
+                        apply_bookmark_bar_visibility(visible);
+                    });
             widget = settings_page;
             break;
         }
