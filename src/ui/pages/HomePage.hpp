@@ -114,8 +114,8 @@ private:
     QWidget* column_ = nullptr;
     QWidget* brand_ = nullptr;
     QWidget* search_host_ = nullptr;
-    int tile_width_ = 124;
-    int tile_height_ = 106;
+    int tile_width_ = 114;
+    int tile_height_ = 98;
     int tiles_per_row_ = 6;
     QVBoxLayout* resume_rows_ = nullptr;
     QVBoxLayout* recent_rows_ = nullptr;
