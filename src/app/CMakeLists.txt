@@ -84,6 +84,15 @@ qt_add_resources(aurora_browser aurora_brand
         "${CMAKE_SOURCE_DIR}/assets/brand/aurora_mark.png"
         "${CMAKE_SOURCE_DIR}/assets/brand/aurora_bg.jpg")
 
+# The Public Suffix List (publicsuffix.org, MPL-2.0), compiled in so the
+# third-party-cookie site boundaries never depend on a loose data file. Loaded
+# once at startup into privacy::install_public_suffix_list (see main.cpp).
+qt_add_resources(aurora_browser aurora_psl
+    PREFIX "/psl"
+    BASE "${CMAKE_SOURCE_DIR}/third_party/publicsuffix"
+    FILES
+        "${CMAKE_SOURCE_DIR}/third_party/publicsuffix/public_suffix_list.dat")
+
 target_include_directories(aurora_browser PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(aurora_browser PRIVATE
     aurora_core Qt::Widgets Qt::Gui Qt::Network Qt::Svg)

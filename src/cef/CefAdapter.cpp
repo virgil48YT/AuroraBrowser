@@ -133,8 +133,9 @@ std::string certificate_fingerprint(CefRefPtr<CefX509Certificate> certificate) {
 }
 
 // The registrable-domain-like site of an http(s)/ws(s) URL
-// (privacy::cookie_site, an embedded-table approximation of the Public Suffix
-// List — see privacy/CookieSite.hpp), or empty for anything else. The host
+// (privacy::cookie_site: eTLD+1 from the bundled Public Suffix List, with an
+// embedded table as the fallback — see privacy/CookieSite.hpp), or empty for
+// anything else. The host
 // comes from Chromium's own URL parser, so it is already canonical
 // (lower-case, IDNA punycode).
 std::string url_cookie_site(const CefString& url) {

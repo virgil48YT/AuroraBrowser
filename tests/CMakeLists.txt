@@ -38,6 +38,11 @@ target_include_directories(aurora_tests PRIVATE
 
 target_link_libraries(aurora_tests PRIVATE aurora_core)
 
+# The Public Suffix List bundled with the browser; test_cookie_site.cpp parses
+# the real file so a bad update of the data fails CI.
+target_compile_definitions(aurora_tests PRIVATE
+    AURORA_PSL_TEST_FILE="${CMAKE_SOURCE_DIR}/third_party/publicsuffix/public_suffix_list.dat")
+
 # doctest's main() is provided by test_url.cpp, which defines
 # DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN before including the header. Other test
 # files include doctest.h normally (implementation shared across TUs).

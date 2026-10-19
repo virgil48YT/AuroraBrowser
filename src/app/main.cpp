@@ -14,6 +14,7 @@
 #include <QCommandLineParser>
 #include <QCloseEvent>
 #include <QDir>
+#include <QFile>
 #include <QIcon>
 #include <QFileDialog>
 #include <QMetaObject>
@@ -45,6 +46,7 @@
 #include "extensions/ExtensionService.hpp"
 #include "history/HistoryService.hpp"
 #include "privacy/CertificateAudit.hpp"
+#include "privacy/CookieSite.hpp"
 #include "searchengines/SearchEngineService.hpp"
 #include "core/CefLayout.hpp"
 #include "core/InternalUrl.hpp"
@@ -383,6 +385,24 @@ static int aurora_main(int argc, char** argv) {
     // invisible to the running browser.
     QApplication::setApplicationName("Aurora");
     QApplication::setOrganizationName("Aurora");
+
+    // Third-party cookie site boundaries use the real Public Suffix List,
+    // compiled in as a resource. It must be installed before CEF starts
+    // issuing resource requests (cookie_site() is called on CEF's IO thread);
+    // until then, or if the resource is missing or truncated, CookieSite's
+    // embedded table is the fallback. Browser process only: subprocesses
+    // returned above.
+    {
+        QFile psl(QStringLiteral(":/psl/public_suffix_list.dat"));
+        const QByteArray text = psl.open(QIODevice::ReadOnly) ? psl.readAll() : QByteArray();
+        const bool installed = privacy::install_public_suffix_list(
+            std::string_view(text.constData(), static_cast<std::size_t>(text.size())));
+        util::Logger::instance().log(
+            installed ? util::LogLevel::Info : util::LogLevel::Warn, "privacy",
+            installed ? std::string("public suffix list loaded")
+                      : std::string("public suffix list unavailable; using the "
+                                    "embedded suffix table for cookie sites"));
+    }
 
 #if defined(AURORA_HAS_CEF)
     // Initialize CEF for the browser process before Qt takes over the UI.
