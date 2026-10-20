@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bounded press feedback for toolbar buttons. The theme's borderless ripple
+  (?attr/selectableItemBackgroundBorderless) is drawn by the nearest ancestor
+  with a background and is larger than the button, so on the 56dp toolbar it
+  showed up as an oversized dark-grey lozenge spilling above the omnibox into
+  the status-bar inset. This ripple is clipped to a circle inside the button's
+  own bounds and uses a light highlight that suits the always-dark chrome.
+-->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/chrome_ripple">
+    <item android:id="@android:id/mask">
+        <inset android:inset="4dp">
+            <shape android:shape="oval">
+                <solid android:color="@android:color/white" />
+            </shape>
+        </inset>
+    </item>
+</ripple>

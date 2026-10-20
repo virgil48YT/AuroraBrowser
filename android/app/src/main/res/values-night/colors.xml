@@ -23,4 +23,6 @@
     <color name="chrome_cyan">#22D3EE</color>
     <color name="chrome_magenta">#E879F9</color>
     <color name="chrome_shield_off">#64748B</color>
+    <!-- Press highlight for toolbar buttons on the dark chrome. -->
+    <color name="chrome_ripple">#33E2E8F0</color>
 </resources>

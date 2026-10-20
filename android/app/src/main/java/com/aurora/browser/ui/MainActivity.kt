@@ -901,6 +901,12 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
 
     private fun showShields() {
         val tab = tabs.active ?: return
+        // Settle the button's press ripple now, so it does not linger behind
+        // the dialog's scrim as a grey blob over the toolbar.
+        findViewById<View>(R.id.btnShield).apply {
+            isPressed = false
+            jumpDrawablesToCurrentState()
+        }
         val web = !tab.showingHome && Omnibox.isWebUrl(tab.url) && tab.pageHost.isNotEmpty()
         val view = layoutInflater.inflate(R.layout.dialog_shields, null)
         val site = view.findViewById<TextView>(R.id.shieldsSite)
