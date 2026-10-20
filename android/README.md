@@ -60,8 +60,13 @@ be installed next to a future release build.
 CI: `.github/workflows/android-build.yml` runs the JVM tests and builds both
 the debug APK and the release APK on every push to `main` or `mobile/android`
 that touches `android/` (or on manual dispatch), uploading
-`aurora-android-debug-apk` and `aurora-android-release-apk`. Tagged releases
-are built by `.github/workflows/release.yml`.
+`aurora-android-debug-apk` and `aurora-android-release-apk`. When the signing
+secrets are available, CI also publishes the signed release APK to the rolling
+[`android-ci`](https://github.com/virgil48YT/AuroraBrowser/releases/tag/android-ci)
+pre-release as `Aurora-android-latest.apk` — a plain `.apk` you can install
+directly. Actions artifacts download as `.zip`, which Android cannot install,
+so prefer that release asset when you just want to install the app. Tagged
+releases are built by `.github/workflows/release.yml`.
 
 ## Release signing
 
@@ -89,6 +94,11 @@ In GitHub Actions the release workflow decodes the repository secret
 `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`.
 Keep the keystore backed up: an app signed with a lost key can never be
 updated in place.
+
+Both Android workflows stamp `AURORA_VERSION_CODE` from the epoch (seconds),
+so every APK produced by any workflow sorts newer than every older one —
+a newer build always updates an older install instead of failing with
+"App not installed" (a version downgrade).
 
 Project facts: package `com.aurora.browser`, minSdk 26, targetSdk/compileSdk
 35, Kotlin 2.0, AGP 8.7, Views + Material 3 (no Compose).
@@ -123,8 +133,8 @@ Project facts: package `com.aurora.browser`, minSdk 26, targetSdk/compileSdk
 - Search suggestions come from local history and bookmarks only. No network
   suggestion API is used, which is deliberate for privacy.
 - A release APK that can be installed needs your own signing key (not
-  included; see [Release signing](#release-signing)). Unsigned release APKs
-  are produced otherwise.
+  included; see [Release signing](#release-signing)). Without it CI still
+  produces an unsigned APK, and the `android-ci` pre-release is not updated.
 
 ## Icon set
 

@@ -320,10 +320,15 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/aurora-release.jks"
           echo "AURORA_ANDROID_KEYSTORE=$RUNNER_TEMP/aurora-release.jks" >> "$GITHUB_ENV"
 
+      # Epoch seconds keep versionCode strictly increasing across every
+      # workflow that ships an APK (this one and android-build.yml), so a
+      # newer build always updates an older install.
+      - name: Stamp a monotonic version code
+        run: echo "AURORA_VERSION_CODE=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Test and build release APK
         env:
           AURORA_VERSION_NAME: ${{ needs.version.outputs.version }}
-          AURORA_VERSION_CODE: ${{ github.run_number }}
           AURORA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           AURORA_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           AURORA_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
