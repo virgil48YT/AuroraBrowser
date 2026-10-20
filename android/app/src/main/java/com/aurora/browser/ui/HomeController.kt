@@ -12,6 +12,7 @@ import android.widget.TextView
 import com.aurora.browser.R
 import com.aurora.browser.adblock.AdblockService
 import com.aurora.browser.core.Omnibox
+import com.aurora.browser.core.SiteNames
 import com.aurora.browser.data.BrowserDb
 import com.aurora.browser.tabs.IncognitoProfile
 import java.util.Date
@@ -35,6 +36,10 @@ class HomeController(
     }
 
     enum class Action { INCOGNITO, HISTORY, BOOKMARKS, DOWNLOADS, SETTINGS }
+
+    private companion object {
+        const val MAX_SHORTCUTS = 8
+    }
 
     private val ctx = root.context
     private val inflater = LayoutInflater.from(ctx)
@@ -97,21 +102,30 @@ class HomeController(
 
     private fun bindShortcuts() {
         shortcuts.removeAllViews()
+        // url to label. Bookmarks first (the user's own picks), then the most
+        // visited *sites*: each tile opens the site's root and is named after
+        // the site, never after whichever page happened to be visited last.
         val items = ArrayList<Pair<String, String>>()
-        db.bookmarks().take(8).forEach { items.add(it.url to it.title) }
-        if (items.size < 8) {
-            db.topSites(16).filter { site -> items.none { it.first == site.url } }
-                .distinctBy { Omnibox.hostOf(it.url) }
-                .take(8 - items.size)
-                .forEach { items.add(it.url to it.title) }
+        val seenDomains = HashSet<String>()
+        for (b in db.bookmarks().take(MAX_SHORTCUTS)) {
+            items.add(b.url to SiteNames.shortcutLabel(b.url, b.title))
+            Omnibox.hostOf(b.url)?.let { seenDomains.add(SiteNames.registrableDomain(it)) }
+        }
+        if (items.size < MAX_SHORTCUTS) {
+            db.topSitesByDomain(MAX_SHORTCUTS * 2)
+                .filter { SiteNames.registrableDomain(it.host) !in seenDomains }
+                .take(MAX_SHORTCUTS - items.size)
+                .forEach { items.add(it.url to it.name) }
         }
         shortcutsEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
-        for ((url, title) in items) {
+        for ((url, label) in items) {
             val tile = inflater.inflate(R.layout.item_home_tile, shortcuts, false)
+            val letter = tile.findViewById<TextView>(R.id.tileLetter)
             val glyph = SiteBrand.forUrl(url)
-            FaIcons.applyTo(tile.findViewById(R.id.tileLetter), glyph.codepoint, glyph.brands)
-            tile.findViewById<TextView>(R.id.tileLabel).text =
-                title.ifBlank { Omnibox.hostOf(url)?.removePrefix("www.") ?: url }
+            FaIcons.applyTo(letter, glyph.codepoint, glyph.brands)
+            Favicons.load(tile.findViewById(R.id.tileFavicon), url, fallback = letter)
+            tile.findViewById<TextView>(R.id.tileLabel).text = label
+            tile.contentDescription = label
             tile.setOnClickListener { callbacks.onHomeOpen(url) }
             val lp = GridLayout.LayoutParams(GridLayout.spec(GridLayout.UNDEFINED), GridLayout.spec(GridLayout.UNDEFINED, 1f))
             lp.width = 0
@@ -125,9 +139,11 @@ class HomeController(
         recentEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
         for (h in items) {
             val row = inflater.inflate(R.layout.item_home_row, recent, false)
+            val letter = row.findViewById<TextView>(R.id.rowLetter)
             val glyph = SiteBrand.forUrl(h.url)
-            FaIcons.applyTo(row.findViewById(R.id.rowLetter), glyph.codepoint, glyph.brands)
-            row.findViewById<TextView>(R.id.rowTitle).text = h.title.ifBlank { h.url }
+            FaIcons.applyTo(letter, glyph.codepoint, glyph.brands)
+            Favicons.load(row.findViewById(R.id.rowFavicon), h.url, fallback = letter)
+            row.findViewById<TextView>(R.id.rowTitle).text = h.title.ifBlank { Omnibox.displayUrl(h.url) }
             row.findViewById<TextView>(R.id.rowSubtitle).text =
                 "${Omnibox.hostOf(h.url)?.removePrefix("www.") ?: ""} · ${UiUtil.relativeTime(h.lastVisit)}"
             row.setOnClickListener { callbacks.onHomeOpen(h.url) }

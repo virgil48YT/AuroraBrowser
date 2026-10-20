@@ -61,6 +61,7 @@ class HistoryActivity : ListPageActivity() {
                     "${Omnibox.displayUrl(it.url)}\n${UiUtil.relativeTime(it.lastVisit)}",
                     R.drawable.ic_history,
                     payload = it,
+                    faviconUrl = it.url,
                 )
             },
         )

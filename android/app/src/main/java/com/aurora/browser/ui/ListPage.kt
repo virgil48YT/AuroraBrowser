@@ -28,6 +28,8 @@ data class Row(
     @DrawableRes val icon: Int,
     @DrawableRes val actionIcon: Int? = R.drawable.ic_delete,
     val payload: Any? = null,
+    /** Page URL whose site favicon should replace [icon] once available. */
+    val faviconUrl: String? = null,
 )
 
 class RowAdapter(
@@ -45,6 +47,7 @@ class RowAdapter(
 
     class Holder(v: View) : RecyclerView.ViewHolder(v) {
         val icon: ImageView = v.findViewById(R.id.rowIcon)
+        val favicon: ImageView = v.findViewById(R.id.rowFavicon)
         val title: TextView = v.findViewById(R.id.rowTitle)
         val subtitle: TextView = v.findViewById(R.id.rowSubtitle)
         val action: ImageButton = v.findViewById(R.id.rowAction)
@@ -58,6 +61,14 @@ class RowAdapter(
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val row = rows[position]
         holder.icon.setImageResource(row.icon)
+        val faviconUrl = row.faviconUrl
+        if (faviconUrl != null) {
+            Favicons.load(holder.favicon, faviconUrl, fallback = holder.icon)
+        } else {
+            holder.favicon.setTag(R.id.favicon_key, null)
+            holder.favicon.visibility = View.GONE
+            holder.icon.visibility = View.VISIBLE
+        }
         holder.title.text = row.title
         holder.subtitle.text = row.subtitle
         holder.subtitle.isVisible = row.subtitle.isNotEmpty()

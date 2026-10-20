@@ -72,7 +72,7 @@ class BookmarksActivity : ListPageActivity() {
     override fun reload() {
         val items = db.bookmarks(query)
         adapter.submit(
-            items.map { Row(it.id, it.title.ifBlank { it.url }, Omnibox.displayUrl(it.url), R.drawable.ic_bookmark, payload = it) },
+            items.map { Row(it.id, it.title.ifBlank { it.url }, Omnibox.displayUrl(it.url), R.drawable.ic_bookmark, payload = it, faviconUrl = it.url) },
         )
         showEmpty(items.isEmpty(), R.string.no_bookmarks)
     }

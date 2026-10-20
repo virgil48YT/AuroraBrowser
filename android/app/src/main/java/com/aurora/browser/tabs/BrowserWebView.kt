@@ -184,6 +184,10 @@ object BrowserWebView {
 
             override fun onReceivedIcon(view: WebView, icon: Bitmap?) {
                 tab.favicon = icon
+                // Feed the start page / history favicon cache (normal profile only).
+                if (!tab.incognito && icon != null) {
+                    com.aurora.browser.ui.Favicons.remember(view.context, view.url ?: tab.url, icon)
+                }
                 BrowserState.host?.onTabStateChanged(tab)
             }
 

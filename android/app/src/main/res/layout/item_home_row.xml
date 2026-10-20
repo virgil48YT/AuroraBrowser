@@ -9,14 +9,28 @@
     android:paddingTop="4dp"
     android:paddingBottom="4dp">
 
-    <TextView
-        android:id="@+id/rowLetter"
+    <FrameLayout
         android:layout_width="30dp"
         android:layout_height="30dp"
-        android:background="@drawable/bg_tile"
-        android:gravity="center"
-        android:textColor="@color/home_text"
-        android:textSize="13sp" />
+        android:background="@drawable/bg_tile">
+
+        <TextView
+            android:id="@+id/rowLetter"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:textColor="@color/home_text"
+            android:textSize="13sp" />
+
+        <ImageView
+            android:id="@+id/rowFavicon"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="0dp"

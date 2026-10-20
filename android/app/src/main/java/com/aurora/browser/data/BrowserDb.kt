@@ -4,10 +4,15 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.aurora.browser.core.Omnibox
+import com.aurora.browser.core.SiteNames
 import java.util.concurrent.Executors
 
 data class HistoryEntry(val id: Long, val url: String, val title: String, val visitCount: Int, val lastVisit: Long)
 data class Bookmark(val id: Long, val url: String, val title: String, val created: Long)
+
+/** A frequently visited site (all pages of one domain folded together). */
+data class TopSite(val url: String, val host: String, val name: String, val visits: Int, val lastVisit: Long)
 
 /**
  * History and bookmarks (SQLite). Incognito tabs never call into this class.
@@ -114,6 +119,42 @@ class BrowserDb private constructor(context: Context) :
                     while (c.moveToNext()) add(HistoryEntry(c.getLong(0), c.getString(1), c.getString(2), c.getInt(3), c.getLong(4)))
                 }
             }
+
+    /**
+     * Most-visited *sites* for the start page's shortcut tiles: history is
+     * folded per registrable domain (every DuckDuckGo search counts towards
+     * one "DuckDuckGo" tile), each tile points at the site's root rather than
+     * the last page visited there, and is named after the site, not a page
+     * title. Ranked by total visits, then by how recently the site was used.
+     */
+    fun topSitesByDomain(limit: Int): List<TopSite> {
+        val rows = readableDatabase.query(
+            "history", arrayOf("url", "visit_count", "last_visit"), null, null, null, null,
+            "last_visit DESC", "2000",
+        ).use { c ->
+            buildList { while (c.moveToNext()) add(Triple(c.getString(0), c.getInt(1), c.getLong(2))) }
+        }
+        class Acc(var visits: Int, var lastVisit: Long, val roots: HashMap<String, Int>)
+        val byDomain = LinkedHashMap<String, Acc>()
+        for ((url, visits, last) in rows) {
+            val root = SiteNames.siteRoot(url) ?: continue
+            val host = Omnibox.hostOf(url) ?: continue
+            val domain = SiteNames.registrableDomain(host)
+            val acc = byDomain.getOrPut(domain) { Acc(0, 0L, HashMap()) }
+            acc.visits += visits
+            acc.lastVisit = maxOf(acc.lastVisit, last)
+            // The host the user actually lands on most within this domain
+            // (e.g. www.example.com rather than login.example.com).
+            acc.roots[root] = (acc.roots[root] ?: 0) + visits
+        }
+        return byDomain.entries
+            .sortedWith(compareByDescending<Map.Entry<String, Acc>> { it.value.visits }.thenByDescending { it.value.lastVisit })
+            .take(limit)
+            .map { (domain, acc) ->
+                val root = acc.roots.maxByOrNull { it.value }!!.key
+                TopSite(root, Omnibox.hostOf(root) ?: domain, SiteNames.forHost(domain), acc.visits, acc.lastVisit)
+            }
+    }
 
     fun deleteHistory(id: Long) = writer.execute { writableDatabase.delete("history", "id = ?", arrayOf(id.toString())) }
 

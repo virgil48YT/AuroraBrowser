@@ -9,11 +9,25 @@
     android:paddingStart="16dp"
     android:paddingEnd="4dp">
 
-    <ImageView
-        android:id="@+id/rowIcon"
+    <FrameLayout
         android:layout_width="22dp"
-        android:layout_height="22dp"
-        android:importantForAccessibility="no" />
+        android:layout_height="22dp">
+
+        <ImageView
+            android:id="@+id/rowIcon"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no" />
+
+        <!-- Site favicon (History / Bookmarks); replaces rowIcon once loaded. -->
+        <ImageView
+            android:id="@+id/rowFavicon"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="0dp"

@@ -140,7 +140,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
             .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
             .setPositiveButton(R.string.clear) { _, _ ->
                 val ctx = requireContext()
-                if (checked[0]) BrowserDb.get(ctx).clearHistory()
+                if (checked[0]) {
+                    BrowserDb.get(ctx).clearHistory()
+                    // Site icons reveal which sites were visited; drop them with history.
+                    Favicons.clear(ctx)
+                }
                 if (checked[1]) {
                     CookieManager.getInstance().removeAllCookies(null)
                     CookieManager.getInstance().flush()
