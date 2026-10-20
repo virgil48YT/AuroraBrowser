@@ -135,6 +135,7 @@ target_sources(aurora_core
         src/adblock/AdblockEngine.cpp
         src/adblock/AdblockService.cpp
         src/adblock/ListUpdater.cpp
+        src/tor/TorBundle.cpp
 )
 target_include_directories(aurora_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Vendored QR encoder (Project Nayuki, MIT): third-party code, so it is built

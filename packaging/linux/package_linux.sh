@@ -52,6 +52,13 @@ install -m 0755 "$EXE" "${APPDIR}/usr/bin/aurora_browser"
 cp -a "${CEF}/Release/." "${APPDIR}/usr/bin/"
 cp -a "${CEF}/Resources/." "${APPDIR}/usr/bin/"
 rm -f "${APPDIR}/usr/bin/"*.a
+# Built-in Tor (scripts/fetch_tor.sh): usr/bin/tor/tor/{tor,lib*.so.*} and
+# usr/bin/tor/data/geoip*, found by ui/TorLauncher next to the browser. tor's
+# own libraries stay in that sub-directory (TorLauncher sets
+# LD_LIBRARY_PATH for it), so they never shadow the browser's.
+if [ -d "${BUILD}/bin/tor" ]; then
+    cp -a "${BUILD}/bin/tor" "${APPDIR}/usr/bin/tor"
+fi
 install -m 0644 "${HERE}/aurora.desktop" "${APPDIR}/usr/share/applications/aurora.desktop"
 install -m 0644 "${ROOT}/assets/icons/aurora_256.png" \
     "${APPDIR}/usr/share/icons/hicolor/256x256/apps/aurora.png"

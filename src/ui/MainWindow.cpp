@@ -32,6 +32,7 @@
 #include <QStandardPaths>
 #include <QTcpSocket>
 #include <QDateTime>
+#include <QProgressDialog>
 #include <cstdint>
 #include <atomic>
 #include <unordered_map>
@@ -209,6 +210,7 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "settings/SiteNightModeStore.hpp"
 #include "settings/SiteZoomStore.hpp"
 #include "ui/QrShareDialog.hpp"
+#include "ui/TorLauncher.hpp"
 #include "ui/ScreenshotDialogs.hpp"
 #include "ui/pages/ReaderPage.hpp"
 #include "ui/BookmarkBar.hpp"
@@ -296,14 +298,34 @@ private:
 #endif
 // --- Tor incognito ----------------------------------------------------------
 
-// The SOCKS5 proxy for Tor windows: AURORA_TOR_PROXY for one run, else the
-// tor.proxy preference, else a local Tor daemon's default port. Chromium's
-// spelling is socks5:// (it always resolves host names through a SOCKS5
-// proxy), so the curl-style socks5h:// is accepted and normalized.
-std::string tor_proxy_setting(const settings::Settings* prefs) {
+// A Tor daemon the user runs themselves: AURORA_TOR_PROXY for one run, else
+// the tor.proxy preference. Empty when neither is set.
+std::string external_tor_proxy(const settings::Settings* prefs) {
     std::string proxy = qEnvironmentVariable("AURORA_TOR_PROXY").trimmed().toStdString();
     if (proxy.empty() && prefs)
         proxy = prefs->get_string(settings::PrefKeys::kTorProxy, "");
+    return proxy;
+}
+
+// Use the Tor that ships with Aurora (unless the user pointed Tor windows at
+// their own daemon, or switched the built-in one off in Settings > Privacy).
+bool use_bundled_tor(const settings::Settings* prefs) {
+    if (!external_tor_proxy(prefs).empty()) return false;
+    if (prefs && !prefs->get_bool(settings::PrefKeys::kTorUseBundled,
+                                  settings::PrefDefaults::kTorUseBundled)) {
+        return false;
+    }
+    return TorLauncher::instance().has_bundled_tor();
+}
+
+// The SOCKS5 proxy for Tor windows: an explicitly configured daemon
+// (AURORA_TOR_PROXY / tor.proxy), else the running built-in Tor, else a
+// local Tor daemon's default port. Chromium's spelling is socks5:// (it
+// always resolves host names through a SOCKS5 proxy), so the curl-style
+// socks5h:// is accepted and normalized.
+std::string tor_proxy_setting(const settings::Settings* prefs) {
+    std::string proxy = external_tor_proxy(prefs);
+    if (proxy.empty() && use_bundled_tor(prefs)) proxy = TorLauncher::instance().proxy();
     if (proxy.empty()) proxy = "socks5://127.0.0.1:9050";
     if (proxy.rfind("socks5h://", 0) == 0) proxy = "socks5://" + proxy.substr(10);
     return proxy;
@@ -4939,12 +4961,58 @@ void MainWindow::keyPressEvent(QKeyEvent* e) {
 // --- Tor incognito windows ------------------------------------------------------
 
 void MainWindow::open_tor_window() {
+    // Built-in Tor (like Brave): start the bundled tor on first use, show its
+    // bootstrap progress, and open the window once a circuit is ready.
+    if (use_bundled_tor(services_.prefs)) {
+        TorLauncher& tor = TorLauncher::instance();
+        if (tor.state() == TorLauncher::State::Ready) {
+            spawn_tor_window();
+            return;
+        }
+        auto* dlg = new QProgressDialog(QStringLiteral("Connecting to the Tor network…"),
+                                        QStringLiteral("Cancel"), 0, 100, this);
+        dlg->setWindowTitle(QStringLiteral("Tor"));
+        dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+        dlg->setAutoClose(false);
+        dlg->setAutoReset(false);
+        dlg->setMinimumDuration(0);
+        dlg->setValue(tor.progress());
+        const QPointer<MainWindow> guard(this);
+        connect(&tor, &TorLauncher::progress_changed, dlg, [dlg](int percent, const QString& summary) {
+            dlg->setValue(percent);
+            dlg->setLabelText(QStringLiteral("Connecting to the Tor network… %1%\n%2")
+                                  .arg(percent).arg(summary));
+        });
+        connect(&tor, &TorLauncher::ready, dlg, [dlg, guard] {
+            dlg->close();
+            if (guard) guard->spawn_tor_window();
+        });
+        connect(&tor, &TorLauncher::failed, dlg, [dlg, guard](const QString& why) {
+            dlg->close();
+            if (!guard) return;
+            QMessageBox box(QMessageBox::Warning, QStringLiteral("Tor could not connect"),
+                            QStringLiteral("Aurora's built-in Tor could not connect."),
+                            QMessageBox::Ok, guard);
+            box.setInformativeText(why + QStringLiteral(
+                "\n\nNo page was loaded outside Tor. You can retry, or point Tor "
+                "windows at your own Tor daemon with AURORA_TOR_PROXY."));
+            box.exec();
+        });
+        // Cancel only closes the dialog: tor keeps bootstrapping in the
+        // background so the next "New Tor window" opens instantly.
+        connect(dlg, &QProgressDialog::canceled, dlg, &QWidget::close);
+        dlg->show();
+        tor.start();
+        return;
+    }
+
     const std::string proxy = tor_proxy_setting(services_.prefs);
     QString why;
     if (!probe_socks5(proxy, &why)) {
         QMessageBox box(QMessageBox::Warning, QStringLiteral("Tor is not running"),
-                        QStringLiteral("A Tor incognito window needs a Tor daemon that "
-                                       "you run yourself; Aurora does not include Tor."),
+                        QStringLiteral("This build of Aurora does not include the built-in "
+                                       "Tor, so a Tor incognito window needs a Tor daemon "
+                                       "that you run yourself."),
                         QMessageBox::Ok, this);
         box.setInformativeText(
             why + QStringLiteral(
@@ -4958,6 +5026,10 @@ void MainWindow::open_tor_window() {
         box.exec();
         return;
     }
+    spawn_tor_window();
+}
+
+void MainWindow::spawn_tor_window() {
     auto* w = new MainWindow(services_, /*parent=*/nullptr,
                              /*is_incognito=*/true, /*is_tor=*/true);
     w->setAttribute(Qt::WA_DeleteOnClose, true);

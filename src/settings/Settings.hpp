@@ -38,6 +38,8 @@ struct PrefDefaults {
     static constexpr bool kClearOnExitDownloads = false;
     static constexpr bool kCertAudit = true;
     static constexpr bool kRefererTrim = true;
+    // Tor windows run on the Tor bundled with Aurora (when the build ships it).
+    static constexpr bool kTorUseBundled = true;
     // The settings page has always shown third-party cookie blocking as on
     // for a fresh profile; the engine now enforces exactly that default.
     static constexpr bool kBlockThirdPartyCookies = true;
@@ -131,6 +133,9 @@ struct PrefKeys {
     // Tor incognito windows: the SOCKS5 proxy of the user's own Tor daemon.
     // AURORA_TOR_PROXY overrides it for a single run.
     static constexpr std::string_view kTorProxy = "tor.proxy";
+    // Tor windows use the tor that ships with Aurora (ui/TorLauncher) unless
+    // this is off or kTorProxy / AURORA_TOR_PROXY names another daemon.
+    static constexpr std::string_view kTorUseBundled = "tor.use_bundled";
 };
 
 // The three Startup-card choices. Home opens one aurora://home tab, Continue

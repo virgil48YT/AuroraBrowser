@@ -56,6 +56,12 @@ jobs:
         env:
           PLATFORM: linux64
 
+      - name: Fetch built-in Tor (Tor Expert Bundle)
+        # Best effort: a build without it still works; Tor windows then need
+        # the user's own Tor daemon instead of the bundled one.
+        continue-on-error: true
+        run: bash scripts/fetch_tor.sh linux64
+
       - name: Configure with CEF
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release

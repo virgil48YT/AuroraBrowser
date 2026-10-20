@@ -15,3 +15,6 @@ compile_commands.json
 /build_b1/
 /build_diag/
 build*/
+
+# Built-in Tor bundles fetched by scripts/fetch_tor.sh
+third_party/tor/

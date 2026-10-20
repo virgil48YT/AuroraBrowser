@@ -497,10 +497,14 @@ private:
     // Spawn a private (incognito) sibling window: same visual chrome, no
     // writes to the regular profile. See core::IncognitoPolicy.
     void open_incognito_window();
-    // File > New Tor Incognito Window (Ctrl+Alt+Shift+N). Checks that a SOCKS5
-    // server answers at the configured Tor proxy first and explains how to
-    // start Tor when it does not; Aurora never bundles or launches Tor.
+    // File > New Tor Incognito Window (Ctrl+Alt+Shift+N). Like Brave, uses the
+    // Tor that ships with Aurora: starts the bundled tor (ui/TorLauncher) on
+    // first use and opens the window once it has bootstrapped. Builds without
+    // the bundle (or with AURORA_TOR_PROXY / tor.proxy set) use the user's own
+    // daemon, checked with a SOCKS5 probe first.
     void open_tor_window();
+    // Opens the Tor window itself once a Tor proxy is known to be usable.
+    void spawn_tor_window();
     // Reader mode (Ctrl+Alt+R): extract the active page's article and show it
     // in a new aurora://reader tab.
     void on_reader_mode();

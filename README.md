@@ -112,17 +112,29 @@ accounts.
 
 A Tor incognito window is an incognito window (same in-memory profile, nothing
 written to history, downloads list, session or settings) whose traffic goes
-through **a Tor daemon you run yourself**. Aurora does not include, download or
-start Tor.
+through Tor. Like Brave's "New Private Window with Tor", **Tor comes with
+Aurora**: release packages ship the Tor Project's Tor Expert Bundle next to the
+browser (`tor/`), and Aurora starts it on demand — nothing to install.
 
-1. Install and start Tor: `sudo apt install tor && sudo systemctl start tor`
-   (Linux), `brew install tor && brew services start tor` (macOS), or the Tor
-   Expert Bundle on Windows. If Tor Browser is running instead, its proxy is on
-   port 9150: start Aurora with `AURORA_TOR_PROXY=socks5://127.0.0.1:9150`.
-2. Browser menu > **New Tor Incognito Window** (Ctrl+Alt+Shift+N). Aurora
-   first checks that a SOCKS5 server answers at the proxy address (default
-   `socks5://127.0.0.1:9050`, or the `tor.proxy` preference) and explains how
-   to start Tor if it does not.
+1. Browser menu > **New Tor Incognito Window** (Ctrl+Alt+Shift+N). The first
+   time, Aurora launches its built-in tor (client only, SOCKS on a free
+   loopback port, state in the profile's `tor/` folder) and shows the
+   bootstrap progress; the window opens once tor reports 100%. Later Tor
+   windows open instantly. tor exits with Aurora (even after a crash, via
+   `__OwningControllerProcess`).
+2. Settings > Privacy > **Use Aurora's built-in Tor for Tor windows** turns
+   the bundled tor off. Setting `AURORA_TOR_PROXY` (one run) or the
+   `tor.proxy` preference also makes Tor windows use your own daemon (e.g.
+   `socks5://127.0.0.1:9150` for a running Tor Browser). Without the bundle
+   or with it turned off, Aurora checks that a SOCKS5 server answers at the
+   proxy address (default `socks5://127.0.0.1:9050`) and explains how to
+   start Tor if it does not.
+
+Building from source: `bash scripts/fetch_tor.sh` downloads the Expert Bundle
+for this platform into `third_party/tor/<platform>` (SHA-256 checked against
+the release's `sha256sums-signed-build.txt`), and CMake copies it next to the
+browser (`Contents/Resources/tor` on macOS). Override the release with
+`TOR_BUNDLE_VERSION`, the location with `-DAURORA_TOR_DIR=...`.
 
 The window has its own pink/purple theme and a "Tor Incognito" badge. Its
 proxy is scoped to that window's private request context, so normal and
@@ -140,7 +152,7 @@ anonymity matters:
 
 - It is not Tor Browser: there is no fingerprinting resistance (window size,
   fonts, user agent, canvas/WebGL are those of a normal Chromium), no
-  per-site circuit isolation, and no security slider. Sites can still
+  first-party circuit isolation, and no security slider. Sites can still
   recognize the browser across visits within the window.
 - Tor exit nodes see (and can tamper with) unencrypted traffic. Use HTTPS
   (Settings > HTTPS-only mode); the exit node still learns which sites you

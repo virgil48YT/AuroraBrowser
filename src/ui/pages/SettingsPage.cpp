@@ -780,6 +780,9 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
         {"Trim Referer headers to the referring origin",
          "Other sites see where you came from, not the exact page",
          settings::PrefKeys::kRefererTrim, settings::PrefDefaults::kRefererTrim},
+        {"Use Aurora's built-in Tor for Tor windows",
+         "Starts the Tor that ships with Aurora; no separate Tor install needed",
+         settings::PrefKeys::kTorUseBundled, settings::PrefDefaults::kTorUseBundled},
     };
     for (const auto& row : privacy_rows) {
         add_divider(container, privacy_body);

@@ -36,6 +36,7 @@ set(AURORA_BROWSER_SOURCES
     ../ui/ShortcutDialog.cpp
     ../ui/WeatherService.cpp
     ../ui/FilterListUpdater.cpp
+    ../ui/TorLauncher.cpp
     ../ui/pages/InternalPageWidget.cpp
     ../ui/pages/HistoryPage.cpp
     ../ui/pages/HistoryWidgets.cpp
@@ -217,4 +218,31 @@ if(APPLE AND AURORA_ENABLE_CEF)
                     "${AURORA_BUNDLE_FRAMEWORKS}/${_helper_name}.app"
             VERBATIM)
     endforeach()
+endif()
+
+# Built-in Tor (Brave-style "Private window with Tor" without a separate Tor
+# install): when the Tor Expert Bundle has been fetched for this platform
+# (scripts/fetch_tor.sh -> third_party/tor/<platform>), copy it next to the
+# browser as tor/ — tor/tor/<tor binary + libs>, tor/data/geoip* — where
+# ui/TorLauncher (via tor::find_bundled_tor) finds it. On macOS it goes to
+# Contents/Resources/tor so the bundle's code-signing layout stays valid.
+# Builds without it still work; Tor windows then need the user's own daemon.
+set(AURORA_TOR_DIR "${CMAKE_SOURCE_DIR}/third_party/tor/${AURORA_PLATFORM}"
+    CACHE PATH "Tor Expert Bundle to ship as Aurora's built-in Tor (see scripts/fetch_tor.sh)")
+if(EXISTS "${AURORA_TOR_DIR}/tor")
+    get_target_property(_aurora_is_bundle aurora_browser MACOSX_BUNDLE)
+    if(APPLE AND _aurora_is_bundle)
+        set(AURORA_TOR_DEST "$<TARGET_BUNDLE_CONTENT_DIR:aurora_browser>/Resources/tor")
+    else()
+        set(AURORA_TOR_DEST "$<TARGET_FILE_DIR:aurora_browser>/tor")
+    endif()
+    add_custom_command(TARGET aurora_browser POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${AURORA_TOR_DEST}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${AURORA_TOR_DIR}/tor" "${AURORA_TOR_DEST}/tor"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${AURORA_TOR_DIR}/data" "${AURORA_TOR_DEST}/data"
+        COMMENT "Bundling the built-in Tor from ${AURORA_TOR_DIR}"
+        VERBATIM)
+    message(STATUS "  Built-in Tor:   ${AURORA_TOR_DIR}")
+else()
+    message(STATUS "  Built-in Tor:   not bundled (run scripts/fetch_tor.sh to include it)")
 endif()
