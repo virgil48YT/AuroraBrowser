@@ -5,6 +5,7 @@
     <item android:id="@+id/action_reload" android:title="@string/reload" />
     <item android:id="@+id/action_new_tab" android:title="@string/new_tab" />
     <item android:id="@+id/action_new_incognito" android:title="@string/new_incognito_tab" />
+    <item android:id="@+id/action_new_tor_tab" android:title="@string/new_tor_tab" />
     <item android:id="@+id/action_bookmark" android:title="@string/bookmark_page" />
     <item android:id="@+id/action_bookmarks" android:title="@string/bookmarks" />
     <item android:id="@+id/action_history" android:title="@string/history" />

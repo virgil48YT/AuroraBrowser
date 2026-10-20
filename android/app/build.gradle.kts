@@ -107,5 +107,14 @@ dependencies {
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("androidx.webkit:webkit:1.12.1")
 
+    // Built-in Tor (like Brave's private windows with Tor): Guardian Project's
+    // tor-android ships libtor.so for every ABI plus an in-process TorService,
+    // so no Orbot or other external setup is needed. 0.4.8.17.2 is the newest
+    // Maven Central build that does not require a newer Kotlin stdlib than the
+    // Kotlin 2.0 toolchain used here.
+    implementation("info.guardianproject:tor-android:0.4.8.17.2")
+    implementation("info.guardianproject:jtorctl:0.4.5.7")
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+
     testImplementation("junit:junit:4.13.2")
 }

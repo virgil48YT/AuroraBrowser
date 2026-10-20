@@ -127,4 +127,29 @@
     <string name="clear_data_cache">Cached images and files</string>
     <string name="filters_saved">Filters saved (%1$d rules active)</string>
     <string name="custom_filters_hint">||ads.example.com^\nexample.com##.sponsored</string>
+
+    <!-- Built-in Tor -->
+    <string name="tor">Tor</string>
+    <string name="pref_cat_tor">Tor</string>
+    <string name="pref_tor">Browse through Tor</string>
+    <string name="pref_tor_summary">Uses the Tor network built into Aurora (no extra app needed). All tabs are routed through Tor while this is on, history is not saved, and pages wait until a Tor circuit is ready.</string>
+    <string name="pref_tor_new_identity">New Tor circuit</string>
+    <string name="pref_tor_new_identity_summary">Switch to fresh Tor circuits for new connections</string>
+    <string name="new_tor_tab">New private tab with Tor</string>
+    <string name="tor_connecting">Connecting to Tor…</string>
+    <string name="tor_reconnecting">Reconnecting to Tor…</string>
+    <string name="tor_connecting_progress">Connecting to Tor… %1$d%% %2$s</string>
+    <string name="tor_connected">Connected to the Tor network</string>
+    <string name="tor_off">Tor is off</string>
+    <string name="tor_failed">Tor could not start. Pages will not load until Tor is turned off or connects.</string>
+    <string name="tor_unsupported">This device\'s WebView is too old to route pages through Tor (needs proxy override support). Update Android System WebView.</string>
+    <string name="tor_turn_off">Turn off Tor</string>
+    <string name="tor_turn_on">Turn on Tor</string>
+    <string name="tor_new_identity_done">New Tor circuits will be used for new connections</string>
+    <string name="tor_new_identity_failed">Tor is not connected yet</string>
+    <string name="tor_hint">Search with Tor or type URL</string>
+    <string name="tor_download_title">Download outside Tor?</string>
+    <string name="tor_download_message">Downloads are handled by the Android download manager, which does not use Tor. The site will see your real IP address.</string>
+    <string name="tor_download_anyway">Download anyway</string>
+    <string name="tor_status_desc">Tor status</string>
 </resources>

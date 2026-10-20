@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Onion mark for the built-in Tor indicator (tinted from code). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- sprout -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M12,6.2C12.2,4.4 13.3,3 15.4,2.2"
+        android:strokeWidth="1.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round" />
+    <!-- outer layer -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M12,6.4C16.4,6.4 19.6,9.6 19.6,14C19.6,18.4 16.4,21.6 12,21.6C7.6,21.6 4.4,18.4 4.4,14C4.4,9.6 7.6,6.4 12,6.4Z"
+        android:strokeWidth="1.6"
+        android:strokeColor="#FFFFFFFF" />
+    <!-- middle layer -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M12,9.2C14.7,9.2 16.6,11.3 16.6,14C16.6,16.7 14.7,18.8 12,18.8C9.3,18.8 7.4,16.7 7.4,14C7.4,11.3 9.3,9.2 12,9.2Z"
+        android:strokeWidth="1.4"
+        android:strokeColor="#FFFFFFFF" />
+    <!-- core -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,11.6C13.3,11.6 14.2,12.7 14.2,14C14.2,15.3 13.3,16.4 12,16.4C10.7,16.4 9.8,15.3 9.8,14C9.8,12.7 10.7,11.6 12,11.6Z" />
+</vector>

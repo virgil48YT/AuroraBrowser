@@ -20,6 +20,7 @@ import com.aurora.browser.data.Prefs
 import com.aurora.browser.search.SearchEngines
 import com.aurora.browser.tabs.BrowserState
 import com.aurora.browser.tabs.IncognitoProfile
+import com.aurora.browser.tor.TorManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 class SettingsActivity : AppCompatActivity() {
@@ -64,6 +65,27 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
         findPreference<Preference>("clear_data")?.setOnPreferenceClickListener {
             clearBrowsingData()
+            true
+        }
+        findPreference<Preference>(Prefs.KEY_TOR)?.setOnPreferenceChangeListener { _, value ->
+            val on = value as Boolean
+            if (on && !TorManager.isSupported()) {
+                Toast.makeText(requireContext(), R.string.tor_unsupported, Toast.LENGTH_LONG).show()
+                return@setOnPreferenceChangeListener false
+            }
+            TorManager.setEnabled(requireContext(), on)
+            true
+        }
+        findPreference<Preference>(Prefs.KEY_TOR_NEW_IDENTITY)?.setOnPreferenceClickListener {
+            TorManager.newIdentity { ok ->
+                if (isAdded) {
+                    Toast.makeText(
+                        requireContext(),
+                        if (ok) R.string.tor_new_identity_done else R.string.tor_new_identity_failed,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
             true
         }
         val restartNote = Preference.OnPreferenceChangeListener { _, _ ->

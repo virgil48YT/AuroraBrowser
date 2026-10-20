@@ -41,6 +41,11 @@ class Prefs(context: Context) {
     val showSuggestions: Boolean get() = raw.getBoolean(KEY_SUGGESTIONS, true)
     val desktopMode: Boolean get() = raw.getBoolean(KEY_DESKTOP_MODE, false)
 
+    /** Route all browsing through the bundled Tor (see tor/TorManager). */
+    var torEnabled: Boolean
+        get() = raw.getBoolean(KEY_TOR, false)
+        set(v) = raw.edit { putBoolean(KEY_TOR, v) }
+
     var sessionJson: String
         get() = raw.getString(KEY_SESSION, "") ?: ""
         set(v) = raw.edit { putString(KEY_SESSION, v) }
@@ -76,5 +81,7 @@ class Prefs(context: Context) {
         const val KEY_DESKTOP_MODE = "desktop_mode"
         const val KEY_SESSION = "session_tabs"
         const val KEY_TOTAL_BLOCKED = "total_blocked"
+        const val KEY_TOR = "tor_enabled"
+        const val KEY_TOR_NEW_IDENTITY = "tor_new_identity"
     }
 }

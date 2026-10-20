@@ -43,6 +43,9 @@ class Tab(
     /** True when the start page was opened over a page (Back returns to it). */
     var homeDetour: Boolean = false
 
+    /** A load was held back while Tor was still connecting; reload when ready. */
+    @Volatile var waitingForTor: Boolean = false
+
     /** Per-tab "request desktop site". */
     var desktopMode: Boolean = false
 

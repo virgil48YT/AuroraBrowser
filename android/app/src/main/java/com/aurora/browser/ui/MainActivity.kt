@@ -63,6 +63,7 @@ import com.aurora.browser.tabs.BrowserState
 import com.aurora.browser.tabs.BrowserWebView
 import com.aurora.browser.tabs.IncognitoProfile
 import com.aurora.browser.tabs.Tab
+import com.aurora.browser.tor.TorManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import com.google.android.material.materialswitch.MaterialSwitch
@@ -101,6 +102,7 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
     private lateinit var shieldBadge: TextView
     private lateinit var tabCount: TextView
     private lateinit var tabIcon: FaIconView
+    private lateinit var torBadge: ImageView
     private lateinit var progress: LinearProgressIndicator
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var webHolder: FrameLayout
@@ -151,6 +153,7 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
         setupSwitcher()
         home = HomeController(homeView, db, adblock, this)
         onBackPressedDispatcher.addCallback(this, backCallback)
+        TorManager.addListener(torListener)
 
         if (tabs.tabs.isNotEmpty()) {
             // Activity was recreated (e.g. theme change): re-home the live WebViews.
@@ -190,6 +193,7 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
 
     override fun onDestroy() {
         super.onDestroy()
+        TorManager.removeListener(torListener)
         if (BrowserState.host === this) BrowserState.host = null
         if (isFinishing && !isChangingConfigurations) {
             val hadIncognito = tabs.incognitoTabs().isNotEmpty()
@@ -232,6 +236,7 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
         shieldBadge = findViewById(R.id.shieldBadge)
         tabCount = findViewById(R.id.tabCount)
         tabIcon = findViewById(R.id.tabIcon)
+        torBadge = findViewById(R.id.torBadge)
         progress = findViewById(R.id.progress)
         swipeRefresh = findViewById(R.id.swipeRefresh)
         webHolder = findViewById(R.id.webHolder)
@@ -272,6 +277,7 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
         }
         findViewById<View>(R.id.btnShield).setOnClickListener { showShields() }
         btnClearOmnibox.setOnClickListener { omnibox.setText("") }
+        torBadge.setOnClickListener { showTorStatus() }
 
         swipeRefresh.setColorSchemeColors(
             ContextCompat.getColor(this, R.color.home_cyan),
@@ -650,7 +656,14 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
         omniboxFrame.backgroundTintList =
             if (incognito) ColorStateList.valueOf(ContextCompat.getColor(this, R.color.incognito_omnibox)) else null
         omnibox.setTextColor(textColor)
-        omnibox.setHint(if (incognito) R.string.omnibox_hint_incognito else R.string.omnibox_hint)
+        omnibox.setHint(
+            when {
+                TorManager.enabled -> R.string.tor_hint
+                incognito -> R.string.omnibox_hint_incognito
+                else -> R.string.omnibox_hint
+            },
+        )
+        updateTorBadge()
         btnHome.setTextColor(iconColor)
         btnMenu.setTextColor(iconColor)
         btnClearOmnibox.setTextColor(iconColor)
@@ -715,7 +728,7 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
     override fun onTabStateChanged(tab: Tab) {
         if (tab !== tabs.active) return
         if (tab.showingHome != homeView.isVisible) render() else updateToolbar()
-        if (!tab.incognito && !tab.showingHome && tab.title.isNotBlank()) db.updateTitle(tab.url, tab.title)
+        if (!tab.incognito && !TorManager.enabled && !tab.showingHome && tab.title.isNotBlank()) db.updateTitle(tab.url, tab.title)
     }
 
     override fun onTabProgress(tab: Tab) {
@@ -730,7 +743,8 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
 
     override fun onPageFinished(tab: Tab, url: String) {
         if (tab === tabs.active) updateToolbar()
-        if (!tab.incognito && prefs.saveHistory && Omnibox.isWebUrl(url)) {
+        // Like Brave's Tor windows, nothing browsed over Tor is written to history.
+        if (!tab.incognito && !TorManager.enabled && prefs.saveHistory && Omnibox.isWebUrl(url)) {
             db.recordVisit(url, tab.title)
         }
     }
@@ -784,6 +798,23 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
     }
 
     override fun startDownload(tab: Tab, url: String, userAgent: String, contentDisposition: String, mimeType: String) {
+        if (TorManager.enabled && !url.startsWith("data:", ignoreCase = true)) {
+            // DownloadManager runs in another process and ignores the WebView
+            // proxy, so a download would leave Tor. Ask first.
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.tor_download_title)
+                .setMessage(R.string.tor_download_message)
+                .setPositiveButton(R.string.tor_download_anyway) { _, _ ->
+                    doStartDownload(tab, url, userAgent, contentDisposition, mimeType)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+            return
+        }
+        doStartDownload(tab, url, userAgent, contentDisposition, mimeType)
+    }
+
+    private fun doStartDownload(tab: Tab, url: String, userAgent: String, contentDisposition: String, mimeType: String) {
         val cookies = if (tab.incognito) IncognitoProfile.cookieManager() else CookieManager.getInstance()
         Downloads.start(this, url, userAgent, contentDisposition, mimeType, cookies)
         // A download opened via target=_blank leaves an empty popup tab behind; close it.
@@ -873,6 +904,7 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
                 R.id.action_reload -> if (tab.isLoading) wv?.stopLoading() else wv?.reload()
                 R.id.action_new_tab -> activateTab(tabs.create(false, afterActive = true))
                 R.id.action_new_incognito -> activateTab(tabs.create(true, afterActive = true))
+                R.id.action_new_tor_tab -> openTorTab()
                 R.id.action_bookmark -> toggleBookmark(tab)
                 R.id.action_bookmarks -> startActivity(Intent(this, BookmarksActivity::class.java))
                 R.id.action_history -> startActivity(Intent(this, HistoryActivity::class.java))
@@ -971,6 +1003,78 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
             .setView(view)
             .setPositiveButton(R.string.close, null)
             .show()
+    }
+
+    // --- Tor --------------------------------------------------------------------
+
+    private val torListener: (TorManager.Status) -> Unit = { status ->
+        if (!isFinishing && !isDestroyed) {
+            updateToolbar()
+            if (status.state == TorManager.State.ON) reloadTabsWaitingForTor()
+            if (status.state == TorManager.State.OFF) reloadTabsWaitingForTor()
+            if (tabs.active?.showingHome == true) home.bind(tabs.active!!.incognito)
+        }
+    }
+
+    private fun reloadTabsWaitingForTor() {
+        for (t in tabs.tabs) {
+            if (!t.waitingForTor) continue
+            t.waitingForTor = false
+            if (!t.showingHome) t.webView?.reload()
+        }
+    }
+
+    private fun updateTorBadge() {
+        val status = TorManager.status
+        torBadge.isVisible = TorManager.enabled || status.state == TorManager.State.ERROR
+        val color = when (status.state) {
+            TorManager.State.ON -> R.color.home_purple
+            TorManager.State.ERROR -> R.color.chrome_magenta
+            else -> R.color.chrome_muted
+        }
+        torBadge.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(this, color))
+        torBadge.alpha = if (status.state == TorManager.State.STARTING) 0.6f else 1f
+    }
+
+    /** Brave-style "New private tab with Tor": Tor mode on + an incognito tab. */
+    private fun openTorTab() {
+        if (!TorManager.enabled) {
+            if (!TorManager.isSupported()) {
+                Toast.makeText(this, R.string.tor_unsupported, Toast.LENGTH_LONG).show()
+                return
+            }
+            TorManager.setEnabled(this, true)
+        }
+        activateTab(tabs.create(true, afterActive = true))
+    }
+
+    private fun showTorStatus() {
+        val status = TorManager.status
+        val message = when (status.state) {
+            TorManager.State.OFF -> getString(R.string.tor_off)
+            else -> status.summary.ifBlank { getString(R.string.tor_connecting) }
+        }
+        val builder = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.tor)
+            .setMessage(message)
+            .setNegativeButton(R.string.close, null)
+        if (TorManager.enabled) {
+            builder.setPositiveButton(R.string.tor_turn_off) { _, _ -> TorManager.setEnabled(this, false) }
+            if (TorManager.ready) {
+                builder.setNeutralButton(R.string.pref_tor_new_identity) { _, _ ->
+                    TorManager.newIdentity { ok ->
+                        Toast.makeText(
+                            this,
+                            if (ok) R.string.tor_new_identity_done else R.string.tor_new_identity_failed,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            }
+        } else {
+            builder.setPositiveButton(R.string.tor_turn_on) { _, _ -> TorManager.setEnabled(this, true) }
+        }
+        builder.show()
     }
 
     // --- Back navigation ---------------------------------------------------------

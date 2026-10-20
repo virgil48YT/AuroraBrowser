@@ -75,6 +75,21 @@
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="@string/pref_cat_tor" app:iconSpaceReserved="false">
+        <SwitchPreferenceCompat
+            app:key="tor_enabled"
+            app:title="@string/pref_tor"
+            app:summary="@string/pref_tor_summary"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false" />
+        <Preference
+            app:key="tor_new_identity"
+            app:title="@string/pref_tor_new_identity"
+            app:summary="@string/pref_tor_new_identity_summary"
+            app:dependency="tor_enabled"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="@string/pref_cat_content" app:iconSpaceReserved="false">
         <SwitchPreferenceCompat
             app:key="javascript_enabled"

@@ -37,6 +37,7 @@ WebView.
 | Downloads | System `DownloadManager` (cookies and user agent forwarded), downloads page |
 | Settings | Search engine, theme (system/light/dark), session restore, suggestions, Shields, custom filters, third-party cookies, HTTPS-only, JavaScript, desktop site, clear browsing data |
 | Start page | `assets/brand/aurora_bg.jpg` backdrop, Aurora mark and wordmark, glowing search pill and glow cards (shortcuts, recently visited, quick actions) like the desktop home page |
+| Built-in Tor | Like Brave's private windows with Tor: the tor daemon ships inside the APK (Guardian Project `tor-android`, `libtor.so` for every ABI) and runs in-process. **Settings › Tor › Browse through Tor** or **⋮ › New private tab with Tor** routes WebView traffic through tor's SOCKS5 port (`tor/TorManager.kt`); host names are resolved by Tor, so `.onion` sites work. Fail-closed: pages are held on a "Connecting to Tor…" screen until a circuit is ready. History is not saved in Tor mode, the favicon fetcher stays offline, downloads ask first (DownloadManager does not use Tor), and an onion badge in the omnibox shows status / "New Tor circuit" |
 | Also | Find in page, share, desktop-site toggle, pull to refresh, fullscreen video, file uploads, external app links (`intent:`, `mailto:`, …), default-browser intent filters |
 
 ## Building
@@ -112,6 +113,13 @@ Project facts: package `com.aurora.browser`, minSdk 26, targetSdk/compileSdk
   finishes loading, so a placeholder can show briefly.
 - **No WebExtensions** (the desktop's unpacked Chrome extensions need
   Chromium's extension system, which WebView doesn't have).
+- **Tor mode is app-wide, not per tab.** WebView only supports a process-wide
+  proxy override (`androidx.webkit.ProxyController`, WebView 74+), so while Tor
+  is on every tab — normal and private — goes through Tor. This is Tor
+  routing for a WebView browser, not the Tor Browser: there is no
+  fingerprinting resistance beyond Shields, and per-site circuit isolation is
+  tor's default (by SOCKS destination), not first-party isolation. The bundled
+  native tor adds roughly 8–9 MB per ABI to the APK.
 - Search suggestions come from local history and bookmarks only. No network
   suggestion API is used, which is deliberate for privacy.
 - A release APK that can be installed needs your own signing key (not

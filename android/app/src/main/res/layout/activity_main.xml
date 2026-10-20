@@ -47,6 +47,20 @@
                 android:paddingStart="12dp"
                 android:paddingEnd="4dp">
 
+                <!-- Built-in Tor indicator: shown while Tor mode is on (purple
+                     when connected, dimmed while connecting); tap for status. -->
+                <ImageView
+                    android:id="@+id/torBadge"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:layout_marginStart="-6dp"
+                    android:layout_marginEnd="2dp"
+                    android:background="@drawable/bg_toolbar_button"
+                    android:contentDescription="@string/tor_status_desc"
+                    android:padding="5dp"
+                    android:src="@drawable/ic_tor_onion"
+                    android:visibility="gone" />
+
                 <com.aurora.browser.ui.FaIconView
                     android:id="@+id/siteIcon"
                     android:layout_width="20dp"

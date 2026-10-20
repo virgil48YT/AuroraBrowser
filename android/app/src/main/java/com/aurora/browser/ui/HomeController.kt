@@ -15,6 +15,7 @@ import com.aurora.browser.core.Omnibox
 import com.aurora.browser.core.SiteNames
 import com.aurora.browser.data.BrowserDb
 import com.aurora.browser.tabs.IncognitoProfile
+import com.aurora.browser.tor.TorManager
 import java.util.Date
 
 /**
@@ -71,7 +72,13 @@ class HomeController(
 
     fun bind(incognito: Boolean) {
         updateClock()
-        searchHint.setText(if (incognito) R.string.omnibox_hint_incognito else R.string.omnibox_hint)
+        searchHint.setText(
+            when {
+                TorManager.enabled -> R.string.tor_hint
+                incognito -> R.string.omnibox_hint_incognito
+                else -> R.string.omnibox_hint
+            },
+        )
         blocked.text = ctx.getString(R.string.blocked_total, UiUtil.compactCount(adblock.totalBlocked()))
         blocked.visibility = if (adblock.enabled) View.VISIBLE else View.GONE
         incognitoCard.visibility = if (incognito) View.VISIBLE else View.GONE

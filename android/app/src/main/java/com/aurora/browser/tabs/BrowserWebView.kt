@@ -25,6 +25,7 @@ import com.aurora.browser.adblock.RequestClassifier
 import com.aurora.browser.adblock.ResourceType
 import com.aurora.browser.core.Omnibox
 import com.aurora.browser.data.Prefs
+import com.aurora.browser.tor.TorManager
 import java.io.ByteArrayInputStream
 import java.net.URISyntaxException
 
@@ -51,6 +52,29 @@ object BrowserWebView {
 
     private val emptyResponse: WebResourceResponse
         get() = WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+
+    private val blockedResponse: WebResourceResponse
+        get() = WebResourceResponse(
+            "text/plain", "utf-8", 503, "Tor not ready", mapOf("Cache-Control" to "no-store"),
+            ByteArrayInputStream(ByteArray(0)),
+        )
+
+    /** Shown instead of a page while Tor mode is on but tor is still connecting. */
+    private fun torWaitingPage(): WebResourceResponse {
+        val html = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+            |<title>Connecting to Tor</title><style>
+            |body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+            |background:#050811;color:#F1F5F9;font:16px/1.5 sans-serif;text-align:center}
+            |.c{max-width:22em;padding:24px}.o{font-size:44px;color:#A855F7}h1{font-size:20px;margin:8px 0}
+            |p{color:#94A3B8;margin:0}</style></head><body><div class="c"><div class="o">&#9673;</div>
+            |<h1>Connecting to Tor&hellip;</h1>
+            |<p>Tor mode is on. This page will load as soon as a Tor circuit is ready.
+            |Nothing is sent outside Tor in the meantime.</p></div></body></html>""".trimMargin()
+        return WebResourceResponse(
+            "text/html", "utf-8", 503, "Tor not ready", mapOf("Cache-Control" to "no-store"),
+            ByteArrayInputStream(html.toByteArray(Charsets.UTF_8)),
+        )
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     fun create(activity: Activity, tab: Tab): WebView {
@@ -140,6 +164,14 @@ object BrowserWebView {
 
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 val url = request.url.toString()
+                if (TorManager.enabled && !TorManager.ready) {
+                    // Tor mode is on but tor is not usable yet: fail closed.
+                    if (request.isForMainFrame) {
+                        tab.waitingForTor = true
+                        return torWaitingPage()
+                    }
+                    return blockedResponse
+                }
                 val reqHost = request.url.host?.lowercase() ?: return null
                 if (request.isForMainFrame) {
                     // New top-level document: new page for Shields purposes.
