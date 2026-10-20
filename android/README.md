@@ -96,9 +96,9 @@ Keep the keystore backed up: an app signed with a lost key can never be
 updated in place.
 
 Both Android workflows stamp `AURORA_VERSION_CODE` from the epoch (seconds),
-so every APK produced by any workflow sorts newer than every older one —
-a newer build always updates an older install instead of failing with
-"App not installed" (a version downgrade).
+so the APKs they publish sort by build time — one published later updates one
+published earlier instead of failing with "App not installed" (Android
+still rejects downgrades, as it must).
 
 Project facts: package `com.aurora.browser`, minSdk 26, targetSdk/compileSdk
 35, Kotlin 2.0, AGP 8.7, Views + Material 3 (no Compose).

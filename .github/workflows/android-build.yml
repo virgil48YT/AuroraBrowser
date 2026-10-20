@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: android-build-${{ github.ref }}
@@ -56,13 +56,16 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Stamp a monotonic version code
-        # Epoch seconds keep versionCode strictly increasing across every
-        # workflow that ships an APK (this one and release.yml), so a newer
-        # build always updates an older install instead of failing with
+        # Epoch seconds keep versionCode strictly increasing for the APKs
+        # shipped by this workflow and by release.yml, so a build published
+        # later updates one published earlier instead of failing with
         # "App not installed" (INSTALL_FAILED_VERSION_DOWNGRADE).
         run: echo "AURORA_VERSION_CODE=$(date +%s)" >> "$GITHUB_ENV"
 
-      - name: Decode signing keystore (optional)
+      # Signing secrets never reach pull-request builds; they compile an
+      # unsigned release APK purely for R8/resource-shrinking coverage.
+      - name: Decode signing keystore
+        if: github.event_name != 'pull_request'
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
@@ -80,12 +83,17 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       # The release APK is built on every run so R8/resource shrinking is
-      # exercised continuously. With signing secrets the output is a signed
-      # app-release.apk that is published to the rolling "android-ci"
-      # pre-release as a directly installable .apk; without them it is
-      # app-release-unsigned.apk (not installable until signed); see
-      # android/README.md#release-signing.
-      - name: Build release APK
+      # exercised continuously. Trusted branch builds sign it with the
+      # Aurora release key and the signed APK is published to the rolling
+      # "android-ci" pre-release as a directly installable .apk; without
+      # signing secrets it is app-release-unsigned.apk (not installable
+      # until signed); see android/README.md#release-signing.
+      - name: Build release APK (unsigned, PR coverage)
+        if: github.event_name == 'pull_request'
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Build release APK (signed with the release key)
+        if: github.event_name != 'pull_request'
         env:
           AURORA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           AURORA_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -99,6 +107,7 @@ jobs:
           test -n "$(find app/build/outputs/apk/release -name '*.apk')"
 
       - name: Verify release APK signature
+        if: github.event_name != 'pull_request'
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
           if [ ! -f "$APK" ]; then
@@ -106,7 +115,7 @@ jobs:
             exit 0
           fi
           BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort | tail -n1)"
-          "$BT/apksigner" verify --verbose --print-certs "$APK" | head -n8
+          "$BT/apksigner" verify --verbose --print-certs "$APK"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -124,23 +133,38 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # GitHub Actions artifacts always download as .zip, which Android cannot
-      # install directly (it shows up as an instant "App not installed").
-      # Publish the signed APK to a rolling pre-release instead so it is
-      # downloadable as a plain .apk that installs with one tap.
-      - name: Publish installable .apk to the android-ci release
-        if: github.event_name != 'pull_request'
+  # GitHub Actions artifacts always download as .zip, which Android cannot
+  # install directly (it shows up as an instant "App not installed").
+  # Publish the signed APK to a rolling pre-release instead so it is
+  # downloadable as a plain .apk that installs with one tap. Kept in its own
+  # job so the build job (and PR builds) never hold write permissions.
+  publish:
+    name: Publish installable .apk
+    needs: build
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the release APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aurora-android-release-apk
+          path: apk
+
+      - name: Publish to the android-ci release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          APK="app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$APK" ]; then
+          APK="$(find apk -name 'app-release.apk' | head -n1)"
+          if [ -z "$APK" ]; then
             echo "Release APK is unsigned (no signing secrets); skipping the installable .apk upload."
             exit 0
           fi
+          NOTES="Latest automatic Android build from the \`mobile/android\` branch. Built from commit ${GITHUB_SHA} (CI run ${GITHUB_RUN_NUMBER}). \`Aurora-android-latest.apk\` is replaced on every successful CI run and is signed with the Aurora release key."
           gh release view android-ci -R "$GITHUB_REPOSITORY" || \
             gh release create android-ci -R "$GITHUB_REPOSITORY" --prerelease \
-              --title "Android CI build (latest)" \
-              --notes "Latest automatic Android build from the \`mobile/android\` branch. \`Aurora-android-latest.apk\` is replaced on every successful CI run and is signed with the Aurora release key."
+              --title "Android CI build (latest)" --notes "$NOTES"
+          gh release edit android-ci -R "$GITHUB_REPOSITORY" --notes "$NOTES"
           cp "$APK" Aurora-android-latest.apk
           gh release upload android-ci Aurora-android-latest.apk --clobber -R "$GITHUB_REPOSITORY"
