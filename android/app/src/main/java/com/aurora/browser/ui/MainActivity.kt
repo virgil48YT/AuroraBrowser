@@ -12,6 +12,7 @@ import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -99,6 +100,7 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
     private lateinit var shieldIcon: FaIconView
     private lateinit var shieldBadge: TextView
     private lateinit var tabCount: TextView
+    private lateinit var tabIcon: FaIconView
     private lateinit var progress: LinearProgressIndicator
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var webHolder: FrameLayout
@@ -229,6 +231,7 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
         shieldIcon = findViewById(R.id.shieldIcon)
         shieldBadge = findViewById(R.id.shieldBadge)
         tabCount = findViewById(R.id.tabCount)
+        tabIcon = findViewById(R.id.tabIcon)
         progress = findViewById(R.id.progress)
         swipeRefresh = findViewById(R.id.swipeRefresh)
         webHolder = findViewById(R.id.webHolder)
@@ -259,7 +262,14 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
     private fun setupToolbar() {
         btnHome.setOnClickListener { goHome() }
         btnMenu.setOnClickListener { showMenu() }
-        findViewById<View>(R.id.btnTabs).setOnClickListener { showSwitcher() }
+        findViewById<View>(R.id.btnTabs).apply {
+            setOnClickListener { showSwitcher() }
+            setOnLongClickListener {
+                activateTab(tabs.create(tabs.active?.incognito ?: false, afterActive = true))
+                Toast.makeText(this@MainActivity, R.string.new_tab_opened, Toast.LENGTH_SHORT).show()
+                true
+            }
+        }
         findViewById<View>(R.id.btnShield).setOnClickListener { showShields() }
         btnClearOmnibox.setOnClickListener { omnibox.setText("") }
 
@@ -644,8 +654,13 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
         btnHome.setTextColor(iconColor)
         btnMenu.setTextColor(iconColor)
         btnClearOmnibox.setTextColor(iconColor)
-        tabCount.setTextColor(iconColor)
-        tabCount.background?.mutate()?.setTint(iconColor)
+        // Outline and glyph follow the chrome colour; the count badge is the
+        // same colour with the toolbar colour as its text (an inverted pill).
+        tabIcon.setTextColor(iconColor)
+        (tabIcon.background?.mutate() as? GradientDrawable)
+            ?.setStroke((2 * resources.displayMetrics.density).toInt().coerceAtLeast(1), iconColor)
+        (tabCount.background?.mutate() as? GradientDrawable)?.setColor(iconColor)
+        tabCount.setTextColor(surface)
         val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         WindowInsetsControllerCompat(window, root).apply {
             // The chrome is always the deep-navy aurora toolbar, so status-bar
@@ -670,7 +685,9 @@ class MainActivity : AppCompatActivity(), BrowserHost, HomeController.Callbacks 
         siteIcon.setTextColor(iconColor)
 
         val sameMode = tabs.tabs.count { it.incognito == incognito }
-        tabCount.text = if (sameMode > 99) ":D" else sameMode.toString()
+        tabCount.text = if (sameMode > 99) "99+" else sameMode.toString()
+        findViewById<View>(R.id.btnTabs).contentDescription =
+            resources.getQuantityString(R.plurals.tab_switcher_count, sameMode, sameMode)
 
         progress.isVisible = tab.isLoading && tab.progress < 100 && !tab.showingHome
         progress.setProgressCompat(tab.progress, true)

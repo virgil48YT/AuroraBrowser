@@ -8,6 +8,11 @@
     <string name="menu">More options</string>
     <string name="tabs">Tabs</string>
     <string name="tab_switcher">Tab switcher</string>
+    <plurals name="tab_switcher_count">
+        <item quantity="one">Tab switcher, %d open tab</item>
+        <item quantity="other">Tab switcher, %d open tabs</item>
+    </plurals>
+    <string name="new_tab_opened">New tab opened</string>
     <string name="shields">Shields</string>
     <string name="clear">Clear</string>
     <string name="close">Close</string>

@@ -128,22 +128,45 @@
                 android:id="@+id/btnTabs"
                 android:layout_width="@dimen/toolbar_button"
                 android:layout_height="@dimen/toolbar_button"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:layout_gravity="center_vertical"
+                android:background="@drawable/bg_toolbar_button"
                 android:clickable="true"
                 android:contentDescription="@string/tab_switcher"
                 android:focusable="true">
 
-                <TextView
-                    android:id="@+id/tabCount"
+                <!-- Outlined tile with a plus glyph: tap opens the tab switcher,
+                     long-press opens a new tab. The open-tab count sits in a
+                     small badge on the corner. -->
+                <com.aurora.browser.ui.FaIconView
+                    android:id="@+id/tabIcon"
                     android:layout_width="22dp"
                     android:layout_height="22dp"
                     android:layout_gravity="center"
                     android:background="@drawable/bg_tab_count"
                     android:gravity="center"
-                    tools:text="1"
+                    android:importantForAccessibility="no"
                     android:textColor="@color/chrome_text"
                     android:textSize="11sp"
-                    android:textStyle="bold" />
+                    app:faGlyph="0xF067" />
+
+                <TextView
+                    android:id="@+id/tabCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="15dp"
+                    android:layout_gravity="top|end"
+                    android:layout_marginTop="5dp"
+                    android:layout_marginEnd="3dp"
+                    android:background="@drawable/bg_tab_badge"
+                    android:gravity="center"
+                    android:importantForAccessibility="no"
+                    android:includeFontPadding="false"
+                    android:minWidth="15dp"
+                    android:paddingStart="3dp"
+                    android:paddingEnd="3dp"
+                    android:textColor="@color/chrome_bg"
+                    android:textSize="9sp"
+                    android:textStyle="bold"
+                    tools:text="1" />
             </FrameLayout>
 
             <com.aurora.browser.ui.FaIconView
