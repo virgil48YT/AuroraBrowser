@@ -27,7 +27,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: installer-${{ github.ref }}
+  # Include the commit so a stale/stuck run for an older commit can never
+  # block the corrected build for a newer one.
+  group: installer-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
