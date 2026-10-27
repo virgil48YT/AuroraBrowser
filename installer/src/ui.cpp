@@ -1784,7 +1784,7 @@ void SetupWindow::draw_background() {
                 (image.width + source_width) / 2.0f,
                 (image.height + source_height) / 2.0f);
             render_target_->DrawBitmap(brand_background_.Get(), &full, 1.0f,
-                                       D2D1_INTERPOLATION_MODE_HIGH_QUALITY_LINEAR,
+                                       D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
                                        &source);
         }
     }
@@ -1824,7 +1824,7 @@ void SetupWindow::draw_titlebar() {
                             14.0f + mark_size,
                             (title_height_ + mark_size) / 2.0f);
             render_target_->DrawBitmap(brand_mark_.Get(), &dest, 1.0f,
-                                       D2D1_INTERPOLATION_MODE_HIGH_QUALITY_LINEAR);
+                                       D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
     }
     draw_text(text_->app_title, button_format_.Get(),
@@ -1880,7 +1880,7 @@ void SetupWindow::draw_logo_block(float center_x, float top, float width,
                 D2D1::RectF(center_x - width / 2.0f, top,
                             center_x + width / 2.0f, top + height);
             render_target_->DrawBitmap(brand_logo_.Get(), &dest, 1.0f,
-                                       D2D1_INTERPOLATION_MODE_HIGH_QUALITY_LINEAR);
+                                       D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
             bottom = top + height;
         }
     } else {
@@ -2316,7 +2316,7 @@ void SetupWindow::draw_components_page() {
                             (card.left + card.right) / 2.0f + mark_size / 2.0f,
                             card.top + 18.0f + mark_size);
             render_target_->DrawBitmap(brand_mark_.Get(), &mark, 1.0f,
-                                       D2D1_INTERPOLATION_MODE_HIGH_QUALITY_LINEAR);
+                                       D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
         draw_text(text_->components_description, small_format_.Get(),
                   D2D1::RectF(card.left + 14.0f, card.top + 108.0f,
