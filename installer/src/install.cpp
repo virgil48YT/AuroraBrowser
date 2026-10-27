@@ -246,6 +246,79 @@ bool launch_aurora(const std::wstring& install_dir,
                  : std::vector<std::wstring>{});
     std::vector<wchar_t> mutable_command(command.begin(), command.end());
     mutable_command.push_back(L'\0');
+
+    // Chromium refuses (or misbehaves) when it starts with an elevated token.
+    // A setup that installed into Program Files is elevated, so hand the
+    // launch to the interactive shell's primary token. When the installer is
+    // already running as the normal user, a regular CreateProcess is enough.
+    if (process_is_elevated()) {
+        HWND shell = GetShellWindow();
+        DWORD shell_pid = 0;
+        if (shell) GetWindowThreadProcessId(shell, &shell_pid);
+        HANDLE shell_process = nullptr;
+        if (shell_pid != 0) {
+            shell_process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE,
+                                        shell_pid);
+            if (!shell_process) {
+                shell_process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                                            FALSE, shell_pid);
+            }
+        }
+        HANDLE shell_token = nullptr;
+        if (shell_process) {
+            OpenProcessToken(shell_process,
+                             TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY |
+                                 TOKEN_QUERY,
+                             &shell_token);
+        }
+        HANDLE primary_token = nullptr;
+        if (shell_token) {
+            DuplicateTokenEx(shell_token, MAXIMUM_ALLOWED, nullptr,
+                             SecurityImpersonation, TokenPrimary,
+                             &primary_token);
+        }
+        bool launched = false;
+        if (primary_token) {
+            STARTUPINFOW startup{};
+            startup.cb = sizeof(startup);
+            PROCESS_INFORMATION process{};
+            if (CreateProcessWithTokenW(
+                    primary_token, LOGON_WITH_PROFILE, exe.c_str(),
+                    mutable_command.data(), CREATE_UNICODE_ENVIRONMENT,
+                    nullptr, install_dir.c_str(), &startup, &process)) {
+                launched = true;
+                CloseHandle(process.hThread);
+                CloseHandle(process.hProcess);
+            } else {
+                error = GetLastError();
+                detail = L"CreateProcessWithTokenW failed for " + exe;
+            }
+        } else {
+            error = GetLastError();
+            detail = L"The shell's user token could not be opened.";
+        }
+        if (primary_token) CloseHandle(primary_token);
+        if (shell_token) CloseHandle(shell_token);
+        if (shell_process) CloseHandle(shell_process);
+        if (launched) return true;
+
+        // Fallback: hand the executable path to the already-running shell.
+        // explorer.exe forwards it to the desktop shell, which runs it
+        // unelevated, and a command-line argument is not needed on first run
+        // because the setup also writes the language marker.
+        const std::wstring explorer_parameters = L"\"" + exe + L"\"";
+        const HINSTANCE explorer_result = ShellExecuteW(
+            nullptr, L"open", L"explorer.exe", explorer_parameters.c_str(),
+            install_dir.c_str(), SW_SHOWNORMAL);
+        if (reinterpret_cast<INT_PTR>(explorer_result) > 32) return true;
+        if (error == ERROR_SUCCESS) {
+            error = GetLastError();
+            if (error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+        }
+        detail = L"Aurora could not be launched through the desktop shell.";
+        return false;
+    }
+
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
