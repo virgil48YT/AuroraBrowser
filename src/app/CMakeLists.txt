@@ -36,6 +36,7 @@ set(AURORA_BROWSER_SOURCES
     ../ui/ShortcutDialog.cpp
     ../ui/WeatherService.cpp
     ../ui/FilterListUpdater.cpp
+    ../ui/UpdateChecker.cpp
     ../ui/TorLauncher.cpp
     ../ui/pages/InternalPageWidget.cpp
     ../ui/pages/HistoryPage.cpp
@@ -54,8 +55,8 @@ set(AURORA_BROWSER_SOURCES
 # Windows + AURORA_WIN_SANDBOX (see the top-level CMakeLists.txt): the browser
 # is aurora_browser.dll, exporting RunWinMain, and CEF's sandbox-linked
 # bootstrap.exe is copied next to it as aurora_browser.exe. The executable is
-# what users, the SFX and aurora_bootstrap start, so nothing downstream
-# changes its name. Everywhere else it is an ordinary executable.
+# what users, the setup/shortcuts and aurora_bootstrap start, so nothing
+# downstream changes its name. Everywhere else it is an ordinary executable.
 if(WIN32 AND AURORA_ENABLE_CEF AND AURORA_WIN_SANDBOX)
     qt_add_library(aurora_browser SHARED ${AURORA_BROWSER_SOURCES})
     target_compile_definitions(aurora_browser PRIVATE AURORA_WIN_BOOTSTRAP)

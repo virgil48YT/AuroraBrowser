@@ -16,11 +16,27 @@ cmake_minimum_required(VERSION 3.24)
 # The core library never depends on Qt or CEF, so it can be compiled and
 # tested on any machine with a C++20 compiler and SQLite.
 
+# Numeric version override for release builds. The tag is the source of truth
+# for a release (`v0.2.0`), while a plain development checkout keeps the
+# version in this file. Keeping them in sync matters now that the in-app
+# updater compares the compiled version with the latest release tag: a package
+# built from a v0.2.0 tag must report 0.2.0, or it would offer itself forever.
+set(AURORA_RELEASE_VERSION "" CACHE STRING
+    "Numeric release version override (e.g. 0.2.0), set by the release workflow")
+if(AURORA_RELEASE_VERSION AND
+   NOT AURORA_RELEASE_VERSION MATCHES "^[0-9]+(\\.[0-9]+){0,2}$")
+    message(FATAL_ERROR
+        "AURORA_RELEASE_VERSION must be numeric (e.g. 0.2.0), got '${AURORA_RELEASE_VERSION}'")
+endif()
+set(AURORA_PROJECT_VERSION "0.1.0")
+if(AURORA_RELEASE_VERSION)
+    set(AURORA_PROJECT_VERSION "${AURORA_RELEASE_VERSION}")
+endif()
+
 project(Aurora
-    VERSION 0.1.0
+    VERSION ${AURORA_PROJECT_VERSION}
     DESCRIPTION "Aurora — a premium Chromium/CEF desktop browser"
     LANGUAGES C CXX)
-
 # Objective-C++ is needed on macOS for the CEF/AppKit glue
 # (src/cef/CefMacSupport.mm). Enabled here, at the top level, because CMake
 # requires a language to be enabled before targets that use it are created.
@@ -80,6 +96,10 @@ endif()
 # tool, and the shipped SFX runs the launcher.
 option(AURORA_BUILD_BOOTSTRAP "Build the bootstrap launcher (aurora_bootstrap)" ON)
 option(AURORA_BUILD_TOOLS     "Build the build-ID packaging tool" ON)
+option(AURORA_BUILD_INSTALLER "Build the Windows setup executable" OFF)
+if(AURORA_BUILD_INSTALLER AND NOT WIN32)
+    message(FATAL_ERROR "AURORA_BUILD_INSTALLER is Windows-only")
+endif()
 
 # Platform tag recorded in the build manifest. It has to match the CEF binary
 # distribution's platform name (see scripts/fetch_cef.sh) because the manifest
@@ -106,6 +126,7 @@ target_sources(aurora_core
         src/core/BuildId.cpp
         src/core/CefLayout.cpp
         src/core/CefMaterialize.cpp
+        src/updates/ReleaseVersion.cpp
         src/cef/GpuPolicy.cpp
         src/cef/MediaPolicy.cpp
         src/cef/SandboxPolicy.cpp
@@ -431,6 +452,13 @@ if(AURORA_BUILD_TOOLS)
         AURORA_PLATFORM_STRING="${AURORA_PLATFORM}")
 endif()
 
+# --- Custom Windows installer ------------------------------------------------
+# A small native Win32/Direct2D setup UI. The packaging script appends the
+# packaged app as a ZIP payload; see packaging/windows/build_installer.sh.
+if(AURORA_BUILD_INSTALLER)
+    add_subdirectory(installer)
+endif()
+
 # --- Tests -------------------------------------------------------------------
 if(AURORA_BUILD_TESTS)
     enable_testing()
@@ -453,5 +481,6 @@ message(STATUS "  Require codecs: ${AURORA_REQUIRE_H264_AAC}")
 message(STATUS "  Qt app:         ${AURORA_BUILD_APP}")
 message(STATUS "  Bootstrap:      ${AURORA_BUILD_BOOTSTRAP}")
 message(STATUS "  Build-ID tool:  ${AURORA_BUILD_TOOLS}")
+message(STATUS "  Installer:      ${AURORA_BUILD_INSTALLER}")
 message(STATUS "  Platform tag:   ${AURORA_PLATFORM}")
 message(STATUS "")

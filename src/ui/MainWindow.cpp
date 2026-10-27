@@ -217,6 +217,7 @@ inline bool ensure_native_frame(void* hwnd) {
 #include "ui/CefHostWidget.hpp"
 #include "ui/DownloadsPopover.hpp"
 #include "ui/FilterListUpdater.hpp"
+#include "ui/UpdateChecker.hpp"
 #include "ui/IconButton.hpp"
 #include "ui/Icons.hpp"
 #include "ui/PermissionPrompt.hpp"
@@ -401,6 +402,8 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
         services_.bookmarks = nullptr;
         // Updating the filter list rewrites a profile file.
         services_.filter_lists = nullptr;
+        // Update checks and downloads are profile operations.
+        services_.updates = nullptr;
     }
     // Extensions are loaded process-wide by the engine at startup (the
     // --load-extension switch, see cef/CefLifecycle.cpp), but a private window
@@ -409,6 +412,18 @@ MainWindow::MainWindow(const ServiceBundle& services, QWidget* parent,
     // in-memory ("incognito mode") request context, where Chromium does not
     // run extensions that were not allowed in incognito.
     if (!policy_.enable_extensions()) services_.extensions = nullptr;
+    if (services_.updates) {
+        // The checker is process-wide; flash once per discovered version in
+        // whichever normal windows are open. Private windows have no checker.
+        connect(services_.updates, &UpdateChecker::update_available, this,
+                [this](const QString& version, const QString&) {
+                    flash_status(
+                        QStringLiteral(
+                            "Aurora %1 is available \u2014 open Settings > Updates")
+                            .arg(version),
+                        8000);
+                });
+    }
     if (services_.prefs &&
         (incognito_ || services_.prefs->is_read_only())) {
         // Never mark the shared Settings read-only: that would also block
@@ -2921,6 +2936,7 @@ QWidget* MainWindow::page_widget(core::InternalPage page) {
             // "Update now" talks to the shared updater directly; the result
             // reaches the engine through on_filter_list_update_finished.
             settings_page->set_filter_list_updater(services_.filter_lists);
+            settings_page->set_update_checker(services_.updates);
             connect(settings_page, &SettingsPage::site_settings_requested, this,
                     [this] { show_page(core::InternalPage::SiteSettings); });
             connect(settings_page, &SettingsPage::extensions_requested, this,

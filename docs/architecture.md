@@ -160,8 +160,11 @@ run on every push to `main` (the Windows `qt-shell` job in
 the CEF-enabled job alongside it is best-effort). Linux CI
 (`linux-core.yml`) runs the core suite with the real Rust ad-block engine.
 Tag pushes matching `v*` trigger `release.yml`: a full Windows CEF build, unit
-tests, build-ID manifest verification, the single-exe SFX installer
-(`aurora_setup.exe`), and a published GitHub release.
+tests, build-ID manifest verification, the custom setup wizard
+(`aurora_setup.exe`), and a published GitHub release. The setup UI, its
+payload reader and the in-app update checker live in `installer/` and
+`src/ui/UpdateChecker.cpp`; a separate `installer.yml` workflow builds the
+wizard on its feature branch without touching releases.
 
 **Recently completed** — all of these were previously listed here as deferred:
 
@@ -178,8 +181,9 @@ tests, build-ID manifest verification, the single-exe SFX installer
   rejection of cross-privacy-mode tab transfers, read-only internal pages in
   private windows, and opt-in clear-on-exit for cookies, history, and download
   metadata.
-- **Installer/packaging** — the Windows SFX installer is wired into the
-  tag-triggered release workflow.
+- **Installer/packaging** — the custom Windows setup wizard (native UI,
+  visible extraction progress, real Win32 error codes) is wired into the
+  tag-triggered release workflow, with SHA-256-verified in-app updates.
 
 Also built since the first draft of this document: Aurora Shields ad/tracker
 blocking (Rust engine, per-site exceptions, shield button), HTTPS-only

@@ -1,0 +1,41 @@
+#include <winver.h>
+
+#define IDI_AURORA 1
+#define IDR_AURORA_MARK 101
+#define IDR_AURORA_LOGO 102
+#define IDR_AURORA_BG 103
+
+IDI_AURORA ICON "@AURORA_SETUP_ASSET_DIR@/icons/aurora.ico"
+
+IDR_AURORA_MARK RCDATA "@AURORA_SETUP_ASSET_DIR@/brand/aurora_mark.png"
+IDR_AURORA_LOGO RCDATA "@AURORA_SETUP_ASSET_DIR@/brand/aurora_logo_full.png"
+IDR_AURORA_BG   RCDATA "@AURORA_SETUP_ASSET_DIR@/brand/aurora_bg.jpg"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION @AURORA_SETUP_VERSION_COMMA@
+ PRODUCTVERSION @AURORA_SETUP_VERSION_COMMA@
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "Aurora Browser Project"
+            VALUE "FileDescription", "Aurora Browser Setup"
+            VALUE "FileVersion", "@AURORA_SETUP_VERSION@"
+            VALUE "InternalName", "aurora_setup"
+            VALUE "LegalCopyright", "MIT License"
+            VALUE "OriginalFilename", "aurora_setup.exe"
+            VALUE "ProductName", "Aurora Browser"
+            VALUE "ProductVersion", "@AURORA_SETUP_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

@@ -27,6 +27,7 @@ namespace searchengines { class SearchEngineService; }
 namespace aurora::ui {
 
 class FilterListUpdater;
+class UpdateChecker;
 
 struct ServiceBundle {
     history::HistoryService* history = nullptr;
@@ -52,6 +53,9 @@ struct ServiceBundle {
     // an update has installed a newer list. Null in private windows: an
     // update rewrites a profile file, which a private window never does.
     FilterListUpdater* filter_lists = nullptr;
+    // GitHub release check + verified installer download (Settings >
+    // Updates). Process-wide; null in private windows.
+    UpdateChecker* updates = nullptr;
 };
 
 } // namespace aurora::ui

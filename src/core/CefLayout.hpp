@@ -9,10 +9,12 @@
 //
 // Layout (Windows, the shipping target):
 //
-//   %LOCALAPPDATA%\Aurora\                     <- SFX extraction root
-//       aurora_bootstrap.exe                   <- launched by the SFX
+//   C:\Program Files\Aurora Browser\          <- default setup install folder
+//       aurora_bootstrap.exe                   <- shortcut / setup launch target
 //       aurora_browser.exe, Qt6*.dll, libcef.dll, ...
 //       aurora_build.manifest                  <- build ID + file hashes
+//
+//   %LOCALAPPDATA%\Aurora\
 //       cef\<build_id>\                         <- per-version resource tree
 //           chrome_100_percent.pak, icudtl.dat, v8_context_snapshot.bin, ...
 //           locales\en-US.pak, ...

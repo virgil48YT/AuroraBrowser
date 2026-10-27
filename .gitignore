@@ -18,3 +18,6 @@ build*/
 
 # Built-in Tor bundles fetched by scripts/fetch_tor.sh
 third_party/tor/
+
+# Python bytecode from packaging helper scripts
+__pycache__/

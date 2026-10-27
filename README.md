@@ -66,6 +66,9 @@ accounts.
   Ctrl+Alt+Shift+N) — see [Tor incognito mode](#tor-incognito-mode)
 - Per-site zoom that is remembered across visits and restarts
 - Dark and light theme
+- Opt-out update checks in Settings > Updates: Aurora asks GitHub for the
+  latest release and offers a setup only when it is newer. The download is
+  verified against the release's published SHA-256 before it can run
 - Startup choice: continue where you left off (session restore), open the
   home page, or open a specific page
 - Runs without the Chromium engine; the UI and internal pages still work
@@ -170,7 +173,7 @@ Download the latest release from the
 
 | Platform | Package |
 |---|---|
-| Windows 10/11 (x64) | `Aurora-VERSION-windows-x64-setup.exe` — double-click; installs per user into `%LOCALAPPDATA%\Aurora` |
+| Windows 10/11 (x64) | `Aurora-VERSION-windows-x64-setup.exe` — the Aurora setup wizard installs to `C:\Program Files\Aurora Browser` by default (any folder can be chosen) and upgrades an existing per-user `%LOCALAPPDATA%\Aurora\app` install in place when it finds one |
 | macOS 13.3+ (Apple silicon) | `Aurora-VERSION-macos-arm64.dmg` — drag Aurora to Applications |
 | Linux (x86_64, glibc 2.35+) | `Aurora-VERSION-linux-x86_64.AppImage` (`chmod +x` and run) or the `.tar.gz` (extract, run `./aurora`) |
 | Android 8.0+ | `Aurora-VERSION-android.apk`, or `Aurora-VERSION-android-unsigned.apk` (see below) |
@@ -180,7 +183,10 @@ Things to know before installing:
 - **Windows:** the installer and the browser are **not code-signed**, so
   SmartScreen shows "Windows protected your PC". Choose *More info > Run
   anyway* only if you downloaded the file from this repository's Releases
-  page and its SHA-256 matches the published `.sha256` file.
+  page and its SHA-256 matches the published `.sha256` file. The wizard asks
+  for administrator permission only when the chosen folder needs it (the
+  default Program Files location does); a folder under your user profile
+  installs without elevation.
 - **macOS:** the DMG is **ad-hoc signed and not notarized** unless the
   release was built with the Apple signing secrets configured, so Gatekeeper
   blocks the first launch. Right-click Aurora.app > *Open* (or *System

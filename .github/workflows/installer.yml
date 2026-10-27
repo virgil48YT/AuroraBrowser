@@ -1,0 +1,143 @@
+name: Installer (Windows)
+
+# Feature-branch pipeline for the custom Aurora setup wizard.
+#
+# Builds the full CEF app, the native setup UI, the ZIP payload and the final
+# self-extracting setup.exe, then verifies every payload CRC from the built
+# executable itself. This workflow only uploads an artifact; it never creates
+# or modifies a GitHub release. The release workflow uses the same packaging
+# script when a tag is cut.
+on:
+  push:
+    branches: [feature/custom-installer]
+    paths:
+      - 'CMakeLists.txt'
+      - 'installer/**'
+      - 'packaging/windows/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'assets/**'
+      - 'third_party/publicsuffix/**'
+      - 'scripts/fetch_cef.sh'
+      - 'scripts/fetch_tor.sh'
+      - '.github/workflows/installer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-installer:
+    name: Windows x64 custom setup
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Fetch CEF (Windows)
+        run: bash scripts/fetch_cef.sh
+        env:
+          PLATFORM: windows64
+
+      - name: Fetch built-in Tor (Tor Expert Bundle)
+        # Best effort: a build without it still works; Tor windows then need
+        # the user's own Tor daemon instead of the bundled one.
+        continue-on-error: true
+        run: bash scripts/fetch_tor.sh windows64
+
+      - name: Resolve artifact version
+        run: |
+          V="$(sed -n 's/.*set(AURORA_PROJECT_VERSION "\([0-9.]*\)").*/\1/p' CMakeLists.txt | head -1)"
+          V="${V:-0.1.0}"
+          echo "AURORA_BASE_VERSION=$V" >> "$GITHUB_ENV"
+          echo "AURORA_ARTIFACT_VERSION=${V}-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: Configure with CEF + installer
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON
+          -DAURORA_BUILD_INSTALLER=ON
+          -DAURORA_RELEASE_VERSION="${AURORA_BASE_VERSION}"
+          -DCEF_ROOT="${GITHUB_WORKSPACE}/third_party/cef"
+          -DCEF_RUNTIME_LIBRARY_FLAG=/MD
+        shell: bash
+
+      - name: Build
+        run: cmake --build build --config Release
+        shell: bash
+
+      - name: Run unit tests
+        run: ./build/bin/aurora_tests.exe
+        shell: bash
+
+      - name: Package app
+        run: |
+          mkdir -p package
+          cp build/bin/aurora_browser.exe package/
+          cp build/bin/aurora_bootstrap.exe package/
+          # With AURORA_WIN_SANDBOX the browser is a DLL driven by CEF's
+          # sandbox bootstrap; windeployqt must inspect the DLL.
+          QT_TARGET=package/aurora_browser.exe
+          if [ -f build/bin/aurora_browser.dll ]; then
+            cp build/bin/aurora_browser.dll package/
+            QT_TARGET=package/aurora_browser.dll
+          fi
+          windeployqt --release --no-translations --no-system-d3d-compiler \
+                     --no-opengl-sw "$QT_TARGET"
+          cp -r third_party/cef/Resources/* package/ 2>/dev/null || true
+          cp -r third_party/cef/Release/* package/ 2>/dev/null || true
+          rm -f package/*.lib package/*.exp package/*.pdb
+          if [ -d build/bin/tor ]; then cp -r build/bin/tor package/; fi
+          rm -f package/bootstrap.exe package/bootstrapc.exe
+        shell: bash
+
+      - name: Stamp and verify the build ID
+        run: |
+          ./build/bin/aurora_buildid.exe generate \
+              --root package \
+              --cef-root third_party/cef \
+              --platform windows64 \
+              --out package/aurora_build.manifest
+          ./build/bin/aurora_buildid.exe show --manifest package/aurora_build.manifest
+          ./build/bin/aurora_buildid.exe verify --manifest package/aurora_build.manifest \
+              --root package --full
+        shell: bash
+
+      - name: Build and verify the setup executable
+        run: |
+          mkdir -p dist
+          SETUP="dist/Aurora-${AURORA_ARTIFACT_VERSION}-windows-x64-setup.exe"
+          bash packaging/windows/build_installer.sh package \
+              build/bin/aurora_setup_ui.exe "$SETUP" "$AURORA_ARTIFACT_VERSION"
+          "$SETUP" --verify-payload --log dist/verify.log
+          grep -q "OK: payload verified" dist/verify.log
+          cat dist/verify.log
+          ( cd dist && sha256sum "Aurora-${AURORA_ARTIFACT_VERSION}-windows-x64-setup.exe" \
+              > "Aurora-${AURORA_ARTIFACT_VERSION}-windows-x64-setup.exe.sha256" )
+        shell: bash
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-installer-windows-${{ github.run_number }}
+          path: |
+            dist/*setup.exe
+            dist/*.sha256
+            dist/verify.log
+          if-no-files-found: error
+          retention-days: 30

@@ -15,12 +15,14 @@
 #include <QCloseEvent>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QIcon>
 #include <QFileDialog>
 #include <QMetaObject>
 #include <QStandardPaths>
 #include <QTimer>
 
+#include <algorithm>
 #include <functional>
 #include <chrono>
 #include <fstream>
@@ -58,6 +60,7 @@
 #include "ui/RoundedToolTip.hpp"
 #include "ui/FaviconCache.hpp"
 #include "ui/FilterListUpdater.hpp"
+#include "ui/UpdateChecker.hpp"
 #include "ui/MainWindow.hpp"
 #include "ui/ServiceBundle.hpp"
 #include "util/Log.hpp"
@@ -283,9 +286,9 @@ void apply_hardware_acceleration_preference(const QString& profile) {
 // Windows sandbox, LPAC: Chromium runs its network service in a Less
 // Privileged AppContainer, which can only read files whose ACL grants "ALL
 // RESTRICTED APPLICATION PACKAGES" (S-1-15-2-2). Program Files grants that by
-// default; %LOCALAPPDATA%\Aurora (where the SFX extracts) and an unzipped
-// artifact folder do not, and the sandboxed network service then fails to
-// start. CEF's own samples run `icacls <dir> /grant *S-1-15-2-2:(OI)(CI)(RX)`
+// default; %LOCALAPPDATA%\Aurora (the legacy SFX location, or a per-user
+// install) and an unzipped artifact folder do not, and the sandboxed network
+// service then fails to start. CEF's own samples run `icacls <dir> /grant *S-1-15-2-2:(OI)(CI)(RX)`
 // at build time (SET_LPAC_ACLS); a user install has to do it at runtime, once.
 // Idempotent: returns early when an allow ACE for the SID is already present,
 // so the (inheritance-propagating) DACL write happens on first run only.
@@ -529,6 +532,13 @@ static int aurora_main(int argc, char** argv) {
         "instead of the per-version directory chosen by the build ID.",
         "dir");
     parser.addOption(cef_dir_opt);
+    // The setup wizard passes the language chosen during installation. The
+    // value only fills an empty intl.language preference, so it can never
+    // override a choice the user already made in Settings.
+    QCommandLineOption installer_language_opt(
+        "aurora-language",
+        "Language chosen by the installer (BCP 47 tag, e.g. en-US).", "lang");
+    parser.addOption(installer_language_opt);
     parser.addPositionalArgument(
         "url", "URL(s) to open in new tabs on startup.", "[url...]");
     // Unknown arguments (CEF passes its own) must not abort startup, so parse
@@ -562,6 +572,39 @@ static int aurora_main(int argc, char** argv) {
     // Ensure the preferences table exists.
     settings::Settings prefs(db);
     prefs.ensure_schema();
+
+    // First-run language chosen in the setup wizard. The marker lives next to
+    // the profile (the installer cannot write the SQLite preferences before
+    // the browser exists), and is removed once it has been considered.
+    {
+        const QString marker_path =
+            QFileInfo(profile).dir().filePath(QStringLiteral("install-language.txt"));
+        QString requested = parser.isSet(installer_language_opt)
+                                ? parser.value(installer_language_opt).trimmed()
+                                : QString();
+        const bool from_marker = requested.isEmpty();
+        if (from_marker && QFile::exists(marker_path)) {
+            QFile marker(marker_path);
+            if (marker.open(QIODevice::ReadOnly)) {
+                requested = QString::fromUtf8(marker.readAll()).trimmed();
+            }
+        }
+        const bool valid = !requested.isEmpty() && requested.size() <= 35 &&
+                           std::all_of(
+                               requested.begin(), requested.end(),
+                               [](QChar c) {
+                                   return c.isLetterOrNumber() ||
+                                          c == QLatin1Char('-');
+                               });
+        if (valid && prefs.get_string(settings::PrefKeys::kLanguage, "").empty()) {
+            prefs.set_string(settings::PrefKeys::kLanguage,
+                             requested.toStdString());
+            util::Logger::instance().log(
+                util::LogLevel::Info, "app",
+                "installer language applied: " + requested.toStdString());
+        }
+        if (QFile::exists(marker_path)) QFile::remove(marker_path);
+    }
 
 #if defined(AURORA_HAS_CEF)
     cef::configure_download_preferences(
@@ -645,6 +688,7 @@ static int aurora_main(int argc, char** argv) {
         (QDir::homePath() + "/.aurora/profile/adblock-rules.txt").toStdString()};
     // Outlives every window (declared before them) — windows only borrow it.
     std::unique_ptr<ui::FilterListUpdater> filter_list_updater;
+    std::unique_ptr<ui::UpdateChecker> update_checker;
     if (db.is_open()) {
         services.history = &history_svc;
         services.bookmarks = &bookmark_svc;
@@ -673,6 +717,12 @@ static int aurora_main(int argc, char** argv) {
         filter_list_updater = std::make_unique<ui::FilterListUpdater>(
             profile, &prefs, adblock_rule_paths, services.adblock_rules);
         services.filter_lists = filter_list_updater.get();
+        // GitHub release checks. Automatic checks are opt-out in Settings >
+        // Updates and happen at most once a day. The first one is delayed so
+        // startup, session restore and the first paint are never competing
+        // with a network request.
+        update_checker = std::make_unique<ui::UpdateChecker>(&prefs);
+        services.updates = update_checker.get();
     }
 
     // CI hook: seed a large session so the restore below exercises the bulk
@@ -684,6 +734,22 @@ static int aurora_main(int argc, char** argv) {
     window.restore_saved_window_state();
     window.show();
     util::startup_milestone("window shown");
+    if (update_checker) {
+        QTimer::singleShot(12000, update_checker.get(),
+                           [checker = update_checker.get()] {
+                               checker->maybe_auto_check();
+                           });
+        // Long-running windows still get a daily check; maybe_auto_check()
+        // enforces the 24-hour throttle, so this timer is just a heartbeat.
+        QTimer* update_heartbeat = new QTimer(update_checker.get());
+        update_heartbeat->setInterval(6 * 60 * 60 * 1000);
+        QObject::connect(update_heartbeat, &QTimer::timeout,
+                         update_checker.get(),
+                         [checker = update_checker.get()] {
+                             checker->maybe_auto_check();
+                         });
+        update_heartbeat->start();
+    }
 
     // Apply the Startup preference: restore the previous session, keep the
     // seed home tab, or point it at the user's specific page. Restoring MUST

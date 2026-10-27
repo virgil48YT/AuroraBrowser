@@ -59,6 +59,7 @@ namespace aurora::ui {
 class FilterListUpdater;
 class SettingsRow;
 class ToggleSwitch;
+class UpdateChecker;
 
 class SettingsPage : public InternalPageWidget {
     Q_OBJECT
@@ -77,6 +78,10 @@ public:
     // default, and always in private windows) leaves the button disabled.
     // The updater is process-wide and outlives the page.
     void set_filter_list_updater(FilterListUpdater* updater);
+
+    // Connect the Settings > Updates card to the shared GitHub release
+    // checker. Null (private windows) leaves the card explanatory only.
+    void set_update_checker(UpdateChecker* updater);
 
     // Select a sidebar category by id ("general", "appearance", "tabs",
     // "browsing", "search", "privacy", "downloads", "languages",
@@ -129,6 +134,12 @@ private:
     void sync_startup_controls();
     // Filter-list row: subtitle and button state from the updater.
     void sync_filter_list_row(const QString& status = QString());
+    // Updates card: status line, check button and the contextual install /
+    // releases button.
+    void sync_update_row();
+    void start_update_action();
+    void prompt_install_update(const QString& installer_path,
+                               const QString& version);
     // Performance card: the memory-saver switch mirrors the suspend timer
     // (on = tabs.suspend_minutes > 0).
     void sync_memory_saver();
@@ -234,6 +245,12 @@ private:
     QPushButton* filter_list_update_ = nullptr;
     QPushButton* site_settings_open_ = nullptr;
     QCheckBox* reduced_motion_ = nullptr;
+    // Updates card (General). The updater is process-wide and may outlive
+    // this page, so both it and its controls are guarded.
+    QPointer<UpdateChecker> updates_;
+    SettingsRow* update_row_ = nullptr;
+    QPushButton* update_check_ = nullptr;
+    QPushButton* update_install_ = nullptr;
     // Default browser card.
     SettingsRow* default_browser_row_ = nullptr;
     QPushButton* default_browser_button_ = nullptr;

@@ -53,11 +53,13 @@ is a tampered payload, not a configuration.
 ## Layout
 
 ```
+C:\Program Files\Aurora Browser\       <- default setup wizard install folder
+    aurora_bootstrap.exe               <- shortcut/launcher target
+    aurora_browser.exe, Qt6*.dll, libcef.dll, *.pak, locales\, ...
+    aurora_build.manifest
+
 %LOCALAPPDATA%\Aurora\
-    app\                              <- SFX extraction root (InstallPath)
-        aurora_bootstrap.exe          <- RunProgram: the launcher
-        aurora_browser.exe, Qt6*.dll, libcef.dll, *.pak, locales\, ...
-        aurora_build.manifest
+    app\                               <- legacy per-user SFX install (upgraded in place)
     cef\
         657784e4fb8fbb8c\             <- per-version resource tree
             chrome_100_percent.pak, icudtl.dat, v8_context_snapshot.bin

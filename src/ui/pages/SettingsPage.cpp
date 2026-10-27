@@ -1,5 +1,6 @@
 #include "ui/pages/SettingsPage.hpp"
 
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -48,6 +49,7 @@
 #include "searchengines/SearchEngineService.hpp"
 #include "settings/Settings.hpp"
 #include "ui/FilterListUpdater.hpp"
+#include "ui/UpdateChecker.hpp"
 #include "ui/GlowFrame.hpp"
 #include "ui/Theme.hpp"
 #include "ui/ThemeState.hpp"
@@ -537,6 +539,57 @@ SettingsPage::SettingsPage(settings::Settings* prefs,
             QStringLiteral("Suspended tabs free memory and reload when you "
                            "return to them"),
             suspend_minutes_);
+
+    // === Updates (General) ==================================================
+    QVBoxLayout* updates_body = add_section(
+        QStringLiteral("Updates"), icons::Name::Reload,
+        {QStringLiteral("general")});
+    ToggleSwitch* auto_updates = add_pref_toggle(
+        updates_body, QStringLiteral("Check for updates automatically"),
+        QStringLiteral("Ask GitHub once a day whether a newer Aurora release "
+                       "exists. Nothing is downloaded or installed without "
+                       "your approval"),
+        settings::PrefKeys::kAutoCheckUpdates,
+        settings::PrefDefaults::kAutoCheckUpdates);
+    auto_updates->setProperty(
+        "auroraSearchExtra",
+        QStringLiteral("update upgrade version release github automatic"));
+    connect(auto_updates, &QCheckBox::toggled, this, [this](bool on) {
+        if (loading_) return;
+        if (on) {
+            if (UpdateChecker* checker = updates_.data()) {
+                checker->maybe_auto_check();
+            }
+        }
+    });
+    add_divider(container, updates_body);
+    auto* update_controls = new QWidget(container);
+    auto* update_controls_layout = new QHBoxLayout(update_controls);
+    update_controls_layout->setContentsMargins(0, 0, 0, 0);
+    update_controls_layout->setSpacing(Spacing::sm);
+    update_check_ = new QPushButton(QStringLiteral("Check now"), update_controls);
+    update_check_->setObjectName(QStringLiteral("PageOutlineButton"));
+    update_check_->setCursor(Qt::PointingHandCursor);
+    update_install_ = new QPushButton(QStringLiteral("Download && install"),
+                                      update_controls);
+    update_install_->setObjectName(QStringLiteral("PageButton"));
+    update_install_->setCursor(Qt::PointingHandCursor);
+    update_install_->hide();
+    update_controls_layout->addWidget(update_check_);
+    update_controls_layout->addWidget(update_install_);
+    update_row_ = add_row(
+        updates_body, QStringLiteral("Check for updates"),
+        QStringLiteral("Not checked yet."), update_controls);
+    update_row_->add_search_text(
+        QStringLiteral("update upgrade version release github automatic"));
+    connect(update_check_, &QPushButton::clicked, this, [this] {
+        if (UpdateChecker* checker = updates_.data();
+            checker && !checker->checking() && !checker->downloading()) {
+            checker->check_now();
+        }
+    });
+    connect(update_install_, &QPushButton::clicked, this,
+            &SettingsPage::start_update_action);
 
     // === Tabs & browsing (General, Tabs) ====================================
     QVBoxLayout* tabs_body = add_section(
@@ -1685,6 +1738,124 @@ void SettingsPage::sync_filter_list_row(const QString& status) {
     filter_list_row_->set_subtitle(line);
 }
 
+void SettingsPage::set_update_checker(UpdateChecker* updater) {
+    if (updates_) disconnect(updates_, nullptr, this, nullptr);
+    updates_ = updater;
+    if (updates_) {
+        connect(updates_, &UpdateChecker::state_changed, this,
+                [this] { sync_update_row(); });
+        connect(updates_, &UpdateChecker::download_progress, this,
+                [this](qint64, qint64) { sync_update_row(); });
+        connect(updates_, &UpdateChecker::ready_to_install, this,
+                [this](const QString& path, const QString& version) {
+                    sync_update_row();
+                    prompt_install_update(path, version);
+                });
+        connect(updates_, &UpdateChecker::failed, this,
+                [this](const QString&) { sync_update_row(); });
+    }
+    sync_update_row();
+}
+
+void SettingsPage::sync_update_row() {
+    if (!update_row_) return;
+    UpdateChecker* const checker = updates_.data();
+    const bool writable = prefs_ && !prefs_->is_read_only();
+    if (!checker) {
+        update_row_->set_subtitle(
+            writable ? QStringLiteral("Update checks are unavailable in this build.")
+                     : QStringLiteral("Update checks need a normal window."));
+        if (update_check_) update_check_->setEnabled(false);
+        if (update_install_) update_install_->hide();
+        return;
+    }
+    update_row_->set_subtitle(checker->status_text());
+    const bool busy = checker->checking() || checker->downloading();
+    if (update_check_) {
+        update_check_->setEnabled(writable && !busy);
+        update_check_->setText(checker->checking()
+                                   ? QStringLiteral("Checking\u2026")
+                                   : QStringLiteral("Check now"));
+    }
+    if (!update_install_) return;
+    if (!checker->update_available()) {
+        update_install_->hide();
+        return;
+    }
+    update_install_->show();
+    update_install_->setEnabled(writable && !checker->downloading());
+    if (checker->downloading()) {
+        if (checker->download_total() > 0) {
+            const int percent = static_cast<int>(std::clamp<qint64>(
+                checker->download_received() * 100 / checker->download_total(),
+                0, 100));
+            update_install_->setText(
+                QStringLiteral("Downloading\u2026 %1%").arg(percent));
+        } else {
+            update_install_->setText(QStringLiteral("Downloading\u2026"));
+        }
+    } else if (checker->installer_ready()) {
+        update_install_->setText(QStringLiteral("Install now"));
+    } else if (checker->installable()) {
+        update_install_->setText(QStringLiteral("Download && install"));
+    } else {
+        update_install_->setText(QStringLiteral("Open releases page"));
+    }
+}
+
+void SettingsPage::start_update_action() {
+    UpdateChecker* const checker = updates_.data();
+    if (!checker || !checker->update_available()) return;
+    if (!checker->installable()) {
+        checker->open_release_page();
+        return;
+    }
+    if (checker->installer_ready() &&
+        QFileInfo::exists(checker->installer_path())) {
+        prompt_install_update(checker->installer_path(),
+                              checker->available_version());
+        return;
+    }
+    checker->download_and_install();
+}
+
+void SettingsPage::prompt_install_update(const QString& installer_path,
+                                         const QString& version) {
+    if (!prefs_ || prefs_->is_read_only()) return;
+    const QString app_dir = QCoreApplication::applicationDirPath();
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Question);
+    box.setWindowTitle(QStringLiteral("Install Aurora update"));
+    box.setText(QStringLiteral(
+                    "Aurora %1 has been downloaded and its SHA-256 was verified.")
+                    .arg(version));
+    box.setInformativeText(QStringLiteral(
+        "Aurora will close and the setup wizard will open. Save any work in "
+        "other tabs first."));
+    box.setStandardButtons(QMessageBox::Cancel | QMessageBox::Ok);
+    box.setDefaultButton(QMessageBox::Ok);
+    if (box.exec() != QMessageBox::Ok) return;
+
+    QStringList arguments{QStringLiteral("--update"), QStringLiteral("--dir"),
+                          app_dir, QStringLiteral("--relaunch")};
+    const QString language = QString::fromStdString(
+        prefs_->get_string(settings::PrefKeys::kLanguage, ""));
+    if (!language.isEmpty()) {
+        arguments << QStringLiteral("--lang") << language;
+    }
+    if (!QProcess::startDetached(installer_path, arguments, app_dir)) {
+        QMessageBox::critical(
+            this, QStringLiteral("Update failed"),
+            QStringLiteral("The setup wizard could not be started:\n%1")
+                .arg(installer_path));
+        return;
+    }
+    // Close normally so MainWindow::closeEvent saves the session before the
+    // update starts; quit() alone would leave the last session unsaved.
+    QApplication::closeAllWindows();
+    QCoreApplication::quit();
+}
+
 void SettingsPage::sync_startup_controls() {
     if (!prefs_) return;
     // The stored mode as the user picked it — NOT resolve_startup_mode(),
@@ -1950,6 +2121,7 @@ void SettingsPage::refresh() {
     }
 
     sync_filter_list_row();
+    sync_update_row();
 
     loading_ = false;
     apply_filter();

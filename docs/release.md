@@ -19,10 +19,15 @@ a release.
 
 | Platform | Package | Built on |
 |---|---|---|
-| Windows x64 | `Aurora-VERSION-windows-x64-setup.exe` (single-exe SFX: CEF + Qt, build-ID verified) | `windows-latest` |
+| Windows x64 | `Aurora-VERSION-windows-x64-setup.exe` (custom setup wizard: CEF + Qt, build-ID verified, visible progress) | `windows-latest` |
 | Linux x86_64 | `Aurora-VERSION-linux-x86_64.AppImage`, `Aurora-VERSION-linux-x86_64.tar.gz` | `ubuntu-22.04` (glibc 2.35+) |
 | macOS arm64 | `Aurora-VERSION-macos-arm64.dmg` | `macos-14` |
 | Android | `Aurora-VERSION-android.apk` (signed) or `Aurora-VERSION-android-unsigned.apk` | `ubuntu-latest` |
+
+The tag version is passed to CMake as `AURORA_RELEASE_VERSION`, so the
+compiled browser, the setup executable's version resource, and the release tag
+agree. The in-app updater compares those values; a build that reports a stale
+version would keep offering its own release.
 
 ## Signing (optional repository secrets)
 
@@ -34,12 +39,16 @@ repository.
 |---|---|---|
 | macOS | `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `MACOS_SIGN_IDENTITY` (e.g. `Developer ID Application: Name (TEAMID)`); notarization additionally `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` | Ad-hoc signed DMG. Gatekeeper reports an unidentified developer: right-click > Open, or `xattr -dr com.apple.quarantine /Applications/Aurora.app` |
 | Android | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | `-unsigned.apk`, which Android will not install until it is signed with `apksigner` (see `android/README.md`) |
-| Windows | not wired yet | Unsigned SFX; SmartScreen warns on first run. Authenticode signing needs a code-signing certificate |
+| Windows | not wired yet | Unsigned custom setup; SmartScreen warns on first run. Authenticode signing needs a code-signing certificate |
 | Linux | none needed | AppImage and tarball are not signed (SHA-256 files are published) |
 
 ## Per-platform packaging scripts
 
-- Windows: `packaging/windows/build_sfx.sh` (see `docs/build-id.md`).
+- Windows: `packaging/windows/build_installer.sh` appends the staged app
+  (`make_payload.py`) to the native setup UI and writes the footer
+  (`make_sfx.py`). The workflow then runs the produced setup with
+  `--verify-payload`, which decompresses every entry and checks its CRC before
+  the artifact is uploaded.
 - Linux: `packaging/linux/package_linux.sh BUILD_DIR CEF_ROOT OUT_DIR VERSION`
   — AppDir with the browser and the CEF runtime in `usr/bin`, Qt bundled by
   linuxdeploy-plugin-qt, `libcef.so` stripped, then tarball + AppImage.

@@ -33,6 +33,7 @@ add_executable(aurora_tests
     test_omnibox_suggest.cpp
     test_context_menu_text.cpp
     test_tor_bundle.cpp
+    test_release_version.cpp
 )
 
 target_include_directories(aurora_tests PRIVATE

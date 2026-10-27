@@ -56,6 +56,9 @@ struct PrefDefaults {
     static constexpr int kTabSuspendAfterMinutes = 30;  // 0 = disabled
     static constexpr int kTabSuspendMinMinutes = 0;
     static constexpr int kTabSuspendMaxMinutes = 24 * 60;
+    // Settings > Updates. The timestamp key stores unix seconds; automatic
+    // checks are throttled to one per day.
+    static constexpr bool kAutoCheckUpdates = true;
 };
 
 // All known preference keys. Centralizing them prevents typos and makes the
@@ -136,6 +139,10 @@ struct PrefKeys {
     // Tor windows use the tor that ships with Aurora (ui/TorLauncher) unless
     // this is off or kTorProxy / AURORA_TOR_PROXY names another daemon.
     static constexpr std::string_view kTorUseBundled = "tor.use_bundled";
+    // Settings > Updates: automatic checks (bool) and the unix timestamp of
+    // the last completed check (int). Manual checks ignore the timestamp.
+    static constexpr std::string_view kAutoCheckUpdates = "update.auto_check";
+    static constexpr std::string_view kUpdateLastCheck = "update.last_check";
 };
 
 // The three Startup-card choices. Home opens one aurora://home tab, Continue

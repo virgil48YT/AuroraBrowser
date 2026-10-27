@@ -4,8 +4,8 @@ rem ===========================================================================
 rem  Aurora - local Windows build (replaces .github/workflows/build-windows.yml)
 rem
 rem  Double-click or run with no args for a menu:
-rem    1) Full app + CEF   -> saves Aurora.exe        to builds\app
-rem    2) Qt shell         -> saves Aurora-QtShell.exe to builds\shell
+rem    1) Full app + CEF   -> saves Aurora-Setup.exe  to builds\app
+rem    2) Qt shell         -> saves Aurora-QtShell    to builds\shell
 rem
 rem  Or run non-interactively:
 rem    build-windows-local.bat cef | qt | all
@@ -13,11 +13,10 @@ rem
 rem  Override paths if your install is not on the default PATH:
 rem    set QT_ROOT=C:\Qt\6.8.0\msvc2022_64
 rem    set PYTHON=python
-rem    set SEVENZIP=C:\Program Files\7-Zip\7z.exe
 rem    set CEF_ROOT=C:\path\to\codec-enabled-cef
 rem
 rem  Requires: Visual Studio 2022 (Desktop C++), Qt 6.5+, CMake, Ninja, Git,
-rem            7-Zip, and Git Bash (ships with Git for Windows).
+rem            Python, and Git Bash (ships with Git for Windows).
 rem ===========================================================================
 
 set "REPO=%~dp0"
@@ -37,8 +36,7 @@ echo.
 echo === Aurora local build ===
 echo   1) Full app + CEF  -^> %APP_OUT%
 echo   2) Qt shell        -^> %SHELL_OUT%
-echo.
-choice /c 12 /n /m "Select 1 or 2: "
+echo.choice /c 12 /n /m "Select 1 or 2: "
 if errorlevel 2 set "MODE=qt"  & goto :detect
 if errorlevel 1 set "MODE=cef" & goto :detect
 
@@ -123,14 +121,6 @@ if not exist "%QT%\bin\windeployqt.exe" (
 )
 echo [ok] Qt6: %QT%
 
-rem ---- 7-Zip (only needed for SFX packaging) ------------------------------
-set "SZ=%SEVENZIP%"
-if "%SZ%"=="" (
-    for %%P in ( "%ProgramFiles%\7-Zip\7z.exe" "%ProgramFiles(x86)%\7-Zip\7z.exe" ) do if exist "%%~P" set "SZ=%%~P"
-)
-if "%SZ%"=="" ( where 7z >nul 2>&1 && for /f "delims=" %%Z in ('where 7z') do set "SZ=%%Z" )
-if not "%SZ%"=="" echo [ok] 7z: %SZ%
-
 rem =========================================================================
 if /I "%MODE%"=="qt"  goto :build_qt
 if /I "%MODE%"=="cef" goto :build_cef
@@ -155,7 +145,10 @@ mkdir package
 copy build\bin\aurora_browser.exe package\ >nul
 copy build\bin\aurora_bootstrap.exe package\ >nul
 windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw package\aurora_browser.exe
-call :make_sfx package Aurora-QtShell.exe assets\icons\aurora.ico "%SHELL_OUT%"
+if not exist "%SHELL_OUT%" mkdir "%SHELL_OUT%"
+if exist "%SHELL_OUT%\Aurora-QtShell" rmdir /s /q "%SHELL_OUT%\Aurora-QtShell"
+xcopy /e /y /i package "%SHELL_OUT%\Aurora-QtShell" >nul
+echo [ok] Wrote: %SHELL_OUT%\Aurora-QtShell
 goto :done
 
 :build_cef
@@ -176,6 +169,7 @@ echo --- Configuring with CEF ---
 if exist build rmdir /s /q build
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
     -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON ^
+    -DAURORA_BUILD_INSTALLER=ON ^
     -DCEF_ROOT="!CEF_DIR!" !CODEC_REQUIRE! -DCEF_RUNTIME_LIBRARY_FLAG=/MD
 if !errorlevel! neq 0 ( echo ERROR: configure failed. & pause & exit /b 1 )
 cmake --build build --config Release
@@ -200,37 +194,18 @@ if !errorlevel! neq 0 ( echo ERROR: manifest generate failed. & pause & exit /b 
 build\bin\aurora_buildid.exe show --manifest package\aurora_build.manifest
 build\bin\aurora_buildid.exe verify --manifest package\aurora_build.manifest --root package --full
 if !errorlevel! neq 0 ( echo ERROR: manifest verify failed - package mismatch. & pause & exit /b 1 )
-call :make_sfx package Aurora.exe assets\icons\aurora.ico "%APP_OUT%"
+call :make_installer package Aurora-Setup.exe "%APP_OUT%"
 goto :done
 
-:make_sfx
-rem  %1 = package dir, %2 = output exe name, %3 = icon, %4 = output folder
+:make_installer
+rem  %1 = package dir, %2 = output exe name, %3 = output folder
 set "PKG=%~1"
 set "OUT=%~2"
-set "ICO=%~3"
-set "OUTDIR=%~4"
-echo --- Building self-extracting .exe ---
-if "%SZ%"=="" (
-    echo WARNING: 7-Zip not found - skipping SFX. Packaging folder as zip instead.
-    if not exist "%OUTDIR%" mkdir "%OUTDIR%"
-    if exist "%SZ%" ( "%SZ%" a -tzip -mx9 "%OUTDIR%\%OUT:.exe=%.zip" "%PKG%\*" ) else (
-        echo Cannot zip without 7z. Package folder left at: %REPO%\%PKG%
-    )
-    exit /b 0
-)
-rem rcedit is best-effort, exactly like CI.
-curl -fsSL -o rcedit-x64.exe https://github.com/electron/rcedit/releases/latest/download/rcedit-x64.exe 2>nul
-if exist rcedit-x64.exe ( set "RCEDIT=%REPO%\rcedit-x64.exe" ) else ( set "RCEDIT=rcedit-x64.exe" )
-"%BASH_EXE%" -c "cd '%REPO%' && SEVENZIP='%SZ%' RCEDIT='%RCEDIT%' bash packaging/windows/build_sfx.sh '%PKG%' '%OUT%' '%ICO%'"
-if !errorlevel! neq 0 (
-    echo WARNING: SFX build failed - zipping the package folder instead.
-    if not exist "%OUTDIR%" mkdir "%OUTDIR%"
-    "%SZ%" a -tzip -mx9 "%OUTDIR%\%OUT:.exe=%.zip" "%PKG%\*"
-    echo [ok] Wrote: %OUTDIR%\%OUT:.exe=%.zip
-    exit /b 0
-)
+set "OUTDIR=%~3"
+echo --- Building custom setup wizard ---
 if not exist "%OUTDIR%" mkdir "%OUTDIR%"
-copy /y "%OUT%" "%OUTDIR%\%OUT%" >nul
+"%BASH_EXE%" -c "cd '%REPO%' && bash packaging/windows/build_installer.sh '%PKG%' 'build/bin/aurora_setup_ui.exe' '%OUTDIR%/%OUT%' dev"
+if !errorlevel! neq 0 ( echo ERROR: custom setup build failed. & pause & exit /b 1 )
 echo [ok] Wrote: %OUTDIR%\%OUT%
 exit /b 0
 
@@ -244,8 +219,8 @@ if defined BUILD_START (
 )
 echo ============================================================
 echo DONE.
-echo   Full app + CEF : %APP_OUT%
-echo   Qt shell       : %SHELL_OUT%
+echo   Full app + CEF : %APP_OUT%\Aurora-Setup.exe
+echo   Qt shell       : %SHELL_OUT%\Aurora-QtShell
 echo ============================================================
 if "%~1"=="" pause
 exit /b 0

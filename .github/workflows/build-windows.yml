@@ -49,8 +49,9 @@ jobs:
           mkdir -p package
           cp build/bin/aurora_browser.exe package/
           # The bootstrap launcher starts the browser out of the flat directory.
-          # No single-exe SFX packaging is done — the folder itself is the
-          # artifact, keeping the build simpler and the download smaller.
+          # No single-exe setup is built here — the installer workflow owns
+          # that; the folder itself is the artifact, keeping the build simpler
+          # and the download smaller.
           cp build/bin/aurora_bootstrap.exe package/
           windeployqt --release --no-translations --no-system-d3d-compiler \
                      --no-opengl-sw package/aurora_browser.exe

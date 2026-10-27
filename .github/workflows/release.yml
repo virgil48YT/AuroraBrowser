@@ -4,7 +4,7 @@
 # press "Publish release" on GitHub. Manual runs (workflow_dispatch) build and
 # upload the same packages as workflow artifacts without creating a release.
 #
-#   Windows  aurora_setup.exe (CEF + single-exe SFX, build-ID verified)
+#   Windows  aurora_setup.exe (CEF + custom setup wizard, build-ID verified)
 #   Linux    Aurora-VERSION-linux-x86_64.AppImage / .tar.gz
 #   macOS    Aurora-VERSION-macos-arm64.dmg
 #   Android  aurora-VERSION.apk (signed only when signing secrets exist)
@@ -44,7 +44,7 @@ jobs:
           echo "Release version: $V"
 
   windows:
-    name: Windows (CEF + SFX)
+    name: Windows (CEF + setup wizard)
     needs: version
     runs-on: windows-latest
     steps:
@@ -73,11 +73,16 @@ jobs:
         run: bash scripts/fetch_tor.sh windows64
 
       - name: Configure with CEF
-        run: >
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON
-          -DCEF_ROOT=${{ github.workspace }}/third_party/cef
-          -DCEF_RUNTIME_LIBRARY_FLAG=/MD
+        run: |
+          V="${{ needs.version.outputs.version }}"
+          BASE="${V%%-*}"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON \
+            -DAURORA_BUILD_INSTALLER=ON \
+            -DAURORA_RELEASE_VERSION="$BASE" \
+            -DCEF_ROOT="${{ github.workspace }}/third_party/cef" \
+            -DCEF_RUNTIME_LIBRARY_FLAG=/MD
+        shell: bash
 
       - name: Build
         run: cmake --build build --config Release
@@ -123,16 +128,20 @@ jobs:
               --root package --full
         shell: bash
 
-      - name: Build the single-exe SFX installer
+      - name: Build the custom setup wizard
         run: |
           mkdir -p dist
-          bash packaging/windows/build_sfx.sh package dist/aurora_setup.exe \
-              assets/icons/aurora.ico
-          test -s dist/aurora_setup.exe
           V="${{ needs.version.outputs.version }}"
-          cp dist/aurora_setup.exe "dist/Aurora-${V}-windows-x64-setup.exe"
-          rm dist/aurora_setup.exe
-          ( cd dist && sha256sum "Aurora-${V}-windows-x64-setup.exe" > "Aurora-${V}-windows-x64-setup.exe.sha256" )
+          SETUP="dist/Aurora-${V}-windows-x64-setup.exe"
+          bash packaging/windows/build_installer.sh package \
+              build/bin/aurora_setup_ui.exe "$SETUP" "$V"
+          VERIFY_LOG="aurora-setup-verify.log"
+          "$SETUP" --verify-payload --log "$VERIFY_LOG"
+          grep -q "OK: payload verified" "$VERIFY_LOG"
+          cat "$VERIFY_LOG"
+          rm -f "$VERIFY_LOG"
+          ( cd dist && sha256sum "Aurora-${V}-windows-x64-setup.exe" \
+              > "Aurora-${V}-windows-x64-setup.exe.sha256" )
         shell: bash
 
       - uses: actions/upload-artifact@v4
@@ -180,8 +189,11 @@ jobs:
 
       - name: Configure, build, test
         run: |
+          V="${{ needs.version.outputs.version }}"
+          BASE="${V%%-*}"
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON \
+            -DAURORA_RELEASE_VERSION="$BASE" \
             -DCEF_ROOT="$GITHUB_WORKSPACE/third_party/cef"
           cmake --build build
           ctest --test-dir build --output-on-failure
@@ -236,8 +248,11 @@ jobs:
 
       - name: Configure, build, test
         run: |
+          V="${{ needs.version.outputs.version }}"
+          BASE="${V%%-*}"
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON \
+            -DAURORA_RELEASE_VERSION="$BASE" \
             -DCEF_ROOT="$GITHUB_WORKSPACE/third_party/cef"
           cmake --build build
           ctest --test-dir build --output-on-failure
