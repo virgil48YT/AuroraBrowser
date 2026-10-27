@@ -174,7 +174,7 @@ bool UpdateChecker::auto_check_enabled() const {
 
 bool UpdateChecker::installable() const {
 #if defined(Q_OS_WIN)
-    return update_available() && !asset_url_.isEmpty() && !sha_url_.isEmpty();
+    return has_update() && !asset_url_.isEmpty() && !sha_url_.isEmpty();
 #else
     return false;
 #endif
@@ -194,7 +194,7 @@ void UpdateChecker::record_check_time() {
 void UpdateChecker::maybe_auto_check() {
     if (!prefs_ || prefs_->is_read_only() || checking_ || downloading_) return;
     if (!auto_check_enabled()) return;
-    if (update_available()) return;
+    if (has_update()) return;
     const qint64 last = prefs_->get_int(settings::PrefKeys::kUpdateLastCheck, 0);
     const qint64 now = QDateTime::currentSecsSinceEpoch();
     if (last > 0 && now - last < kAutoCheckIntervalSeconds) return;

@@ -1778,7 +1778,7 @@ void SettingsPage::sync_update_row() {
                                    : QStringLiteral("Check now"));
     }
     if (!update_install_) return;
-    if (!checker->update_available()) {
+    if (!checker->has_update()) {
         update_install_->hide();
         return;
     }
@@ -1805,7 +1805,7 @@ void SettingsPage::sync_update_row() {
 
 void SettingsPage::start_update_action() {
     UpdateChecker* const checker = updates_.data();
-    if (!checker || !checker->update_available()) return;
+    if (!checker || !checker->has_update()) return;
     if (!checker->installable()) {
         checker->open_release_page();
         return;

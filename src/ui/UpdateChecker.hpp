@@ -37,7 +37,7 @@ public:
     bool auto_check_enabled() const;
     bool checking() const { return checking_; }
     bool downloading() const { return downloading_; }
-    bool update_available() const { return !available_version_.isEmpty(); }
+    bool has_update() const { return !available_version_.isEmpty(); }
     // Windows only: a setup asset and its .sha256 were published.
     bool installable() const;
     bool installer_ready() const {
