@@ -1,5 +1,6 @@
 #include "win_util.hpp"
 
+#include <objbase.h>
 #include <shlobj.h>
 
 #include <algorithm>

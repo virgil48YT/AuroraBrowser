@@ -1,6 +1,8 @@
 #include "install.hpp"
 
+#include <objbase.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #include <shlwapi.h>
 
 #include <algorithm>

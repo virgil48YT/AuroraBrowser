@@ -25,7 +25,7 @@ cmake_minimum_required(VERSION 3.24)
 set(AURORA_RELEASE_VERSION "" CACHE STRING
     "Numeric release version override (e.g. 0.2.0), set by the release workflow")
 if(AURORA_RELEASE_VERSION AND
-   NOT AURORA_RELEASE_VERSION MATCHES "^[0-9]+(\\.[0-9]+){0,2}$")
+   NOT AURORA_RELEASE_VERSION MATCHES "^[0-9]+([.][0-9]+)*$")
     message(FATAL_ERROR
         "AURORA_RELEASE_VERSION must be numeric (e.g. 0.2.0), got '${AURORA_RELEASE_VERSION}'")
 endif()

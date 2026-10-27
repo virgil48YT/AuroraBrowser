@@ -521,7 +521,14 @@ void SetupWindow::layout() {
     focus_order_.clear();
     if (width < 1.0f || height < 1.0f) return;
 
-    rail_width_ = width >= 820.0f ? 300.0f : 264.0f;
+    // The mockup uses a narrower logo rail on the Installing and Complete
+    // pages (and a wider content area for the progress/details), while the
+    // wizard pages keep the reference wizard's proportion.
+    if (page_ == Page::Installing || page_ == Page::Complete) {
+        rail_width_ = 220.0f;
+    } else {
+        rail_width_ = width >= 820.0f ? 300.0f : 264.0f;
+    }
     title_height_ = 38.0f;
     rail_ = D2D1::RectF(0, title_height_, rail_width_, height);
     content_ = D2D1::RectF(rail_width_ + 38.0f, title_height_ + 26.0f,
@@ -1901,8 +1908,9 @@ void SetupWindow::draw_rail() {
               D2D1::Point2F(rail_width_ - 2.0f, height), color(kAccent, 0.05f),
               3.0f);
     const bool welcome = page_ == Page::Welcome;
-    const float logo_width = welcome ? 190.0f : 160.0f;
-    const float logo_top = title_height_ + (welcome ? 52.0f : 78.0f);
+    const float logo_width =
+        welcome ? 190.0f : (rail_width_ < 260.0f ? 130.0f : 160.0f);
+    const float logo_top = title_height_ + 78.0f;
     draw_logo_block(rail_width_ / 2.0f, logo_top, logo_width, welcome);
 }
 
