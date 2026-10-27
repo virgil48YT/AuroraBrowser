@@ -594,7 +594,7 @@ static int aurora_main(int argc, char** argv) {
                                requested.begin(), requested.end(),
                                [](QChar c) {
                                    return c.isLetterOrNumber() ||
-                                          c == QLatin1Char('-');
+                                          c.unicode() == u'-';
                                });
         if (valid && prefs.get_string(settings::PrefKeys::kLanguage, "").empty()) {
             prefs.set_string(settings::PrefKeys::kLanguage,

@@ -54,6 +54,10 @@ target_link_libraries(aurora_setup_ui PRIVATE
     gdi32)
 
 if(MSVC)
+    # WIN32_EXECUTABLE selects /SUBSYSTEM:WINDOWS, whose default CRT entry
+    # expects WinMain; make that explicit (the bootstrap uses the same pattern
+    # for mainCRTStartup).
+    target_link_options(aurora_setup_ui PRIVATE /ENTRY:WinMainCRTStartup)
     # The shared manifest makes the installer DPI-aware (PerMonitorV2) so the
     # Direct2D layout is sharp on scaled displays.
     target_sources(aurora_setup_ui PRIVATE

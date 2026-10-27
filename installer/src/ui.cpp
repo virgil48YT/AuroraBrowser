@@ -2072,25 +2072,43 @@ void SetupWindow::draw_folder_icon(D2D1_RECT_F box) {
 }
 
 void SetupWindow::draw_components_icon(D2D1_RECT_F box) {
-    const float cell = rect_width(box) * 0.38f;
-    const float gap = rect_width(box) * 0.10f;
+    if (!render_target_ || !d2d_factory_) return;
     const float left = box.left + 2.0f;
-    const float top = box.top + 2.0f;
-    const D2D1_COLOR_F tint = color(kAccent);
-    fill_round(D2D1::RectF(left, top, left + cell, top + cell), 2.0f,
-               color(kAccent, 0.80f));
-    fill_round(D2D1::RectF(left + cell + gap, top, left + 2 * cell + gap,
-                           top + cell),
-               2.0f, color(kAccent, 0.55f));
-    fill_round(D2D1::RectF(left, top + cell + gap, left + cell,
-                           top + 2 * cell + gap),
-               2.0f, color(kAccent, 0.55f));
-    fill_round(D2D1::RectF(left + cell + gap, top + cell + gap,
-                           left + 2 * cell + gap, top + 2 * cell + gap),
-               2.0f, color(kAccent2, 0.85f));
-    stroke_round(D2D1::RectF(left + cell + gap, top + cell + gap,
-                             left + 2 * cell + gap, top + 2 * cell + gap),
-                 2.0f, tint, 1.0f);
+    const float right = box.right - 2.0f;
+    const float top = box.top + 6.0f;
+    const float bottom = box.bottom - 2.0f;
+    const float middle = (left + right) / 2.0f;
+    const float radius = std::min((right - left) * 0.22f,
+                                  (bottom - top) * 0.22f);
+    if (radius <= 0.5f) return;
+    const float notch_middle = (top + bottom) / 2.0f + 1.0f;
+
+    Microsoft::WRL::ComPtr<ID2D1PathGeometry> path;
+    if (FAILED(d2d_factory_->CreatePathGeometry(path.GetAddressOf()))) {
+        return;
+    }
+    Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+    if (FAILED(path->Open(sink.GetAddressOf()))) return;
+    sink->BeginFigure(D2D1::Point2F(left, top), D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddLine(D2D1::Point2F(middle - radius, top));
+    sink->AddArc(D2D1::ArcSegment(
+        D2D1::Point2F(middle + radius, top), D2D1::SizeF(radius, radius), 0.0f,
+        D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+    sink->AddLine(D2D1::Point2F(right, top));
+    sink->AddLine(D2D1::Point2F(right, notch_middle - radius));
+    sink->AddArc(D2D1::ArcSegment(
+        D2D1::Point2F(right, notch_middle + radius),
+        D2D1::SizeF(radius, radius), 0.0f,
+        D2D1_SWEEP_DIRECTION_COUNTERCLOCKWISE, D2D1_ARC_SIZE_SMALL));
+    sink->AddLine(D2D1::Point2F(right, bottom));
+    sink->AddLine(D2D1::Point2F(left, bottom));
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    sink->Close();
+
+    auto fill = make_brush(color(kAccent, 0.16f));
+    auto stroke = make_brush(color(kAccent));
+    if (fill) render_target_->FillGeometry(path.Get(), fill.Get());
+    if (stroke) render_target_->DrawGeometry(path.Get(), stroke.Get(), 1.4f);
 }
 
 void SetupWindow::draw_globe_icon(D2D1_RECT_F box) {

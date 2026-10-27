@@ -571,6 +571,10 @@ void UpdateChecker::on_installer_finished(QNetworkReply* reply) {
     }
     if (!is_custom_setup(path)) {
         QFile::remove(path);
+        // The release's installer is the wrong kind of executable; retrying
+        // the same asset cannot help. Point the card at the releases page.
+        asset_url_.clear();
+        sha_url_.clear();
         fail(QStringLiteral(
             "The release's installer is not an Aurora setup wizard."));
         return;

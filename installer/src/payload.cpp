@@ -349,7 +349,8 @@ bool PayloadArchive::open(const std::wstring& exe_path, std::wstring& detail,
     footer_pos.QuadPart = static_cast<LONGLONG>(total_size - sizeof(Footer));
     DWORD footer_read = 0;
     if (!SetFilePointerEx(file_, footer_pos, nullptr, FILE_BEGIN) ||
-        !ReadFile(file_, &footer, sizeof(footer), &footer_read, nullptr) ||
+        !ReadFile(file_, &footer, static_cast<DWORD>(sizeof(footer)),
+                  &footer_read, nullptr) ||
         footer_read != sizeof(footer)) {
         error = GetLastError();
         if (error == ERROR_SUCCESS) error = ERROR_HANDLE_EOF;

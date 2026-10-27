@@ -12,6 +12,7 @@ cmake_minimum_required(VERSION 3.24)
 #   AURORA_ENABLE_CEF    (OFF) Enable the CEF integration layer. Requires
 #                             CEF_ROOT to point at a CEF binary distribution.
 #   AURORA_BUILD_APP     (OFF) Build the Qt browser executable. Requires Qt6.
+#   AURORA_BUILD_INSTALLER (OFF) Build the Windows setup wizard.
 #
 # The core library never depends on Qt or CEF, so it can be compiled and
 # tested on any machine with a C++20 compiler and SQLite.
