@@ -138,7 +138,8 @@ private:
     void draw_globe_icon(D2D1_RECT_F box);
     void draw_chevron(D2D1_POINT_2F center, float size, bool down,
                       bool left, D2D1_COLOR_F color);
-    void draw_check_glyph(D2D1_POINT_2F center, float size);
+    void draw_check_glyph(D2D1_POINT_2F center, float size,
+                          D2D1_COLOR_F color_value);
     void draw_success_icon(D2D1_RECT_F box);
     void draw_warning_icon(D2D1_RECT_F box);
 
@@ -147,7 +148,7 @@ private:
                    DWRITE_TEXT_ALIGNMENT align = DWRITE_TEXT_ALIGNMENT_LEADING,
                    DWRITE_PARAGRAPH_ALIGNMENT paragraph =
                        DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-    float measure_text(const std::wstring& text, IDWriteTextFormat* format);
+    float measure_text(const std::wstring& text, IDWriteTextFormat* format) const;
     void fill_rect(D2D1_RECT_F rect, D2D1_COLOR_F color);
     void fill_round(D2D1_RECT_F rect, float radius, D2D1_COLOR_F color);
     void stroke_round(D2D1_RECT_F rect, float radius, D2D1_COLOR_F color,

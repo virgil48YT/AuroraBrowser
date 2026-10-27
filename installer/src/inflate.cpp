@@ -74,7 +74,7 @@ public:
         }
 
         for (unsigned length = 1; length <= 15; ++length) {
-            tables_[length].assign(1u << length, 0xFFFFu);
+            tables_[length].assign(std::size_t{1} << length, 0xFFFFu);
         }
         bool any = false;
         for (std::size_t symbol = 0; symbol < lengths.size(); ++symbol) {

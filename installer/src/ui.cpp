@@ -1693,7 +1693,7 @@ void SetupWindow::draw_text(const std::wstring& text,
 }
 
 float SetupWindow::measure_text(const std::wstring& text,
-                                IDWriteTextFormat* format) {
+                                IDWriteTextFormat* format) const {
     if (!dwrite_factory_ || !format || text.empty()) return 0.0f;
     Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
     if (FAILED(dwrite_factory_->CreateTextLayout(
@@ -1784,7 +1784,7 @@ void SetupWindow::draw_background() {
                 (image.width + source_width) / 2.0f,
                 (image.height + source_height) / 2.0f);
             render_target_->DrawBitmap(brand_background_.Get(), &full, 1.0f,
-                                       D2D1_BITMAP_INTERPOLATION_MODE_HIGH_QUALITY,
+                                       D2D1_INTERPOLATION_MODE_HIGH_QUALITY_LINEAR,
                                        &source);
         }
     }
@@ -1824,7 +1824,7 @@ void SetupWindow::draw_titlebar() {
                             14.0f + mark_size,
                             (title_height_ + mark_size) / 2.0f);
             render_target_->DrawBitmap(brand_mark_.Get(), &dest, 1.0f,
-                                       D2D1_BITMAP_INTERPOLATION_MODE_HIGH_QUALITY);
+                                       D2D1_INTERPOLATION_MODE_HIGH_QUALITY_LINEAR);
         }
     }
     draw_text(text_->app_title, button_format_.Get(),
@@ -1880,7 +1880,7 @@ void SetupWindow::draw_logo_block(float center_x, float top, float width,
                 D2D1::RectF(center_x - width / 2.0f, top,
                             center_x + width / 2.0f, top + height);
             render_target_->DrawBitmap(brand_logo_.Get(), &dest, 1.0f,
-                                       D2D1_BITMAP_INTERPOLATION_MODE_HIGH_QUALITY);
+                                       D2D1_INTERPOLATION_MODE_HIGH_QUALITY_LINEAR);
             bottom = top + height;
         }
     } else {
@@ -2107,7 +2107,7 @@ void SetupWindow::draw_components_icon(D2D1_RECT_F box) {
     sink->AddArc(D2D1::ArcSegment(
         D2D1::Point2F(right, notch_middle + radius),
         D2D1::SizeF(radius, radius), 0.0f,
-        D2D1_SWEEP_DIRECTION_COUNTERCLOCKWISE, D2D1_ARC_SIZE_SMALL));
+        D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
     sink->AddLine(D2D1::Point2F(right, bottom));
     sink->AddLine(D2D1::Point2F(left, bottom));
     sink->EndFigure(D2D1_FIGURE_END_CLOSED);
@@ -2316,7 +2316,7 @@ void SetupWindow::draw_components_page() {
                             (card.left + card.right) / 2.0f + mark_size / 2.0f,
                             card.top + 18.0f + mark_size);
             render_target_->DrawBitmap(brand_mark_.Get(), &mark, 1.0f,
-                                       D2D1_BITMAP_INTERPOLATION_MODE_HIGH_QUALITY);
+                                       D2D1_INTERPOLATION_MODE_HIGH_QUALITY_LINEAR);
         }
         draw_text(text_->components_description, small_format_.Get(),
                   D2D1::RectF(card.left + 14.0f, card.top + 108.0f,
