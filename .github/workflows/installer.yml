@@ -70,22 +70,25 @@ jobs:
         shell: bash
 
       - name: Configure with CEF + installer
+        # PowerShell, not bash: MSYS rewrites the leading slash of /MD into a
+        # Git path and puts Git's GNU link.exe ahead of the MSVC one, which
+        # breaks cl and the cargo build of the Rust ad-block engine.
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON
           -DAURORA_BUILD_INSTALLER=ON
-          -DAURORA_RELEASE_VERSION="${AURORA_BASE_VERSION}"
-          -DCEF_ROOT="${GITHUB_WORKSPACE}/third_party/cef"
+          -DAURORA_RELEASE_VERSION="$env:AURORA_BASE_VERSION"
+          -DCEF_ROOT="${{ github.workspace }}/third_party/cef"
           -DCEF_RUNTIME_LIBRARY_FLAG=/MD
-        shell: bash
+        shell: pwsh
 
       - name: Build
         run: cmake --build build --config Release
-        shell: bash
+        shell: pwsh
 
       - name: Run unit tests
         run: ./build/bin/aurora_tests.exe
-        shell: bash
+        shell: pwsh
 
       - name: Package app
         run: |

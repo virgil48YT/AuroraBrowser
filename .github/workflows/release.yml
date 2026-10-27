@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      base_version: ${{ steps.v.outputs.base_version }}
     steps:
       - id: v
         run: |
@@ -40,7 +41,10 @@ jobs:
           else
             V="0.0.0-dev.${GITHUB_RUN_NUMBER}"
           fi
+          # CMake's project(VERSION ...) only takes the numeric part; the
+          # prerelease suffix stays in the artifact name.
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "base_version=${V%%-*}" >> "$GITHUB_OUTPUT"
           echo "Release version: $V"
 
   windows:
@@ -73,16 +77,16 @@ jobs:
         run: bash scripts/fetch_tor.sh windows64
 
       - name: Configure with CEF
-        run: |
-          V="${{ needs.version.outputs.version }}"
-          BASE="${V%%-*}"
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON \
-            -DAURORA_BUILD_INSTALLER=ON \
-            -DAURORA_RELEASE_VERSION="$BASE" \
-            -DCEF_ROOT="${{ github.workspace }}/third_party/cef" \
-            -DCEF_RUNTIME_LIBRARY_FLAG=/MD
-        shell: bash
+        # PowerShell: MSYS would rewrite /MD into a Git path and shadow the
+        # MSVC link.exe with Git's GNU one, breaking cl and cargo.
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DAURORA_BUILD_TESTS=ON -DAURORA_ENABLE_CEF=ON -DAURORA_BUILD_APP=ON
+          -DAURORA_BUILD_INSTALLER=ON
+          -DAURORA_RELEASE_VERSION="${{ needs.version.outputs.base_version }}"
+          -DCEF_ROOT="${{ github.workspace }}/third_party/cef"
+          -DCEF_RUNTIME_LIBRARY_FLAG=/MD
+        shell: pwsh
 
       - name: Build
         run: cmake --build build --config Release
